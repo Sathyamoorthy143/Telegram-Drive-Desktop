@@ -4,7 +4,7 @@ import { Store } from '@tauri-apps/plugin-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useConfirm } from '../context/ConfirmContext';
-import { TelegramFolder } from '../types';
+import { TelegramFolder, UserInfo } from '../types';
 import { useNetworkStatus } from './useNetworkStatus';
 
 export function useTelegramConnection(onLogoutParent: () => void) {
@@ -16,6 +16,7 @@ export function useTelegramConnection(onLogoutParent: () => void) {
     const [store, setStore] = useState<Store | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [isConnected, setIsConnected] = useState(true);
+    const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
 
     const networkIsOnline = useNetworkStatus();
@@ -44,6 +45,8 @@ export function useTelegramConnection(onLogoutParent: () => void) {
                         const apiId = parseInt(apiIdStr as string);
                         await invoke('cmd_connect', { apiId });
                         setIsConnected(true);
+                        const user = await invoke<UserInfo>('cmd_get_user_info');
+                        setUserInfo(user);
                         queryClient.invalidateQueries({ queryKey: ['files'] });
                     } catch {
                         const shouldRetry = window.confirm("Failed to connect to Telegram. Retry?");
@@ -216,6 +219,7 @@ export function useTelegramConnection(onLogoutParent: () => void) {
         setActiveFolderId: handleSetActiveFolderId,
         isSyncing,
         isConnected,
+        userInfo,
         handleLogout,
         handleSyncFolders,
         handleCreateFolder,

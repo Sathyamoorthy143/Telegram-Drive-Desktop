@@ -314,3 +314,24 @@ pub async fn cmd_auth_check_password(
         Err(e) => Err(format!("2FA Failed: {}", e))
     }
 }
+
+#[tauri::command]
+pub async fn cmd_get_user_info(
+    state: State<'_, TelegramState>,
+) -> Result<crate::models::UserInfo, String> {
+    let client = {
+        let guard = state.client.lock().await;
+        guard.as_ref().ok_or("Client not initialized")?.clone()
+    };
+
+    let user = client.get_me().await.map_err(map_error)?;
+    
+    Ok(crate::models::UserInfo {
+        id: user.id(),
+        first_name: user.first_name().to_string(),
+        last_name: user.last_name().map(|s| s.to_string()),
+        username: user.username().map(|s| s.to_string()),
+        phone: user.phone().map(|s| s.to_string()),
+        profile_photo_id: None, // We'll handle photos later if needed
+    })
+}

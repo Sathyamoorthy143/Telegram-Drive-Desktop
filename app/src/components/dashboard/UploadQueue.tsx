@@ -1,4 +1,5 @@
 import { QueueItem } from "../../types";
+import { formatBytes, formatDuration } from "../../utils";
 
 interface UploadQueueProps {
     items: QueueItem[];
@@ -31,26 +32,28 @@ export function UploadQueue({ items, onClearFinished, onCancelAll }: UploadQueue
                                     item.status === 'cancelled' ? 'bg-gray-500' :
                                         item.status === 'error' ? 'bg-red-500' : 'bg-green-500'
                                 }`} />
-                            <div className="flex-1 truncate text-telegram-subtext" title={item.path}>
-                                {item.path.split('/').pop()}
+                            <div className="flex-1 truncate text-telegram-subtext text-xs" title={item.path}>
+                                {item.path.split(/[/\\]/).pop()}
                             </div>
                             {item.status === 'uploading' && item.progress !== undefined && (
-                                <div className="text-xs text-blue-400 font-mono">{item.progress}%</div>
+                                <div className="text-xs text-blue-400 font-mono font-bold">{item.progress}%</div>
                             )}
                             {item.status === 'error' && <div className="text-xs text-red-400">Error</div>}
                             {item.status === 'cancelled' && <div className="text-xs text-gray-400">Cancelled</div>}
                         </div>
                         {item.status === 'uploading' && (
-                            <div className="w-full bg-telegram-border h-1 mt-1 rounded-full overflow-hidden">
-                                {item.progress !== undefined ? (
+                            <>
+                                <div className="w-full bg-telegram-border h-1.5 mt-1 rounded-full overflow-hidden">
                                     <div
                                         className="bg-blue-500 h-full rounded-full transition-all duration-300"
-                                        style={{ width: `${item.progress}%` }}
+                                        style={{ width: `${item.progress || 0}%` }}
                                     />
-                                ) : (
-                                    <div className="bg-blue-500 h-full w-full animate-progress-indeterminate" />
-                                )}
-                            </div>
+                                </div>
+                                <div className="flex justify-between items-center mt-1 text-[10px] text-telegram-subtext">
+                                    <span>{item.speed ? `${formatBytes(item.speed)}/s` : 'Calculating...'}</span>
+                                    <span>{item.eta ? `ETA: ${formatDuration(item.eta)}` : ''}</span>
+                                </div>
+                            </>
                         )}
                     </div>
                 ))}

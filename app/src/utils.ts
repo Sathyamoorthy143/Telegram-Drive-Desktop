@@ -24,3 +24,13 @@ export const isVideoFile   = (name: string) => endsWithAny(name, VIDEO_EXTENSION
 export const isAudioFile   = (name: string) => endsWithAny(name, AUDIO_EXTENSIONS);
 export const isImageFile   = (name: string) => endsWithAny(name, IMAGE_EXTENSIONS);
 export const isPdfFile     = (name: string) => name.toLowerCase().endsWith('.pdf');
+
+export function formatDuration(seconds: number) {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hours}h ${remainingMins}m`;
+}

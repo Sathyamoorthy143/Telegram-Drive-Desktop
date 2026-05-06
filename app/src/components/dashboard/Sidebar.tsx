@@ -16,11 +16,12 @@ interface SidebarProps {
     onSync: () => void;
     onLogout: () => void;
     bandwidth: BandwidthStats | null;
+    userInfo: UserInfo | null;
 }
 
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onCreate,
-    isSyncing, isConnected, onSync, onLogout, bandwidth
+    isSyncing, isConnected, onSync, onLogout, bandwidth, userInfo
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -38,9 +39,25 @@ export function Sidebar({
 
     return (
         <aside className="w-64 bg-telegram-surface border-r border-telegram-border flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-4 flex items-center gap-2">
-                <img src="/logo.svg" className="w-8 h-8 drop-shadow-lg" alt="Logo" />
-                <span className="font-bold text-lg text-telegram-text tracking-tight">Telegram Drive</span>
+            <div className="p-4 flex items-center gap-3">
+                <div className="relative">
+                    {userInfo ? (
+                        <div className="w-10 h-10 rounded-full bg-telegram-primary/20 flex items-center justify-center text-telegram-primary font-bold border border-telegram-primary/30">
+                            {userInfo.first_name.charAt(0).toUpperCase()}
+                        </div>
+                    ) : (
+                        <img src="/logo.svg" className="w-10 h-10 drop-shadow-lg" alt="Logo" />
+                    )}
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-telegram-surface ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                </div>
+                <div className="flex flex-col min-w-0">
+                    <span className="font-bold text-sm text-telegram-text truncate">
+                        {userInfo ? `${userInfo.first_name} ${userInfo.last_name || ''}` : 'Telegram Drive'}
+                    </span>
+                    <span className="text-[10px] text-telegram-subtext truncate">
+                        {userInfo?.username ? `@${userInfo.username}` : (isConnected ? 'Online' : 'Offline')}
+                    </span>
+                </div>
             </div>
 
             {/* Scrollable folder list */}

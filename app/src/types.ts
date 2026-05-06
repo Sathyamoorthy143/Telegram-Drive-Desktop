@@ -21,6 +21,8 @@ export interface QueueItem {
     status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled';
     error?: string;
     progress?: number; // 0-100
+    speed?: number; // bytes per second
+    eta?: number; // seconds
 }
 
 export interface BandwidthStats {
@@ -36,4 +38,12 @@ export interface DownloadItem {
     status: 'pending' | 'downloading' | 'success' | 'error' | 'cancelled';
     error?: string;
     progress?: number; // 0-100
+}
+
+export interface UserInfo {
+    id: number;
+    first_name: string;
+    last_name?: string;
+    username?: string;
+    phone?: string;
 }

@@ -22,6 +22,7 @@ interface FileExplorerProps {
     onDownload: (id: number, name: string) => void;
     onPreview: (file: TelegramFile, orderedFiles?: TelegramFile[]) => void;
     onManualUpload: () => void;
+    onFolderUpload: () => void;
     onSelectionClear: () => void;
     onToggleSelection: (id: number) => void;
     onDrop?: (e: React.DragEvent, folderId: number) => void;
@@ -58,7 +59,7 @@ function useGridColumns(containerRef: React.RefObject<HTMLDivElement | null>) {
 
 export function FileExplorer({
     files, loading, error, viewMode, selectedIds, activeFolderId,
-    onFileClick, onDelete, onDownload, onPreview, onManualUpload, onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd
+    onFileClick, onDelete, onDownload, onPreview, onManualUpload, onFolderUpload, onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd
 }: FileExplorerProps) {
     const [sortField, setSortField] = useState<SortField>('name');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -102,8 +103,8 @@ export function FileExplorer({
 
 
     const gridRows = useMemo(() => {
-        const rows: (TelegramFile | 'upload')[][] = [];
-        const itemsWithUpload: (TelegramFile | 'upload')[] = [...sortedFiles, 'upload'];
+        const rows: (TelegramFile | 'upload' | 'upload_folder')[][] = [];
+        const itemsWithUpload: (TelegramFile | 'upload' | 'upload_folder')[] = [...sortedFiles, 'upload', 'upload_folder'];
         for (let i = 0; i < itemsWithUpload.length; i += columns) {
             rows.push(itemsWithUpload.slice(i, i + columns));
         }
@@ -112,7 +113,7 @@ export function FileExplorer({
 
 
     const listItems = useMemo(() => {
-        return activeFolderId === null ? [...sortedFiles, 'upload' as const] : sortedFiles;
+        return activeFolderId === null ? [...sortedFiles, 'upload' as const, 'upload_folder' as const] : sortedFiles;
     }, [sortedFiles, activeFolderId]);
 
 
@@ -225,16 +226,29 @@ export function FileExplorer({
                                     }}
                                 >
                                     {row.map((item) => {
-                                        if (item === 'upload') {
+                                         if (item === 'upload') {
+                                             return (
+                                                 <button
+                                                     key="upload"
+                                                     onClick={(e) => { e.stopPropagation(); onManualUpload(); }}
+                                                     className="border-2 border-dashed border-telegram-border rounded-xl flex flex-col items-center justify-center text-telegram-subtext hover:border-telegram-primary hover:text-telegram-primary transition-all group"
+                                                     style={{ height: `${cardHeight}px` }}
+                                                 >
+                                                     <Plus className="w-8 h-8 mb-2 group-hover:scale-110 transition-transform" />
+                                                     <span className="text-sm font-medium">Upload File</span>
+                                                 </button>
+                                             );
+                                         }
+                                         if (item === 'upload_folder') {
                                             return (
                                                 <button
-                                                    key="upload"
-                                                    onClick={(e) => { e.stopPropagation(); onManualUpload(); }}
-                                                    className="border-2 border-dashed border-telegram-border rounded-xl flex flex-col items-center justify-center text-telegram-subtext hover:border-telegram-primary hover:text-telegram-primary transition-all group"
+                                                    key="upload_folder"
+                                                    onClick={(e) => { e.stopPropagation(); onFolderUpload(); }}
+                                                    className="border-2 border-dashed border-telegram-border rounded-xl flex flex-col items-center justify-center text-telegram-subtext hover:border-telegram-primary hover:text-telegram-primary transition-all group bg-telegram-primary/5"
                                                     style={{ height: `${cardHeight}px` }}
                                                 >
-                                                    <Plus className="w-8 h-8 mb-2 group-hover:scale-110 transition-transform" />
-                                                    <span className="text-sm font-medium">Upload File</span>
+                                                    <Plus className="w-8 h-8 mb-2 group-hover:scale-110 transition-transform text-telegram-primary" />
+                                                    <span className="text-sm font-medium">Upload Folder</span>
                                                 </button>
                                             );
                                         }
@@ -299,6 +313,23 @@ export function FileExplorer({
                                         >
                                             <div className="w-5 h-5 flex items-center justify-center"><Plus className="w-4 h-4" /></div>
                                             <span className="text-sm font-medium">Upload File...</span>
+                                        </button>
+                                    </div>
+                                );
+                            }
+                            if (item === 'upload_folder') {
+                                return (
+                                    <div
+                                        key="upload_folder"
+                                        className="absolute top-0 left-0 w-full"
+                                        style={{ transform: `translateY(${virtualItem.start}px)` }}
+                                    >
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onFolderUpload(); }}
+                                            className="flex items-center gap-4 px-4 py-3 rounded-lg cursor-pointer border border-dashed border-telegram-primary/30 text-telegram-primary hover:text-telegram-text hover:bg-telegram-primary/10 w-full"
+                                        >
+                                            <div className="w-5 h-5 flex items-center justify-center"><Plus className="w-4 h-4" /></div>
+                                            <span className="text-sm font-medium text-telegram-primary">Upload Folder...</span>
                                         </button>
                                     </div>
                                 );

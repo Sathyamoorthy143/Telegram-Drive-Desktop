@@ -33,7 +33,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
 
     const {
         store, folders, activeFolderId, setActiveFolderId, isSyncing, isConnected,
-        handleLogout, handleSyncFolders, handleCreateFolder, handleFolderDelete
+        userInfo, handleLogout, handleSyncFolders, handleCreateFolder, handleFolderDelete
     } = useTelegramConnection(onLogout);
 
 
@@ -99,7 +99,9 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
 
     } = useFileOperations(activeFolderId, selectedIds, setSelectedIds, displayedFiles);
 
-    const { uploadQueue, setUploadQueue, handleManualUpload, cancelAll: cancelUploads, isDragging } = useFileUpload(activeFolderId, store);
+    const {
+        uploadQueue, setUploadQueue, handleManualUpload, handleFolderUpload, cancelAll, isDragging
+    } = useFileUpload(activeFolderId, store);
     const { downloadQueue, queueDownload, clearFinished: clearDownloads, cancelAll: cancelDownloads } = useFileDownload(store);
 
 
@@ -399,6 +401,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 onCreate={handleCreateFolder}
                 isSyncing={isSyncing}
                 isConnected={isConnected}
+                userInfo={userInfo}
                 onSync={handleSyncFolders}
                 onLogout={handleLogout}
                 bandwidth={bandwidth || null}
@@ -437,6 +440,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     onDownload={(id, name) => queueDownload(id, name, activeFolderId)}
                     onPreview={handlePreview}
                     onManualUpload={handleManualUpload}
+                    onFolderUpload={handleFolderUpload}
                     onSelectionClear={() => setSelectedIds([])}
                     onToggleSelection={handleToggleSelection}
                     onDrop={handleDropOnFolder}

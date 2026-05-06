@@ -11,6 +11,8 @@ import type { Store } from '@tauri-apps/plugin-store';
 interface ProgressPayload {
     id: string;
     percent: number;
+    speed?: number;
+    eta?: number;
 }
 
 export function useFileUpload(activeFolderId: number | null, store: Store | null) {
@@ -25,7 +27,12 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         let unlisten: UnlistenFn | undefined;
         listen<ProgressPayload>('upload-progress', (event) => {
             setUploadQueue(q => q.map(i =>
-                i.id === event.payload.id ? { ...i, progress: event.payload.percent } : i
+                i.id === event.payload.id ? { 
+                    ...i, 
+                    progress: event.payload.percent,
+                    speed: event.payload.speed,
+                    eta: event.payload.eta 
+                } : i
             ));
         }).then(fn => { unlisten = fn; });
         return () => { unlisten?.(); };
@@ -102,6 +109,20 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         }
     };
 
+    const handleFolderUpload = async () => {
+        try {
+            const selected = await open({ multiple: false, directory: true });
+            if (selected && typeof selected === 'string') {
+                toast.info(`Scanning folder: ${selected.split(/[/\\]/).pop()}`);
+                await invoke('cmd_upload_folder', { path: selected, folderId: activeFolderId });
+                toast.success("Folder upload finished");
+                queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
+            }
+        } catch (e) {
+            toast.error("Failed to upload folder: " + e);
+        }
+    };
+
     const cancelAll = () => {
         setUploadQueue(q => {
             const uploading = q.find(i => i.status === 'uploading');
@@ -119,6 +140,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         uploadQueue,
         setUploadQueue,
         handleManualUpload,
+        handleFolderUpload,
         cancelAll,
         isDragging
     };

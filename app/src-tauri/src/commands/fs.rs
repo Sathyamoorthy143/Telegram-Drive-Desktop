@@ -6,6 +6,11 @@ use crate::TelegramState;
 use crate::models::{FolderMetadata, FileMetadata};
 use crate::bandwidth::BandwidthManager;
 use crate::commands::utils::{resolve_peer, map_error};
+use std::path::Path;
+use walkdir::WalkDir;
+use futures::StreamExt;
+use tokio_util::codec::{BytesCodec, FramedRead};
+use std::time::Instant;
 
 #[tauri::command]
 pub async fn cmd_create_folder(
@@ -112,6 +117,8 @@ pub async fn cmd_delete_folder(
 struct ProgressPayload {
     id: String,
     percent: u8,
+    speed: f64, // Bytes per second
+    eta: u64,   // Seconds remaining
 }
 
 #[tauri::command]
@@ -127,6 +134,7 @@ pub async fn cmd_upload_file(
     bw_state.can_transfer(size)?;
 
     let tid = transfer_id.unwrap_or_default();
+    let filename = Path::new(&path).file_name().unwrap_or_default().to_string_lossy().to_string();
 
     let client_opt = { state.client.lock().await.clone() };
     if client_opt.is_none() {
@@ -136,33 +144,105 @@ pub async fn cmd_upload_file(
     }
     let client = client_opt.unwrap();
     
-    // Emit start progress
-    if !tid.is_empty() {
-        let _ = app_handle.emit("upload-progress", ProgressPayload { id: tid.clone(), percent: 0 });
-    }
+    // Create a progress stream
+    let file = tokio::fs::File::open(&path).await.map_err(|e| e.to_string())?;
+    let mut uploaded: u64 = 0;
+    let start_time = Instant::now();
+    let mut last_emit = Instant::now();
+    let mut last_percent = 0;
 
-    let path_clone = path.clone();
-    let client_clone = client.clone();
-    
-    let uploaded_file = tauri::async_runtime::spawn(async move {
-        client_clone.upload_file(&path_clone).await
-    }).await.map_err(|e| format!("Task join error: {}", e))?
-      .map_err(map_error)?;
+    let app_handle_clone = app_handle.clone();
+    let tid_clone = tid.clone();
+
+    let stream = FramedRead::new(file, BytesCodec::new()).map(move |item| {
+        if let Ok(bytes) = &item {
+            uploaded += bytes.len() as u64;
+            
+            // Emit progress every 500ms or on significant percentage change
+            let percent = ((uploaded as f64 / size as f64) * 100.0) as u8;
+            if last_emit.elapsed().as_millis() > 500 || percent != last_percent {
+                last_percent = percent;
+                last_emit = Instant::now();
+                
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let speed = if elapsed > 0.0 { uploaded as f64 / elapsed } else { 0.0 };
+                let eta = if speed > 0.0 { ((size - uploaded) as f64 / speed) as u64 } else { 0 };
+
+                if !tid_clone.is_empty() {
+                    let _ = app_handle_clone.emit("upload-progress", ProgressPayload { 
+                        id: tid_clone.clone(), 
+                        percent,
+                        speed,
+                        eta,
+                    });
+                }
+            }
+        }
+        item.map(|b| b.freeze())
+    });
+
+    let uploaded_file = client.upload_stream(stream, size as usize, filename).await
+        .map_err(|e| format!("Upload failed: {}", e))?;
         
     let message = InputMessage::new().text("").file(uploaded_file);
-
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
-    
     client.send_message(&peer, message).await.map_err(map_error)?;
     
     bw_state.add_up(size);
 
-    // Emit completion
+    // Emit final completion
     if !tid.is_empty() {
-        let _ = app_handle.emit("upload-progress", ProgressPayload { id: tid, percent: 100 });
+        let _ = app_handle.emit("upload-progress", ProgressPayload { 
+            id: tid, 
+            percent: 100,
+            speed: 0.0,
+            eta: 0,
+        });
     }
 
     Ok("File uploaded successfully".to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_upload_folder(
+    path: String,
+    folder_id: Option<i64>,
+    app_handle: tauri::AppHandle,
+    state: State<'_, TelegramState>,
+    bw_state: State<'_, BandwidthManager>,
+) -> Result<String, String> {
+    let folder_path = Path::new(&path);
+    if !folder_path.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let mut files = Vec::new();
+    for entry in WalkDir::new(folder_path).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            files.push(entry.path().to_owned());
+        }
+    }
+
+    log::info!("Queuing {} files from folder {}", files.len(), path);
+    
+    // In a real app, we might want a real queue, but for now we'll just loop
+    for file_path in files {
+        let path_str = file_path.to_string_lossy().to_string();
+        let tid = format!("upload-{}", uuid::Uuid::new_v4());
+        
+        // We call cmd_upload_file directly. 
+        // Note: In a production app, we'd spawn these as background tasks to avoid blocking.
+        let _ = cmd_upload_file(
+            path_str,
+            folder_id,
+            Some(tid),
+            app_handle.clone(),
+            state.clone(),
+            bw_state.clone(),
+        ).await;
+    }
+
+    Ok("Folder upload complete".to_string())
 }
 
 #[tauri::command]

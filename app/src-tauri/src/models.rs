@@ -41,3 +41,13 @@ pub struct Drive {
     pub name: String,
     pub icon: Option<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserInfo {
+    pub id: i64,
+    pub first_name: String,
+    pub last_name: Option<String>,
+    pub username: Option<String>,
+    pub phone: Option<String>,
+    pub profile_photo_id: Option<String>,
+}
