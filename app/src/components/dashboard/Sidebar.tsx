@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { HardDrive, Folder, Plus, RefreshCw, LogOut } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
-import { TelegramFolder, BandwidthStats } from '../../types';
+import { TelegramFolder, BandwidthStats, UserInfo } from '../../types';
 
 interface SidebarProps {
     folders: TelegramFolder[];
     activeFolderId: number | null;
+    userInfo: UserInfo | null;
     setActiveFolderId: (id: number | null) => void;
     onDrop: (e: React.DragEvent, folderId: number | null) => void;
     onDelete: (id: number, name: string) => void;
