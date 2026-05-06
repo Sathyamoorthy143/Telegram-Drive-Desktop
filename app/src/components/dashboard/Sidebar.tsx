@@ -17,7 +17,6 @@ interface SidebarProps {
     onSync: () => void;
     onLogout: () => void;
     bandwidth: BandwidthStats | null;
-    userInfo: UserInfo | null;
 }
 
 export function Sidebar({
