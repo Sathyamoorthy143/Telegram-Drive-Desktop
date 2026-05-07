@@ -327,8 +327,8 @@ pub async fn cmd_get_user_info(
     let user = client.get_me().await.map_err(map_error)?;
     
     Ok(crate::models::UserInfo {
-        id: user.id(),
-        first_name: user.first_name().to_string(),
+        id: user.raw.id(),
+        first_name: user.first_name().unwrap_or("").to_string(),
         last_name: user.last_name().map(|s| s.to_string()),
         username: user.username().map(|s| s.to_string()),
         phone: user.phone().map(|s| s.to_string()),

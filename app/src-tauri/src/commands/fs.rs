@@ -154,7 +154,7 @@ pub async fn cmd_upload_file(
     let app_handle_clone = app_handle.clone();
     let tid_clone = tid.clone();
 
-    let stream = FramedRead::new(file, BytesCodec::new()).map(move |item| {
+    let mut stream = FramedRead::new(file, BytesCodec::new()).map(move |item| {
         if let Ok(bytes) = &item {
             uploaded += bytes.len() as u64;
             
@@ -181,7 +181,7 @@ pub async fn cmd_upload_file(
         item.map(|b| b.freeze())
     });
 
-    let uploaded_file = client.upload_stream(stream, size as usize, filename).await
+    let uploaded_file = client.upload_stream(&mut stream, size as usize, filename).await
         .map_err(|e| format!("Upload failed: {}", e))?;
         
     let message = InputMessage::new().text("").file(uploaded_file);
@@ -306,7 +306,12 @@ pub async fn cmd_download_file(
 
     // Emit start
     if !tid.is_empty() {
-        let _ = app_handle.emit("download-progress", ProgressPayload { id: tid.clone(), percent: 0 });
+        let _ = app_handle.emit("download-progress", ProgressPayload { 
+            id: tid.clone(), 
+            percent: 0,
+            speed: 0.0,
+            eta: 0,
+        });
     }
 
     // Stream download with per-chunk progress
@@ -314,6 +319,8 @@ pub async fn cmd_download_file(
     let mut file = std::fs::File::create(&save_path).map_err(|e| e.to_string())?;
     let mut downloaded: u64 = 0;
     let mut last_percent: u8 = 0;
+    let start_time = Instant::now();
+    let mut last_emit = Instant::now();
 
     while let Some(chunk) = download_iter.next().await.transpose() {
         let bytes = chunk.map_err(|e| format!("Download chunk error: {}", e))?;
@@ -322,10 +329,22 @@ pub async fn cmd_download_file(
         
         if !tid.is_empty() && total_size > 0 {
             let percent = ((downloaded as f64 / total_size as f64) * 100.0).min(100.0) as u8;
-            // Only emit when percent actually changes to avoid event spam
-            if percent != last_percent {
+            
+            // Emit progress every 500ms or on significant percentage change
+            if last_emit.elapsed().as_millis() > 500 || percent != last_percent {
                 last_percent = percent;
-                let _ = app_handle.emit("download-progress", ProgressPayload { id: tid.clone(), percent });
+                last_emit = Instant::now();
+
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
+                let eta = if speed > 0.0 { ((total_size - downloaded) as f64 / speed) as u64 } else { 0 };
+
+                let _ = app_handle.emit("download-progress", ProgressPayload { 
+                    id: tid.clone(), 
+                    percent,
+                    speed,
+                    eta,
+                });
             }
         }
     }
@@ -334,7 +353,12 @@ pub async fn cmd_download_file(
 
     // Emit completion
     if !tid.is_empty() {
-        let _ = app_handle.emit("download-progress", ProgressPayload { id: tid, percent: 100 });
+        let _ = app_handle.emit("download-progress", ProgressPayload { 
+            id: tid, 
+            percent: 100,
+            speed: 0.0,
+            eta: 0,
+        });
     }
 
     Ok("Download successful".to_string())
