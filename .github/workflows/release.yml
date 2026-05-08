@@ -43,8 +43,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: app
-          tagName: v1.1.9
-          releaseName: "Telegram Drive Desktop v1.1.9"
+          tagName: ${{ github.event.inputs.version }}
+          releaseName: "Telegram Drive Desktop ${{ github.event.inputs.version }}"
           releaseBody: "Automated build of the enhanced Telegram Drive Desktop."
           releaseDraft: true
           prerelease: false
