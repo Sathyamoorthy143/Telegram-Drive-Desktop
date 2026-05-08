@@ -211,35 +211,35 @@ export function Sidebar({
 
             <div className="p-4 border-t border-telegram-border">
                 <div className="flex items-center gap-2 text-telegram-subtext text-xs">
-                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                    <span>{isConnected ? 'Connected to Telegram' : 'Disconnected from Telegram'}</span>
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                    <span className="truncate">{isConnected ? 'Connected to Telegram' : 'Disconnected'}</span>
                 </div>
 
-                <div className="flex gap-2 mt-4">
+                <div className="grid grid-cols-2 gap-2 mt-4">
                     <button
                         onClick={onSync}
                         disabled={isSyncing}
-                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-blue-500 hover:text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-blue-500 hover:text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
                         title="Scan for existing folders"
                     >
-                        <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                        {isSyncing ? 'Syncing...' : 'Sync'}
+                        <RefreshCw className={`w-3 h-3 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
+                        <span className="truncate">{isSyncing ? 'Syncing...' : 'Sync'}</span>
                     </button>
                     <button
                         onClick={onSettings}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border"
+                        className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border"
                         title="App Settings"
                     >
-                        <Settings className="w-3 h-3 text-telegram-subtext" />
-                        Settings
+                        <Settings className="w-3 h-3 flex-shrink-0 text-telegram-subtext" />
+                        <span className="truncate">Settings</span>
                     </button>
                     <button
                         onClick={onLogout}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                        className="col-span-2 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
                         title="Sign Out"
                     >
-                        <LogOut className="w-3 h-3" />
-                        Logout
+                        <LogOut className="w-3 h-3 flex-shrink-0" />
+                        <span>Logout</span>
                     </button>
                 </div>
 
