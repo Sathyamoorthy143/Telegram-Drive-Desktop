@@ -20,7 +20,7 @@ interface ContextMenuProps {
 }
 
 export function ContextMenu({ 
-    x, y, file, onClose, onDownload, onDelete, onPreview, onRename, onCut, onCopy, canPaste, onPaste 
+    x, y, file, onClose, onDownload, onDelete, onPreview, onRename, onCut, onCopy, canPaste, onPaste, onProperties 
 }: ContextMenuProps) {
     const [adjustedPos, setAdjustedPos] = useState({ x, y });
     const menuRef = useRef<HTMLDivElement>(null);
@@ -131,7 +131,10 @@ export function ContextMenu({
                 Rename
             </button>
 
-            <button onClick={onProperties} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
+            <button 
+                onClick={() => onProperties?.()} 
+                className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full"
+            >
                 <Info className="w-4 h-4 text-blue-300" />
                 Properties
             </button>

@@ -1,4 +1,4 @@
-import { X, FileInfo, Calendar, Hash, HardDrive, User, Folder } from 'lucide-react';
+import { X, Calendar, Hash, HardDrive, Folder, Info } from 'lucide-react';
 import { TelegramFile } from '../../types';
 import { formatBytes } from '../../utils';
 
@@ -13,7 +13,7 @@ export function PropertiesModal({ file, onClose }: PropertiesModalProps) {
             <div className="glass-modal rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="px-6 py-4 border-b border-telegram-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <FileInfo className="w-4 h-4 text-telegram-primary" />
+                        <Info className="w-4 h-4 text-telegram-primary" />
                         <h3 className="text-sm font-bold text-telegram-text">Properties</h3>
                     </div>
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full transition-colors">

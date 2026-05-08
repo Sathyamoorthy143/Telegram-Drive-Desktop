@@ -1,11 +1,14 @@
-import { FolderMetadata } from '../types';
+import { TelegramFolder } from '../types';
 
-export interface FolderNode extends FolderMetadata {
+export interface FolderNode extends TelegramFolder {
+    id: number;
+    name: string;
+    parent_id?: number;
     children: FolderNode[];
 }
 
-export function buildFolderTree(folders: FolderMetadata[]): FolderNode[] {
-    const map = new Map<number | i64, FolderNode>();
+export function buildFolderTree(folders: TelegramFolder[]): FolderNode[] {
+    const map = new Map<number, FolderNode>();
     const roots: FolderNode[] = [];
 
     // Initialize all nodes

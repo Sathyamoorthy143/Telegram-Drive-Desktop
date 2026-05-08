@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, History, FileUp, FileDown, Clock, Search, Trash2 } from 'lucide-react';
+import { X, History, FileUp, FileDown, Search, Trash2 } from 'lucide-react';
 import { formatBytes } from '../../utils';
 
 interface TransferLog {

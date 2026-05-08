@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { QueueItem } from '../types';
 import { useFileDrop } from './useFileDrop';
 import { IStore as Store } from '../services/apiBridge';
+import { stat } from '@tauri-apps/plugin-fs';
 
 interface ProgressPayload {
     id: string;
@@ -118,7 +119,6 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
             const selected = await open({ multiple: true, directory: false });
             if (selected) {
                 const paths = Array.isArray(selected) ? selected : [selected];
-                const { stat } = await import('@tauri-apps/plugin-fs');
                 
                 const newItems: QueueItem[] = [];
                 for (const path of paths) {

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 interface AppSettings {
     gemini_api_key?: string;
     theme: string;
-    auto_login: bool;
+    auto_login: boolean;
 }
 
 interface SettingsModalProps {

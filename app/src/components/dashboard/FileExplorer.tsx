@@ -5,7 +5,7 @@ import { FileCard } from './FileCard';
 import { EmptyState } from './EmptyState';
 import { TelegramFile } from '../../types';
 import { ContextMenu } from './ContextMenu';
-import { motion, AnimatePresence } from 'framer-motion';
+// framer-motion used by child components only
 import { FileListItem } from './FileListItem';
 
 type SortField = 'name' | 'size' | 'date';
@@ -269,7 +269,7 @@ export function FileExplorer({
                                                 onClick={(e) => onFileClick(e, file.id)}
                                                 onContextMenu={(e) => handleContextMenu(e, file)}
                                                 onDelete={() => onDelete(file.id)}
-                                                onDownload={() => onDownload(file.id, file.name)}
+                                                onDownload={() => onDownload(file.id, file.name, file.size)}
                                                 onPreview={() => handlePreviewRequest(file)}
                                                 onDrop={onDrop}
                                                 onDragStart={onDragStart}
@@ -358,7 +358,7 @@ export function FileExplorer({
                                         onDragEnd={onDragEnd}
                                         onDrop={onDrop}
                                         onPreview={handlePreviewRequest}
-                                        onDownload={onDownload}
+                                        onDownload={(id, name, size) => onDownload(id, name, size)}
                                         onDelete={onDelete}
                                     />
                                 </div>

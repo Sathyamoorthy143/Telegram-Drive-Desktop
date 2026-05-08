@@ -51,3 +51,13 @@ export interface UserInfo {
     username?: string;
     phone?: string;
 }
+export interface FolderMetadata {
+    id: number;
+    name: string;
+    parent_id?: number;
+    size?: number;
+    file_count?: number;
+}
+
+export type i64 = number;
+export type bool = boolean;
