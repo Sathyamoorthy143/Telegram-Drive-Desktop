@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { HardDrive, Folder, Plus, RefreshCw, LogOut } from 'lucide-react';
+import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
 import { TelegramFolder, BandwidthStats, UserInfo } from '../../types';
+import { buildFolderTree, FolderNode } from '../../utils/treeUtils';
 
 interface SidebarProps {
     folders: TelegramFolder[];
@@ -11,7 +12,8 @@ interface SidebarProps {
     setActiveFolderId: (id: number | null) => void;
     onDrop: (e: React.DragEvent, folderId: number | null) => void;
     onDelete: (id: number, name: string) => void;
-    onCreate: (name: string) => Promise<void>;
+    onCreate: (name: string, parentId?: number) => Promise<void>;
+    onSettings: () => void;
     isSyncing: boolean;
     isConnected: boolean;
     onSync: () => void;
@@ -19,16 +21,116 @@ interface SidebarProps {
     bandwidth: BandwidthStats | null;
 }
 
+function RecursiveTree({ 
+    nodes, activeId, setActiveId, onDrop, onDelete, onCreate, depth = 0 
+}: { 
+    nodes: FolderNode[], 
+    activeId: number | null, 
+    setActiveId: (id: number | null) => void,
+    onDrop: (e: React.DragEvent, folderId: number | null) => void,
+    onDelete: (id: number, name: string) => void,
+    onCreate: (name: string, parentId?: number) => Promise<void>,
+    depth?: number 
+}) {
+    const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+    const [showSubInput, setShowSubInput] = useState<number | null>(null);
+    const [subName, setSubName] = useState("");
+
+    const toggle = (id: number) => {
+        setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+    };
+
+    const submitSub = async (parentId: number) => {
+        if (!subName.trim()) return;
+        await onCreate(subName, parentId);
+        setSubName("");
+        setShowSubInput(null);
+        setExpanded(prev => ({ ...prev, [parentId]: true }));
+    };
+
+    return (
+        <div className="space-y-0.5">
+            {nodes.map(node => (
+                <div key={node.id}>
+                    <div className="group flex items-center pr-2">
+                        {node.children.length > 0 ? (
+                            <button 
+                                onClick={() => toggle(node.id)}
+                                className="p-1 hover:bg-white/5 rounded text-telegram-subtext transition-colors"
+                            >
+                                {expanded[node.id] ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                            </button>
+                        ) : (
+                            <div className="w-5" />
+                        )}
+                        <div className="flex-1">
+                            <SidebarItem
+                                icon={Folder}
+                                label={node.name}
+                                active={activeId === node.id}
+                                onClick={() => setActiveId(node.id)}
+                                onDrop={(e: React.DragEvent) => onDrop(e, node.id)}
+                                onDelete={() => onDelete(node.id, node.name)}
+                                folderId={node.id}
+                            />
+                        </div>
+                        <button 
+                            onClick={() => setShowSubInput(node.id)}
+                            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded text-telegram-subtext hover:text-telegram-primary transition-all"
+                            title="Create subfolder"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                    
+                    {showSubInput === node.id && (
+                        <div className="ml-8 mt-1 pr-2">
+                            <input
+                                autoFocus
+                                type="text"
+                                className="w-full bg-white/5 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-telegram-primary"
+                                placeholder="Subfolder name..."
+                                value={subName}
+                                onChange={e => setSubName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && submitSub(node.id)}
+                                onBlur={() => !subName && setShowSubInput(null)}
+                            />
+                        </div>
+                    )}
+
+                    {node.children.length > 0 && expanded[node.id] && (
+                        <div className="ml-4 border-l border-telegram-border/50 pl-1">
+                            <RecursiveTree 
+                                nodes={node.children} 
+                                activeId={activeId} 
+                                setActiveId={setActiveId}
+                                onDrop={onDrop}
+                                onDelete={onDelete}
+                                onCreate={onCreate}
+                                depth={depth + 1}
+                            />
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onCreate,
-    isSyncing, isConnected, onSync, onLogout, bandwidth, userInfo
+    isSyncing, isConnected, onSync, onLogout, onSettings, bandwidth, userInfo
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
 
+    const folderTree = buildFolderTree(folders);
+
     const submitCreate = async () => {
         if (!newFolderName.trim()) return;
         try {
+            // New folders created from sidebar are root level by default
+            // Unless we add a way to specify parent
             await onCreate(newFolderName);
             setNewFolderName("");
             setShowNewFolderInput(false);
@@ -70,18 +172,15 @@ export function Sidebar({
                     onDrop={(e: React.DragEvent) => onDrop(e, null)}
                     folderId={null}
                 />
-                {folders.map(folder => (
-                    <SidebarItem
-                        key={folder.id}
-                        icon={Folder}
-                        label={folder.name}
-                        active={activeFolderId === folder.id}
-                        onClick={() => setActiveFolderId(folder.id)}
-                        onDrop={(e: React.DragEvent) => onDrop(e, folder.id)}
-                        onDelete={() => onDelete(folder.id, folder.name)}
-                        folderId={folder.id}
-                    />
-                ))}
+                
+                <RecursiveTree 
+                    nodes={folderTree} 
+                    activeId={activeFolderId} 
+                    setActiveId={setActiveFolderId}
+                    onDrop={onDrop}
+                    onDelete={onDelete}
+                    onCreate={onCreate}
+                />
             </nav>
 
             {/* Sticky Create Folder section — always visible above the footer */}
@@ -125,6 +224,14 @@ export function Sidebar({
                     >
                         <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
                         {isSyncing ? 'Syncing...' : 'Sync'}
+                    </button>
+                    <button
+                        onClick={onSettings}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border"
+                        title="App Settings"
+                    >
+                        <Settings className="w-3 h-3 text-telegram-subtext" />
+                        Settings
                     </button>
                     <button
                         onClick={onLogout}

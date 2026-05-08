@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, HardDrive, Trash2, FolderOpen, Pencil, Play, FileText } from 'lucide-react';
+import { Eye, HardDrive, Trash2, FolderOpen, Pencil, Play, FileText, Scissors, Copy, Clipboard, Info } from 'lucide-react';
 import { TelegramFile } from '../../types';
 import { isMediaFile, isPdfFile } from '../../utils';
 
@@ -11,9 +11,17 @@ interface ContextMenuProps {
     onDownload: () => void;
     onDelete: () => void;
     onPreview: () => void;
+    onRename?: () => void;
+    onCut?: () => void;
+    onCopy?: () => void;
+    onProperties?: () => void;
+    canPaste?: boolean;
+    onPaste?: () => void;
 }
 
-export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPreview }: ContextMenuProps) {
+export function ContextMenu({ 
+    x, y, file, onClose, onDownload, onDelete, onPreview, onRename, onCut, onCopy, canPaste, onPaste 
+}: ContextMenuProps) {
     const [adjustedPos, setAdjustedPos] = useState({ x, y });
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -95,9 +103,37 @@ export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPrevi
                 Download
             </button>
 
-            <button disabled className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-subtext hover:bg-telegram-hover rounded transition-colors text-left w-full cursor-not-allowed opacity-50">
-                <Pencil className="w-4 h-4" />
+            <div className="h-px bg-telegram-border my-1" />
+
+            <button onClick={onCut} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
+                <Scissors className="w-4 h-4 text-orange-400" />
+                Cut
+            </button>
+
+            <button onClick={onCopy} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
+                <Copy className="w-4 h-4 text-blue-400" />
+                Copy
+            </button>
+
+            {canPaste && (
+                <button onClick={onPaste} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
+                    <Clipboard className="w-4 h-4 text-green-400" />
+                    Paste
+                </button>
+            )}
+
+            <button 
+                onClick={onRename} 
+                disabled={file.type !== 'folder'}
+                className={`flex items-center gap-2 px-2 py-1.5 text-sm rounded transition-colors text-left w-full ${file.type === 'folder' ? 'text-telegram-text hover:bg-telegram-hover' : 'text-telegram-subtext cursor-not-allowed opacity-50'}`}
+            >
+                <Pencil className="w-4 h-4 text-purple-400" />
                 Rename
+            </button>
+
+            <button onClick={onProperties} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
+                <Info className="w-4 h-4 text-blue-300" />
+                Properties
             </button>
 
             <div className="h-px bg-telegram-border my-1" />
@@ -109,3 +145,4 @@ export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPrevi
         </div>
     );
 }
+

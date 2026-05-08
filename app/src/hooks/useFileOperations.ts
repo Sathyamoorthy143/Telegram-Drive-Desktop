@@ -8,7 +8,9 @@ export function useFileOperations(
     activeFolderId: number | null,
     selectedIds: number[],
     setSelectedIds: (ids: number[]) => void,
-    displayedFiles: TelegramFile[]
+    displayedFiles: TelegramFile[],
+    clipboard: { type: 'cut' | 'copy'; ids: number[]; sourceFolderId: number | null } | null,
+    setClipboard: (val: { type: 'cut' | 'copy'; ids: number[]; sourceFolderId: number | null } | null) => void
 ) {
     const queryClient = useQueryClient();
     const { confirm } = useConfirm();
@@ -125,6 +127,50 @@ export function useFileOperations(
         }
     }
 
+    const handleRename = async (id: number, currentName: string, isFolder: boolean) => {
+        if (!isFolder) {
+            toast.info("Telegram does not support renaming files directly. Re-upload with a different name.");
+            return;
+        }
+        const newName = window.prompt("Enter new folder name:", currentName);
+        if (!newName || newName === currentName) return;
+
+        try {
+            await invoke('cmd_rename_folder', { folderId: id, newName });
+            toast.success("Folder renamed.");
+            queryClient.invalidateQueries({ queryKey: ['folders'] });
+        } catch (e) {
+            toast.error(`Rename failed: ${e}`);
+        }
+    };
+
+    const handleCut = (ids: number[]) => {
+        setClipboard({ type: 'cut', ids, sourceFolderId: activeFolderId });
+        toast.info(`Cut ${ids.length} items to clipboard.`);
+    };
+
+    const handleCopy = (ids: number[]) => {
+        setClipboard({ type: 'copy', ids, sourceFolderId: activeFolderId });
+        toast.info(`Copied ${ids.length} items to clipboard.`);
+    };
+
+    const handlePaste = async () => {
+        if (!clipboard) return;
+        try {
+            const command = clipboard.type === 'cut' ? 'cmd_move_files' : 'cmd_copy_files';
+            await invoke(command, {
+                messageIds: clipboard.ids,
+                sourceFolderId: clipboard.sourceFolderId,
+                targetFolderId: activeFolderId
+            });
+            toast.success(`${clipboard.type === 'cut' ? 'Moved' : 'Copied'} ${clipboard.ids.length} items.`);
+            queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
+            if (clipboard.type === 'cut') setClipboard(null);
+        } catch (e) {
+            toast.error(`Paste failed: ${e}`);
+        }
+    };
+
     return {
         handleDelete,
         handleBulkDelete,
@@ -132,6 +178,10 @@ export function useFileOperations(
         handleBulkDownload,
         handleBulkMove,
         handleDownloadFolder,
+        handleRename,
+        handleCut,
+        handleCopy,
+        handlePaste,
         handleGlobalSearch: async (query: string) => {
             try {
                 return await invoke<TelegramFile[]>('cmd_search_global', { query });
@@ -141,3 +191,4 @@ export function useFileOperations(
         }
     };
 }
+

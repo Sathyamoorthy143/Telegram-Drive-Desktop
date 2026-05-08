@@ -17,6 +17,7 @@ export interface TelegramFolder {
 export interface QueueItem {
     id: string;
     path: string;
+    size: number;
     folderId: number | null;
     status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled';
     error?: string;
@@ -34,10 +35,13 @@ export interface DownloadItem {
     id: string;
     messageId: number;
     filename: string;
+    size: number;
     folderId: number | null;
     status: 'pending' | 'downloading' | 'success' | 'error' | 'cancelled';
     error?: string;
     progress?: number; // 0-100
+    speed?: number; // bytes per second
+    eta?: number; // seconds
 }
 
 export interface UserInfo {

@@ -9,7 +9,29 @@ import { IStore as Store } from '../services/apiBridge';
 interface ProgressPayload {
     id: string;
     percent: number;
+    speed?: number;
+    eta?: number;
 }
+
+const logTransfer = (name: string, type: 'upload' | 'download', size: number, status: 'success' | 'error', error?: string) => {
+    try {
+        const saved = localStorage.getItem('transfer_logs');
+        const logs = saved ? JSON.parse(saved) : [];
+        const newLog = {
+            id: Math.random().toString(36).substr(2, 9),
+            name,
+            type,
+            size,
+            status,
+            timestamp: Date.now(),
+            error
+        };
+        logs.push(newLog);
+        localStorage.setItem('transfer_logs', JSON.stringify(logs.slice(-1000)));
+    } catch (e) {
+        console.error("Failed to save log:", e);
+    }
+};
 
 export function useFileDownload(store: Store | null) {
     const [downloadQueue, setDownloadQueue] = useState<DownloadItem[]>([]);
@@ -82,11 +104,13 @@ export function useFileDownload(store: Store | null) {
                 cancelledRef.current.delete(item.id);
             } else {
                 setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'success', progress: 100 } : i));
+                logTransfer(item.filename, 'download', item.size, 'success');
                 toast.success(`Downloaded: ${item.filename}`);
             }
         } catch (e) {
             if (!cancelledRef.current.has(item.id)) {
                 setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: String(e) } : i));
+                logTransfer(item.filename, 'download', item.size, 'error', String(e));
                 toast.error(`Download failed: ${item.filename}`);
             } else {
                 cancelledRef.current.delete(item.id);
@@ -96,11 +120,12 @@ export function useFileDownload(store: Store | null) {
         }
     };
 
-    const queueDownload = (messageId: number, filename: string, folderId: number | null) => {
+    const queueDownload = (messageId: number, filename: string, size: number, folderId: number | null) => {
         const newItem: DownloadItem = {
             id: Math.random().toString(36).substr(2, 9),
             messageId,
             filename,
+            size,
             folderId,
             status: 'pending'
         };
@@ -120,6 +145,7 @@ export function useFileDownload(store: Store | null) {
                 id: Math.random().toString(36).substr(2, 9),
                 messageId: file.id,
                 filename: file.name,
+                size: file.size,
                 folderId,
                 status: 'pending'
             };

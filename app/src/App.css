@@ -242,6 +242,34 @@ body,
   color: #9ca3af;
 }
 
+/* Dynamic Mesh Background */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.bg-dynamic-mesh {
+  background: linear-gradient(-45deg, #0e1621, #17212b, #2481cc, #17212b);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+/* Glassmorphism for Modals */
+.glass-modal {
+  background: rgba(23, 33, 43, 0.85);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+}
+
+:root.light .glass-modal {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
 :root.light input:focus,
 :root.light textarea:focus {
   border-color: var(--color-telegram-primary);

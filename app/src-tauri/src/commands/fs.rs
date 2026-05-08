@@ -16,6 +16,7 @@ use std::time::Instant;
 #[tauri::command]
 pub async fn cmd_create_folder(
     name: String,
+    parent_id: Option<i64>,
     state: State<'_, TelegramState>,
 ) -> Result<FolderMetadata, String> {
     let client_opt = {
@@ -25,27 +26,32 @@ pub async fn cmd_create_folder(
     // --- MOCK ---
     if client_opt.is_none() {
         let mock_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-        log::info!("[MOCK] Created folder '{}' with ID {}", name, mock_id);
+        log::info!("[MOCK] Created folder '{}' (parent: {:?}) with ID {}", name, parent_id, mock_id);
         return Ok(FolderMetadata {
             id: mock_id,
             name,
-            parent_id: None,
+            parent_id,
         });
     }
     // -----------
     let client = client_opt.unwrap();
-    log::info!("Creating Telegram Channel: {}", name);
+    log::info!("Creating Telegram Channel: {} (Parent: {:?})", name, parent_id);
     
+    let about = match parent_id {
+        Some(pid) => format!("parent_id:{}\n[telegram-drive-folder]", pid),
+        None => "Telegram Drive Storage Folder\n[telegram-drive-folder]".to_string(),
+    };
+
     let result = client.invoke(&tl::functions::channels::CreateChannel {
         broadcast: true,
         megagroup: false,
         title: format!("{} [TD]", name),
-        about: "Telegram Drive Storage Folder\n[telegram-drive-folder]".to_string(),
+        about,
         geo_point: None,
         address: None,
         for_import: false,
         forum: false,
-        ttl_period: None, // Initial creation TTL
+        ttl_period: None,
     }).await.map_err(map_error)?;
     
     let (chat_id, access_hash) = match result {
@@ -59,12 +65,19 @@ pub async fn cmd_create_folder(
         _ => return Err("Unexpected response (not Updates::Updates)".to_string()), 
     };
 
-    // Explicitly Disable TTL
-    let _input_channel = tl::enums::InputChannel::Channel(tl::types::InputChannel {
-         channel_id: chat_id,
-         access_hash,
+    // Cache the peer
+    let mut cache = state.peer_cache.write().await;
+    let peer = Peer::Channel(grammers_client::types::Channel {
+        raw: tl::types::Channel {
+            id: chat_id,
+            access_hash: Some(access_hash),
+            title: format!("{} [TD]", name),
+            ..Default::default()
+        }
     });
+    cache.insert(chat_id, peer);
 
+    // Explicitly Disable TTL
     let _ = client.invoke(&tl::functions::messages::SetHistoryTtl {
         peer: tl::enums::InputPeer::Channel(tl::types::InputPeerChannel { channel_id: chat_id, access_hash }),
         period: 0, 
@@ -73,7 +86,7 @@ pub async fn cmd_create_folder(
     Ok(FolderMetadata {
         id: chat_id,
         name,
-        parent_id: None,
+        parent_id,
     })
 }
 
@@ -105,11 +118,43 @@ pub async fn cmd_delete_folder(
         },
         _ => return Err("Only channels (folders) can be deleted.".to_string()),
     };
-    
     client.invoke(&tl::functions::channels::DeleteChannel {
         channel: input_channel,
     }).await.map_err(|e| format!("Failed to delete channel: {}", e))?;
     
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn cmd_rename_folder(
+    folder_id: i64,
+    new_name: String,
+    state: State<'_, TelegramState>,
+) -> Result<bool, String> {
+    let client_opt = { state.client.lock().await.clone() };
+    if client_opt.is_none() {
+        log::info!("[MOCK] Renamed folder ID {} to {}", folder_id, new_name);
+        return Ok(true);
+    }
+    let client = client_opt.unwrap();
+    let peer = resolve_peer(&client, Some(folder_id), &state.peer_cache).await?;
+    
+    let input_channel = match peer {
+        Peer::Channel(c) => {
+             let chan = &c.raw;
+             tl::enums::InputChannel::Channel(tl::types::InputChannel {
+                 channel_id: chan.id,
+                 access_hash: chan.access_hash.ok_or("No access hash for channel")?,
+             })
+        },
+        _ => return Err("Only channels (folders) can be renamed.".to_string()),
+    };
+
+    client.invoke(&tl::functions::channels::EditTitle {
+        channel: input_channel,
+        title: format!("{} [TD]", new_name),
+    }).await.map_err(|e| format!("Failed to rename channel: {}", e))?;
+
     Ok(true)
 }
 
@@ -398,6 +443,30 @@ pub async fn cmd_move_files(
 }
 
 #[tauri::command]
+pub async fn cmd_copy_files(
+    message_ids: Vec<i32>,
+    source_folder_id: Option<i64>,
+    target_folder_id: Option<i64>,
+    state: State<'_, TelegramState>,
+) -> Result<bool, String> {
+    if source_folder_id == target_folder_id { return Ok(true); }
+    let client_opt = { state.client.lock().await.clone() };
+    if client_opt.is_none() { 
+        log::info!("[MOCK] Copied msgs {:?} from {:?} to {:?}", message_ids, source_folder_id, target_folder_id);
+        return Ok(true); 
+    }
+    let client = client_opt.unwrap();
+
+    let source_peer = resolve_peer(&client, source_folder_id, &state.peer_cache).await?;
+    let target_peer = resolve_peer(&client, target_folder_id, &state.peer_cache).await?;
+
+    client.forward_messages(&target_peer, &message_ids, &source_peer).await
+        .map_err(|e| format!("Copy (Forward) failed: {}", e))?;
+
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn cmd_get_files(
     folder_id: Option<i64>,
     state: State<'_, TelegramState>,
@@ -572,7 +641,13 @@ pub async fn cmd_scan_folders(
                         if let tl::enums::ChatFull::Full(cf) = f.full_chat {
                              if cf.about.contains("[telegram-drive-folder]") {
                                  log::info!(" -> MATCH via About: {}", name);
-                                 folders.push(FolderMetadata { id, name: name.clone(), parent_id: None });
+                                 
+                                 let pid = cf.about.lines()
+                                     .find(|l| l.starts_with("parent_id:"))
+                                     .and_then(|l| l.split(':').nth(1))
+                                     .and_then(|s| s.parse::<i64>().ok());
+
+                                 folders.push(FolderMetadata { id, name: name.clone(), parent_id: pid });
                              }
                         }
                     },

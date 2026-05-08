@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use commands::TelegramState;
 use commands::streaming::StreamConfig;
+use commands::settings::{SettingsState, init_settings, get_settings, save_settings};
 use rand::Rng;
 
 pub mod server;
@@ -60,6 +61,7 @@ pub fn run() {
                 peer_cache: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             });
             app.manage(bandwidth::BandwidthManager::new(app.handle()));
+            app.manage(SettingsState(std::sync::Mutex::new(init_settings(app.handle()))));
             app.manage(StreamConfig { token: stream_token.clone(), port: STREAM_PORT });
             app.manage(ActixServerHandle(server_handle_for_setup.clone()));
             
@@ -97,6 +99,8 @@ pub fn run() {
             commands::cmd_delete_file,
             commands::cmd_download_file,
             commands::cmd_move_files,
+            commands::cmd_copy_files,
+            commands::cmd_rename_folder,
             commands::cmd_create_folder,
             commands::cmd_delete_folder,
             commands::cmd_get_bandwidth,
@@ -109,6 +113,9 @@ pub fn run() {
             commands::cmd_clean_cache,
             commands::cmd_get_thumbnail,
             commands::cmd_get_stream_info,
+            commands::cmd_gemini_chat,
+            get_settings,
+            save_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

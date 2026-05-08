@@ -5,6 +5,7 @@ import { FileCard } from './FileCard';
 import { EmptyState } from './EmptyState';
 import { TelegramFile } from '../../types';
 import { ContextMenu } from './ContextMenu';
+import { motion, AnimatePresence } from 'framer-motion';
 import { FileListItem } from './FileListItem';
 
 type SortField = 'name' | 'size' | 'date';
@@ -19,7 +20,7 @@ interface FileExplorerProps {
     activeFolderId: number | null;
     onFileClick: (e: React.MouseEvent, id: number) => void;
     onDelete: (id: number) => void;
-    onDownload: (id: number, name: string) => void;
+    onDownload: (id: number, name: string, size: number) => void;
     onPreview: (file: TelegramFile, orderedFiles?: TelegramFile[]) => void;
     onManualUpload: () => void;
     onFolderUpload: () => void;
@@ -28,6 +29,12 @@ interface FileExplorerProps {
     onDrop?: (e: React.DragEvent, folderId: number) => void;
     onDragStart?: (fileId: number) => void;
     onDragEnd?: () => void;
+    onRename: (id: number, currentName: string, isFolder: boolean) => void;
+    onCut: (ids: number[]) => void;
+    onCopy: (ids: number[]) => void;
+    onPaste: () => void;
+    canPaste: boolean;
+    onProperties: (file: TelegramFile) => void;
 }
 
 
@@ -59,7 +66,8 @@ function useGridColumns(containerRef: React.RefObject<HTMLDivElement | null>) {
 
 export function FileExplorer({
     files, loading, error, viewMode, selectedIds, activeFolderId,
-    onFileClick, onDelete, onDownload, onPreview, onManualUpload, onFolderUpload, onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd
+    onFileClick, onDelete, onDownload, onPreview, onManualUpload, onFolderUpload, onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd,
+    onRename, onCut, onCopy, onPaste, canPaste, onProperties
 }: FileExplorerProps) {
     const [sortField, setSortField] = useState<SortField>('name');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -367,7 +375,7 @@ export function FileExplorer({
                     file={contextMenu.file}
                     onClose={() => setContextMenu(null)}
                     onDownload={() => {
-                        onDownload(contextMenu.file.id, contextMenu.file.name);
+                        onDownload(contextMenu.file.id, contextMenu.file.name, contextMenu.file.size);
                         setContextMenu(null);
                     }}
                     onDelete={() => {
@@ -380,6 +388,29 @@ export function FileExplorer({
                         } else {
                             handlePreviewRequest(contextMenu.file);
                         }
+                        setContextMenu(null);
+                    }}
+                    onRename={() => {
+                        onRename(contextMenu.file.id, contextMenu.file.name, contextMenu.file.type === 'folder');
+                        setContextMenu(null);
+                    }}
+                    onCut={() => {
+                        const ids = selectedIds.includes(contextMenu.file.id) ? selectedIds : [contextMenu.file.id];
+                        onCut(ids);
+                        setContextMenu(null);
+                    }}
+                    onCopy={() => {
+                        const ids = selectedIds.includes(contextMenu.file.id) ? selectedIds : [contextMenu.file.id];
+                        onCopy(ids);
+                        setContextMenu(null);
+                    }}
+                    canPaste={canPaste}
+                    onPaste={() => {
+                        onPaste();
+                        setContextMenu(null);
+                    }}
+                    onProperties={() => {
+                        onProperties(contextMenu.file);
                         setContextMenu(null);
                     }}
                 />

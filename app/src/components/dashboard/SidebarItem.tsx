@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface SidebarItemProps {
     icon: React.ElementType;
@@ -11,17 +12,13 @@ interface SidebarItemProps {
     folderId: number | null;
 }
 
-/**
- * SidebarItem - Pure DOM event-based drop handling
- * 
- * With Tauri's dragDropEnabled: false, DOM events work reliably.
- * This component handles internal file moves via standard React drag events.
- */
 export function SidebarItem({ icon: Icon, label, active = false, onClick, onDrop, onDelete }: SidebarItemProps) {
     const [isOver, setIsOver] = useState(false);
 
     return (
-        <button
+        <motion.button
+            whileHover={{ x: 2 }}
+            whileTap={{ scale: 0.98 }}
             onClick={onClick}
             onDragEnter={(e) => {
                 e.preventDefault();
@@ -70,6 +67,6 @@ export function SidebarItem({ icon: Icon, label, active = false, onClick, onDrop
                     <Plus className="w-3 h-3 rotate-45" />
                 </div>
             )}
-        </button>
+        </motion.button>
     )
 }

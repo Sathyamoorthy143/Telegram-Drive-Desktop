@@ -15,6 +15,27 @@ interface ProgressPayload {
     eta?: number;
 }
 
+const logTransfer = (name: string, type: 'upload' | 'download', size: number, status: 'success' | 'error', error?: string) => {
+    try {
+        const saved = localStorage.getItem('transfer_logs');
+        const logs = saved ? JSON.parse(saved) : [];
+        const newLog = {
+            id: Math.random().toString(36).substr(2, 9),
+            name,
+            type,
+            size,
+            status,
+            timestamp: Date.now(),
+            error
+        };
+        logs.push(newLog);
+        // Keep only last 1000 logs
+        localStorage.setItem('transfer_logs', JSON.stringify(logs.slice(-1000)));
+    } catch (e) {
+        console.error("Failed to save log:", e);
+    }
+};
+
 export function useFileUpload(activeFolderId: number | null, store: Store | null) {
     const queryClient = useQueryClient();
     const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
@@ -76,11 +97,13 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
                 cancelledRef.current.delete(item.id);
             } else {
                 setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'success', progress: 100 } : i));
+                logTransfer(item.path.split(/[/\\]/).pop() || 'Unknown', 'upload', item.size, 'success');
                 queryClient.invalidateQueries({ queryKey: ['files', item.folderId] });
             }
         } catch (e) {
             if (!cancelledRef.current.has(item.id)) {
                 setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: String(e) } : i));
+                logTransfer(item.path.split(/[/\\]/).pop() || 'Unknown', 'upload', item.size, 'error', String(e));
                 toast.error(`Upload failed for ${item.path.split('/').pop()}: ${e}`);
             } else {
                 cancelledRef.current.delete(item.id);
@@ -95,17 +118,25 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
             const selected = await open({ multiple: true, directory: false });
             if (selected) {
                 const paths = Array.isArray(selected) ? selected : [selected];
-                const newItems: QueueItem[] = paths.map((path: string) => ({
-                    id: Math.random().toString(36).substr(2, 9),
-                    path,
-                    folderId: activeFolderId,
-                    status: 'pending'
-                }));
+                const { stat } = await import('@tauri-apps/plugin-fs');
+                
+                const newItems: QueueItem[] = [];
+                for (const path of paths) {
+                    const info = await stat(path);
+                    newItems.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        path,
+                        size: info.size,
+                        folderId: activeFolderId,
+                        status: 'pending'
+                    });
+                }
+                
                 setUploadQueue(prev => [...prev, ...newItems]);
                 toast.info(`Queued ${paths.length} files for upload`);
             }
-        } catch {
-            toast.error("Failed to open file dialog");
+        } catch (err) {
+            toast.error("Failed to open file dialog or get file info: " + err);
         }
     };
 

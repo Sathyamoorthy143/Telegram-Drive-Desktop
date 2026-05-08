@@ -135,7 +135,18 @@ pub async fn cmd_check_connection(
     }
 
     // 2. Reconnect Logic
-    let api_id_opt = *state.api_id.lock().await;
+    let api_id_opt = {
+        let mem_id = *state.api_id.lock().await;
+        if mem_id.is_some() {
+            mem_id
+        } else {
+            // Check settings
+            let settings_state = app_handle.state::<crate::commands::settings::SettingsState>();
+            let settings = settings_state.0.lock().unwrap();
+            settings.telegram_api_id
+        }
+    };
+
     if let Some(api_id) = api_id_opt {
         // Force re-init: Clear old client first to ensure fresh pool
         *state.client.lock().await = None;
@@ -211,8 +222,22 @@ pub async fn cmd_auth_request_code(
         return Err("API Hash cannot be empty.".to_string());
     }
 
-    // Store API ID
+    // Store API ID in memory
     *state.api_id.lock().await = Some(api_id);
+
+    // Persist API ID in settings
+    {
+        let settings_state = app_handle.state::<crate::commands::settings::SettingsState>();
+        let mut settings = settings_state.0.lock().unwrap();
+        settings.telegram_api_id = Some(api_id);
+        
+        // Save to disk
+        let app_data_dir = app_handle.path().app_data_dir().unwrap();
+        let file_path = app_data_dir.join("settings.json");
+        if let Ok(json) = serde_json::to_string_pretty(&*settings) {
+            let _ = std::fs::write(file_path, json);
+        }
+    }
 
     let client_handle = ensure_client_initialized(&app_handle, &state, api_id).await?;
     

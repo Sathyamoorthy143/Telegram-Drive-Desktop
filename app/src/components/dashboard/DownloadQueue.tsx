@@ -1,5 +1,6 @@
 import { DownloadItem } from "../../types";
 import { Download, Check, X, AlertCircle } from "lucide-react";
+import { formatBytes, formatDuration } from "../../utils";
 
 interface DownloadQueueProps {
     items: DownloadItem[];
@@ -65,6 +66,12 @@ export function DownloadQueue({ items, onClearFinished, onCancelAll }: DownloadQ
                                 ) : (
                                     <div className="bg-telegram-secondary h-full w-full animate-progress-indeterminate" />
                                 )}
+                            </div>
+                        )}
+                        {item.status === 'downloading' && (
+                            <div className="flex justify-between items-center mt-1 text-[10px] text-telegram-subtext">
+                                <span>{item.speed ? `${formatBytes(item.speed)}/s` : 'Calculating...'}</span>
+                                <span>{item.eta ? `ETA: ${formatDuration(item.eta)}` : ''}</span>
                             </div>
                         )}
                         {item.status === 'error' && item.error && (
