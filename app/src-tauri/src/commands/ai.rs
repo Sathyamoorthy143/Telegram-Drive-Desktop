@@ -42,7 +42,7 @@ pub async fn cmd_gemini_chat(
     
     let client = Client::new();
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={}",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={}",
         key
     );
 
