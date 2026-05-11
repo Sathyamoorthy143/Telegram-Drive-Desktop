@@ -1,5 +1,5 @@
 import os
-import google.generativeai as genai
+from google import genai
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
@@ -7,12 +7,9 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Initialize the Google Generative AI with the API key from environment
+# Initialize the NEW Google GenAI Client (Latest SDK)
 api_key = os.environ.get("GEMINI_API_KEY")
-if not api_key:
-    print("WARNING: GEMINI_API_KEY not found in .env file")
-else:
-    genai.configure(api_key=api_key)
+client = genai.Client(api_key=api_key)
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -23,11 +20,11 @@ def chat():
         if not user_message:
             return jsonify({"error": "No message provided"}), 400
 
-        # Use the latest stable flash model (confirmed available on your key)
-        model = genai.GenerativeModel("gemini-flash-latest")
-        
-        # Generate the response
-        response = model.generate_content(user_message)
+        # Use the confirmed working model pointer
+        response = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=user_message
+        )
 
         if not response.text:
             return jsonify({"error": "Model returned empty response"}), 500
@@ -40,9 +37,9 @@ def chat():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/", methods=["GET"])
-def health_check():
-    return jsonify({"status": "healthy", "model": "gemini-1.5-flash"}), 200
+def health():
+    return jsonify({"status": "ready"}), 200
 
 if __name__ == "__main__":
-    # Ensure it runs on 127.0.0.1:5000 as expected by the Tauri app
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Disable debug/reloader to prevent threading exceptions in some Windows terminals
+    app.run(host="127.0.0.1", port=5000, debug=False)
