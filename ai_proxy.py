@@ -23,8 +23,8 @@ def chat():
         if not user_message:
             return jsonify({"error": "No message provided"}), 400
 
-        # Use the stable gemini-1.5-flash model which has better free-tier support
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Use the latest stable flash model (confirmed available on your key)
+        model = genai.GenerativeModel("gemini-flash-latest")
         
         # Generate the response
         response = model.generate_content(user_message)
