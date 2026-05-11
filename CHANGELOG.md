@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.125] - 2026-05-11
+
+### Features
+- **Enhanced Folder Operations**: You can now perform Cut, Copy, Rename, and view detailed Properties for folders and subfolders directly from the main file explorer.
+- **Improved Properties View**: Folders now show total file count and cumulative size, calculated in real-time.
+
+### Fixes
+- **Gemini API Error**: Resolved the `404 NOT_FOUND` error in the AI Assistant by migrating to the `v1beta` endpoint for Gemini 1.5 Flash.
+
+---
+
 ## [1.1.7] - 2026-05-01
 
 ### Feature
