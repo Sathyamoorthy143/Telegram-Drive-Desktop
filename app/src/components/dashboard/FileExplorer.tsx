@@ -65,7 +65,7 @@ export function FileExplorer({
     files, loading, error, viewSettings, onUpdateViewSettings, selectedIds, activeFolderId,
     onFileClick, onDelete, onDownload, onPreview, onManualUpload, onFolderUpload, handleDroppedFiles,
     onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd,
-    onRename, onCut, onCopy, onMove, onPaste, canPaste, onProperties
+    onRename, onCut, onCopy, onMove, onPaste, canPaste, onProperties, onOpenFolder
 }: FileExplorerProps) {
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file?: TelegramFile; isFolder?: boolean } | null>(null);
     const [isOSDragging, setIsOSDragging] = useState(false);
