@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 
-import { TelegramFile, BandwidthStats, Clipboard } from '../types';
+import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings } from '../types';
 import { formatBytes, isMediaFile, isPdfFile } from '../utils';
 
 // Components
@@ -69,7 +69,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
     const [previewContextFiles, setPreviewContextFiles] = useState<TelegramFile[]>([]);
     const [previewContextIndex, setPreviewContextIndex] = useState(-1);
-    const [clipboard, setClipboard] = useState<Clipboard | null>(null);
+    const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
     const [propertyFile, setPropertyFile] = useState<TelegramFile | null>(null);
 
     useEffect(() => {
@@ -78,7 +78,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 if (saved) setViewSettings(saved);
                 else {
                     store.get<'grid' | 'list'>('viewMode').then((oldMode) => {
-                        if (oldMode) setViewSettings(v => ({ ...v, viewMode: oldMode }));
+                        if (oldMode) setViewSettings((v: ViewSettings) => ({ ...v, viewMode: oldMode }));
                     });
                 }
             });
@@ -139,7 +139,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const { downloadQueue, queueDownload, clearFinished: clearDownloads, cancelAll: cancelDownloads } = useFileDownload(store);
 
     const onUpdateViewSettings = (settings: Partial<ViewSettings>) => {
-        setViewSettings(prev => ({ ...prev, ...settings }));
+        setViewSettings((prev: ViewSettings) => ({ ...prev, ...settings }));
     };
 
 

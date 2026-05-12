@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info } from 'lucide-react';
+import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
 import { TelegramFolder, BandwidthStats, UserInfo } from '../../types';

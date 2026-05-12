@@ -1,5 +1,5 @@
 import { 
-    HardDrive, LayoutGrid, Sun, Moon, ChevronDown, ListFilter, 
+    HardDrive, LayoutGrid, Sun, Moon, ChevronDown, 
     SlidersHorizontal, PanelRightClose, PanelRightOpen, FilePlus, 
     FolderPlus, ArrowUpDown, Check, List, Grid2X2, LayoutList, Search
 } from 'lucide-react';
@@ -23,8 +23,8 @@ interface TopBarProps {
 }
 
 export function TopBar({
-    currentFolderName, selectedIds, onShowMoveModal, onBulkDownload, onBulkDelete,
-    onDownloadFolder, onManualUpload, onFolderUpload, viewSettings, onUpdateViewSettings, 
+    selectedIds, onShowMoveModal, onBulkDownload, onBulkDelete,
+    onManualUpload, onFolderUpload, viewSettings, onUpdateViewSettings, 
     searchTerm, onSearchChange
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();

@@ -2,15 +2,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useConfirm } from '../context/ConfirmContext';
-import { TelegramFile, Clipboard } from '../types';
+import { TelegramFile, FileClipboard } from '../types';
 
 export function useFileOperations(
     activeFolderId: number | null,
     selectedIds: number[],
     setSelectedIds: (ids: number[]) => void,
     displayedFiles: TelegramFile[],
-    clipboard: Clipboard | null,
-    setClipboard: (val: Clipboard | null) => void
+    clipboard: FileClipboard | null,
+    setClipboard: (val: FileClipboard | null) => void
 ) {
     const queryClient = useQueryClient();
     const { confirm } = useConfirm();

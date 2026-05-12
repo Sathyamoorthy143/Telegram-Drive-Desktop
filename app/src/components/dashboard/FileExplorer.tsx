@@ -1,9 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Plus, ArrowUpDown, ArrowUp, ArrowDown, Folder } from 'lucide-react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { Plus, Folder } from 'lucide-react';
 import { FileCard } from './FileCard';
 import { EmptyState } from './EmptyState';
-import { TelegramFile, ViewSettings, SortField, SortDirection, GroupBy } from '../../types';
+import { TelegramFile, ViewSettings } from '../../types';
 import { ContextMenu } from './ContextMenu';
 import { FileListItem } from './FileListItem';
 import { PreviewPane } from './PreviewPane';
@@ -76,7 +75,6 @@ export function FileExplorer({
     const GAP = 8;
     const cardWidth = (containerWidth - (GAP * (columns - 1))) / columns;
     const cardHeight = cardWidth * 0.85; 
-    const rowHeight = Math.max(cardHeight + GAP, 140);
 
     const handleContextMenu = useCallback((e: React.MouseEvent, file: TelegramFile) => {
         e.preventDefault();

@@ -74,7 +74,7 @@ export interface ViewSettings {
     sortDirection: SortDirection;
 }
 
-export interface Clipboard {
+export interface FileClipboard {
     type: 'cut' | 'copy';
     messageIds: number[];
     folderIds: number[];
