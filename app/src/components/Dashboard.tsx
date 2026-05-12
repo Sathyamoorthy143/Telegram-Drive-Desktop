@@ -445,8 +445,14 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 onDelete={handleFolderDelete}
                 onCreate={handleCreateFolder}
                 onRename={(id, name) => handleRename(id, name, true)}
-                onCut={(id) => handleCut([id])}
-                onCopy={(id) => handleCopy([id])}
+                onCut={(id) => {
+                    setClipboard({ type: 'cut', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId });
+                    toast.info('Folder cut to clipboard.');
+                }}
+                onCopy={(id) => {
+                    setClipboard({ type: 'copy', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId });
+                    toast.info('Folder copied to clipboard.');
+                }}
                 onPaste={handlePaste}
                 canPaste={!!clipboard}
                 onProperties={(id) => {

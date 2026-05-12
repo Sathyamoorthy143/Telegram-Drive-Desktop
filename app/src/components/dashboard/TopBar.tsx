@@ -67,24 +67,28 @@ export function TopBar({
 
                 <div className="w-px h-6 bg-telegram-border mx-1"></div>
 
-                {/* Selection Actions */}
+                {/* Action Buttons */}
                 <div className="flex items-center gap-1">
                     {canPaste && (
-                        <button onClick={onPaste} className="p-2 hover:bg-telegram-hover rounded-md text-green-500 transition" title="Paste">
+                        <button onClick={onPaste} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-green-500 transition text-sm font-medium" title="Paste">
                             <Clipboard className="w-4 h-4" />
+                            <span>Paste</span>
                         </button>
                     )}
                     
                     {selectedIds.length > 0 && (
                         <>
-                            <button onClick={onBulkDownload} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-text transition" title="Download Selected">
+                            <button onClick={onBulkDownload} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-telegram-text transition text-sm" title="Download Selected">
                                 <HardDrive className="w-4 h-4" />
+                                <span>Download</span>
                             </button>
-                            <button onClick={onShowMoveModal} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-text transition" title="Move Selected">
+                            <button onClick={onShowMoveModal} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-telegram-text transition text-sm" title="Move Selected">
                                 <SlidersHorizontal className="w-4 h-4" />
+                                <span>Move</span>
                             </button>
-                            <button onClick={onBulkDelete} className="p-2 hover:bg-telegram-hover rounded-md text-red-400 transition" title="Delete Selected">
+                            <button onClick={onBulkDelete} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-red-400 transition text-sm" title="Delete Selected">
                                 <Check className="w-4 h-4 rotate-45" />
+                                <span>Delete</span>
                             </button>
                         </>
                     )}

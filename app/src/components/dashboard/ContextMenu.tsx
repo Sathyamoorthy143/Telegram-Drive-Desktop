@@ -44,19 +44,24 @@ export function ContextMenu({
         }
     }, [x, y]);
 
-    // Close on outside click
+    // Close on outside click or Escape key
     useEffect(() => {
         const handleClick = () => onClose();
         const handleResize = () => onClose();
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
 
         window.addEventListener('click', handleClick);
         window.addEventListener('resize', handleResize);
         window.addEventListener('contextmenu', handleClick);
+        window.addEventListener('keydown', handleKeyDown);
 
         return () => {
             window.removeEventListener('click', handleClick);
             window.removeEventListener('resize', handleResize);
             window.removeEventListener('contextmenu', handleClick);
+            window.removeEventListener('keydown', handleKeyDown);
         };
     }, [onClose]);
 

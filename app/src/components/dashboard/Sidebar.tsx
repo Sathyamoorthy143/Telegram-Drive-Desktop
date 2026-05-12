@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
@@ -66,6 +66,16 @@ function RecursiveTree({
         e.stopPropagation();
         setContextMenu({ x: e.clientX, y: e.clientY, folderId, folderName });
     };
+
+    // Close context menu on Escape key
+    useEffect(() => {
+        if (!contextMenu) return;
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { setContextMenu(null); }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [contextMenu]);
 
     return (
         <div className="space-y-0.5">
@@ -199,6 +209,16 @@ export function Sidebar({
         e.preventDefault();
         setRootContextMenu({ x: e.clientX, y: e.clientY });
     };
+
+    // Close root context menu on Escape key
+    useEffect(() => {
+        if (!rootContextMenu) return;
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { setRootContextMenu(null); }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [rootContextMenu]);
 
     return (
         <aside className="w-64 bg-telegram-surface border-r border-telegram-border flex flex-col overflow-x-hidden" onClick={e => e.stopPropagation()}>
