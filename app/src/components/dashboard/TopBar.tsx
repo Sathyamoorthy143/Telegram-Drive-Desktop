@@ -1,21 +1,23 @@
 import { 
     HardDrive, LayoutGrid, Sun, Moon, ChevronDown, 
     SlidersHorizontal, PanelRightClose, PanelRightOpen, FilePlus, 
-    FolderPlus, ArrowUpDown, Check, List, Grid2X2, LayoutList, Search
+    FolderPlus, ArrowUpDown, Check, List, Grid2X2, LayoutList, Search,
+    Clipboard
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { ViewSettings, SortField, GroupBy } from '../../types';
 
 interface TopBarProps {
-    currentFolderName: string;
     selectedIds: number[];
     onShowMoveModal: () => void;
     onBulkDownload: () => void;
     onBulkDelete: () => void;
-    onDownloadFolder: () => void;
     onManualUpload: () => void;
     onFolderUpload: () => void;
+    onCreateFolder: () => void;
+    onPaste: () => void;
+    canPaste: boolean;
     viewSettings: ViewSettings;
     onUpdateViewSettings: (settings: Partial<ViewSettings>) => void;
     searchTerm: string;
@@ -24,8 +26,8 @@ interface TopBarProps {
 
 export function TopBar({
     selectedIds, onShowMoveModal, onBulkDownload, onBulkDelete,
-    onManualUpload, onFolderUpload, viewSettings, onUpdateViewSettings, 
-    searchTerm, onSearchChange
+    onManualUpload, onFolderUpload, onCreateFolder, onPaste, canPaste, 
+    viewSettings, onUpdateViewSettings, searchTerm, onSearchChange
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();
     const [activeDropdown, setActiveDropdown] = useState<'new' | 'sort' | 'view' | null>(null);
@@ -41,7 +43,7 @@ export function TopBar({
                 <div className="relative">
                     <button 
                         onClick={(e) => { e.stopPropagation(); toggleDropdown('new'); }}
-                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-telegram-hover rounded-md text-sm font-medium transition-colors"
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${activeDropdown === 'new' ? 'bg-telegram-hover text-telegram-primary' : 'hover:bg-telegram-hover text-telegram-text'}`}
                     >
                         <FilePlus className="w-4 h-4 text-telegram-primary" />
                         <span>New</span>
@@ -49,11 +51,15 @@ export function TopBar({
                     </button>
                     {activeDropdown === 'new' && (
                         <div className="absolute top-full left-0 mt-1 w-48 bg-telegram-surface border border-telegram-border rounded-lg shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-                            <button onClick={onManualUpload} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-telegram-hover rounded-md transition-colors">
+                            <button onClick={() => { onCreateFolder(); setActiveDropdown(null); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-telegram-hover rounded-md transition-colors text-telegram-text">
+                                <FolderPlus className="w-4 h-4 text-telegram-primary" /> Create Folder
+                            </button>
+                            <div className="h-px bg-telegram-border my-1"></div>
+                            <button onClick={() => { onManualUpload(); setActiveDropdown(null); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-telegram-hover rounded-md transition-colors text-telegram-text">
                                 <FilePlus className="w-4 h-4 text-blue-400" /> Upload File
                             </button>
-                            <button onClick={onFolderUpload} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-telegram-hover rounded-md transition-colors">
-                                <FolderPlus className="w-4 h-4 text-yellow-500" /> Upload Folder
+                            <button onClick={() => { onFolderUpload(); setActiveDropdown(null); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-telegram-hover rounded-md transition-colors text-telegram-text">
+                                <HardDrive className="w-4 h-4 text-yellow-500" /> Upload Folder
                             </button>
                         </div>
                     )}
@@ -62,24 +68,27 @@ export function TopBar({
                 <div className="w-px h-6 bg-telegram-border mx-1"></div>
 
                 {/* Selection Actions */}
-                {selectedIds.length > 0 ? (
-                    <div className="flex items-center gap-1 animate-in fade-in slide-in-from-left-2">
-                        <button onClick={onBulkDownload} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-text transition" title="Download Selected">
-                            <HardDrive className="w-4 h-4" />
+                <div className="flex items-center gap-1">
+                    {canPaste && (
+                        <button onClick={onPaste} className="p-2 hover:bg-telegram-hover rounded-md text-green-500 transition" title="Paste">
+                            <Clipboard className="w-4 h-4" />
                         </button>
-                        <button onClick={onShowMoveModal} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-text transition" title="Move Selected">
-                            <SlidersHorizontal className="w-4 h-4" />
-                        </button>
-                        <button onClick={onBulkDelete} className="p-2 hover:bg-telegram-hover rounded-md text-red-400 transition" title="Delete Selected">
-                            <Check className="w-4 h-4 rotate-45" />
-                        </button>
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-1">
-                        <button className="p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition disabled:opacity-30" disabled><LayoutGrid className="w-4 h-4" /></button>
-                        <button className="p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition disabled:opacity-30" disabled><Check className="w-4 h-4" /></button>
-                    </div>
-                )}
+                    )}
+                    
+                    {selectedIds.length > 0 && (
+                        <>
+                            <button onClick={onBulkDownload} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-text transition" title="Download Selected">
+                                <HardDrive className="w-4 h-4" />
+                            </button>
+                            <button onClick={onShowMoveModal} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-text transition" title="Move Selected">
+                                <SlidersHorizontal className="w-4 h-4" />
+                            </button>
+                            <button onClick={onBulkDelete} className="p-2 hover:bg-telegram-hover rounded-md text-red-400 transition" title="Delete Selected">
+                                <Check className="w-4 h-4 rotate-45" />
+                            </button>
+                        </>
+                    )}
+                </div>
 
                 <div className="w-px h-6 bg-telegram-border mx-1"></div>
 

@@ -492,14 +492,15 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
 
             <main className="flex-1 flex flex-col" onClick={(e) => { if (e.target === e.currentTarget) setSelectedIds([]); }}>
                 <TopBar
-                    currentFolderName={currentFolderName}
                     selectedIds={selectedIds}
                     onShowMoveModal={() => setShowMoveModal(true)}
                     onBulkDownload={handleBulkDownload}
                     onBulkDelete={handleBulkDelete}
-                    onDownloadFolder={handleDownloadFolder}
                     onManualUpload={handleManualUpload}
                     onFolderUpload={handleFolderUpload}
+                    onCreateFolder={() => handleCreateFolder()}
+                    onPaste={handlePaste}
+                    canPaste={!!clipboard}
                     viewSettings={viewSettings}
                     onUpdateViewSettings={onUpdateViewSettings}
                     searchTerm={searchTerm}

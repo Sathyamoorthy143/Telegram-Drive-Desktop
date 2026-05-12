@@ -151,6 +151,11 @@ function RecursiveTree({
                     <button onClick={() => { onProperties(contextMenu.folderId); setContextMenu(null); }} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
                         <Info className="w-4 h-4 text-blue-300" /> Properties
                     </button>
+                    {canPaste && (
+                        <button onClick={() => { onPaste(contextMenu.folderId); setContextMenu(null); }} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
+                            <Clipboard className="w-4 h-4 text-green-400" /> Paste
+                        </button>
+                    )}
                     <div className="h-px bg-telegram-border my-1" />
                     <button onClick={() => { onDelete(contextMenu.folderId, contextMenu.folderName); setContextMenu(null); }} className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-500 hover:bg-red-500/10 rounded transition-colors text-left w-full">
                         <Trash2 className="w-4 h-4" /> Delete
