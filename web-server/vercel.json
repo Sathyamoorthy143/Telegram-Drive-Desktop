@@ -8,24 +8,12 @@
     },
     {
       "src": "src/main.rs",
-      "use": "vercel-rust",
-      "config": { "maxDuration": 60 }
+      "use": "vercel-rust"
     }
   ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "src/main.rs"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "frontend/$1",
-      "check": true
-    },
-    {
-      "src": "/(.*)",
-      "status": 200,
-      "dest": "frontend/index.html"
-    }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "src/main.rs" },
+    { "source": "/(.*)", "destination": "/" }
   ]
 }
+
