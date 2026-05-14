@@ -6,7 +6,15 @@
       "use": "vercel-rust"
     },
     {
-      "src": "public/**/*",
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "logo.svg",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "assets/**/*",
       "use": "@vercel/static"
     }
   ],
@@ -15,6 +23,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
+
 
 
 
