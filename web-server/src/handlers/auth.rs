@@ -9,6 +9,32 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+pub struct SendOtpRequest {
+    pub phone: String,
+}
+
+pub async fn auth_send_otp(state: web::Data<TelegramState>, req: web::Json<SendOtpRequest>) -> impl Responder {
+    // Ensure a client exists
+    match get_client(&state).await {
+        Ok(client) => {
+            // Use api_id and api_hash from state if needed
+            let api_id = state.api_id.unwrap_or(0);
+            let api_hash = &state.api_hash;
+            // grammers_client's request_login_code expects phone and api_hash, using api_id indirectly
+            match client.request_login_code(&req.phone, api_hash).await {
+                Ok(token) => {
+                    *state.login_token.lock().await = Some(token);
+                    HttpResponse::Ok().json("code_sent")
+                }
+                Err(e) => HttpResponse::InternalServerError().body(map_error(e)),
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+
+#[derive(Deserialize)]
 pub struct AuthRequest {
     pub phone: String,
     pub api_id: i32,
