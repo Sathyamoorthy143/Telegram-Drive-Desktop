@@ -77,8 +77,8 @@ async fn stream_media(
                                 let mime = mime_type_from_media(&media);
                                 log::debug!("Stream request: Starting download for msg {} (mime: {}, size: {})", message_id, mime, size);
                                 
-                                // Create chunk-streaming response
-                                let mut download_iter = client.iter_download(&media);
+                                // Create chunk-streaming response with maximized 512 KB chunks for smooth streaming
+                                let mut download_iter = client.iter_download(&media).chunk_size(512 * 1024);
                                 let stream = async_stream::stream! {
                                     let mut chunk_count = 0;
                                     while let Some(chunk) = download_iter.next().await.transpose() {

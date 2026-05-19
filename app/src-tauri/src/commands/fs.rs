@@ -198,7 +198,8 @@ pub async fn cmd_upload_file(
     let app_handle_clone = app_handle.clone();
     let tid_clone = tid.clone();
 
-    let stream = FramedRead::new(file, BytesCodec::new()).map(move |item| {
+    // Read files in large 512 KB blocks to optimize disk I/O and async framing
+    let stream = FramedRead::with_capacity(file, BytesCodec::new(), 512 * 1024).map(move |item| {
         if let Ok(bytes) = &item {
             uploaded += bytes.len() as u64;
             
@@ -359,8 +360,8 @@ pub async fn cmd_download_file(
         });
     }
 
-    // Stream download with per-chunk progress
-    let mut download_iter = client.iter_download(&media);
+    // Stream download with maximized 512 KB chunk size to reduce round-trips by 128x
+    let mut download_iter = client.iter_download(&media).chunk_size(512 * 1024);
     let mut file = std::fs::File::create(&save_path).map_err(|e| e.to_string())?;
     let mut downloaded: u64 = 0;
     let mut last_percent: u8 = 0;
