@@ -3,31 +3,18 @@
   "builds": [
     {
       "src": "src/main.rs",
-      "use": "vercel-rust"
+      "use": "vercel-rust",
+      "config": {
+        "includeFiles": ["frontend/dist/**"]
+      }
     },
     {
-      "src": "index.html",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "logo.svg",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "assets/**/*",
+      "src": "frontend/dist/**",
       "use": "@vercel/static"
     }
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "src/main.rs" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/frontend/dist/index.html" }
   ]
 }
-
-
-
-
-
-
-
-

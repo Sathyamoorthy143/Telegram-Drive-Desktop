@@ -19,3 +19,12 @@ CompiledApps/
 Error.html
 **/LatestError.html
 .vercel
+
+# Build artifacts
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.app
