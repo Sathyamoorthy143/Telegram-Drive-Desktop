@@ -1,4 +1,4 @@
-name: "Publish"
+name: "Auto Release"
 on:
   push:
     branches:
@@ -60,6 +60,13 @@ jobs:
         working-directory: app
         run: npm install
 
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./app/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
       - name: build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -69,11 +76,22 @@ jobs:
           # To enable signing, add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, 
           # and APPLE_SIGNING_IDENTITY secrets to your repository
         with:
-          tagName: app-v__VERSION__ 
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: 'Telegram Drive v${{ steps.version.outputs.version }}'
+          releaseBody: |
+            ## What's New in v${{ steps.version.outputs.version }}
+            
+            ### 📥 Downloads
+            - **Windows:** `Telegram Drive_${{ steps.version.outputs.version }}_x64-setup.exe`
+            - **Linux:** `Telegram Drive_${{ steps.version.outputs.version }}_amd64.AppImage`
+            - **macOS:** `Telegram Drive_${{ steps.version.outputs.version }}_aarch64.dmg`
+            
+            ### 🔧 Changes
+            - Auto-built from latest commit on main branch
+            
+            ---
+            Built with ❤️ using [Tauri](https://tauri.app/)
+          releaseDraft: false
           prerelease: false
           projectPath: ./app
-          # This pulls the 'args' from the matrix above (e.g., forcing ARM on Mac)
           args: ${{ matrix.args }}
