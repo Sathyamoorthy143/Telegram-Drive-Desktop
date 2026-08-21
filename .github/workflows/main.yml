@@ -1,4 +1,5 @@
 name: "Auto Release"
+
 on:
   push:
     branches:
@@ -23,7 +24,6 @@ jobs:
             args: ''
             
           # macOS (Apple Silicon / ARM64)
-          # macos-latest is already ARM64 - no explicit target needed
           - platform: macos-latest
             args: ''
 
@@ -39,7 +39,6 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          # Targets: Linux, Windows, and Mac ARM
           targets: aarch64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc
 
       - name: install dependencies (ubuntu only)
@@ -60,38 +59,23 @@ jobs:
         working-directory: app
         run: npm install
 
-      - name: Get version from package.json
-        id: version
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./app/package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
-
       - name: build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_BUNDLER_DMG_IGNORE_CI: true
-          # Apple signing disabled - produces unsigned app
-          # To enable signing, add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, 
-          # and APPLE_SIGNING_IDENTITY secrets to your repository
         with:
-          tagName: ${{ steps.version.outputs.tag }}
-          releaseName: 'Telegram Drive v${{ steps.version.outputs.version }}'
+          tagName: v__VERSION__
+          releaseName: 'Telegram Drive v__VERSION__'
           releaseBody: |
-            ## What's New in v${{ steps.version.outputs.version }}
+            ## Telegram Drive v__VERSION__
             
-            ### 📥 Downloads
-            - **Windows:** `Telegram Drive_${{ steps.version.outputs.version }}_x64-setup.exe`
-            - **Linux:** `Telegram Drive_${{ steps.version.outputs.version }}_amd64.AppImage`
-            - **macOS:** `Telegram Drive_${{ steps.version.outputs.version }}_aarch64.dmg`
+            ### Downloads
+            - **Windows:** Telegram Drive_%_x64-setup.exe
+            - **Linux:** Telegram Drive_%_amd64.AppImage
+            - **macOS:** Telegram Drive_%_aarch64.dmg
             
-            ### 🔧 Changes
-            - Auto-built from latest commit on main branch
-            
-            ---
-            Built with ❤️ using [Tauri](https://tauri.app/)
+            Built with Tauri
           releaseDraft: false
           prerelease: false
           projectPath: ./app
