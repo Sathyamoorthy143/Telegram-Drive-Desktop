@@ -61,3 +61,22 @@ pub async fn resolve_peer_ref(
 pub async fn clear_peer_cache(cache: &Arc<RwLock<HashMap<i64, Peer>>>) {
     cache.write().await.clear();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_error_wraps_display_type() {
+        let err = map_error("boom");
+        assert_eq!(err, "Telegram Error: boom");
+    }
+
+    #[test]
+    fn map_error_with_io_error() {
+        let err = std::io::Error::new(std::io::ErrorKind::NotFound, "nope");
+        let msg = map_error(err);
+        assert!(msg.starts_with("Telegram Error:"));
+        assert!(msg.contains("nope"));
+    }
+}

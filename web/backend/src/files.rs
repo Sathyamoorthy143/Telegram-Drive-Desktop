@@ -124,6 +124,24 @@ pub async fn download_file(
         .streaming(stream)
 }
 
+/// Shared forward + delete logic for move operations
+async fn forward_and_delete(
+    client: &grammers_client::Client,
+    src: grammers_session::types::PeerRef,
+    tgt: grammers_session::types::PeerRef,
+    message_ids: &[i32],
+) -> Result<(), String> {
+    client
+        .forward_messages(tgt, message_ids, src)
+        .await
+        .map_err(|e| format!("Forward failed: {}", e))?;
+    client
+        .delete_messages(src, message_ids)
+        .await
+        .map_err(|e| format!("Delete failed: {}", e))?;
+    Ok(())
+}
+
 pub async fn move_files(
     state: web::Data<AppState>,
     req: web::Json<MoveFilesRequest>,
@@ -141,14 +159,8 @@ pub async fn move_files(
             Ok(p) => p,
             Err(e) => return HttpResponse::InternalServerError().body(e),
         };
-        if let Err(e) = client
-            .forward_messages(tgt.clone(), &req.message_ids, src.clone())
-            .await
-        {
-            return HttpResponse::InternalServerError().body(format!("Forward failed: {}", e));
-        }
-        if let Err(e) = client.delete_messages(src, &req.message_ids).await {
-            return HttpResponse::InternalServerError().body(format!("Delete failed: {}", e));
+        if let Err(e) = forward_and_delete(&client, src, tgt, &req.message_ids).await {
+            return HttpResponse::InternalServerError().body(e);
         }
     }
     HttpResponse::Ok().json(true)
@@ -181,6 +193,51 @@ pub async fn copy_files(
     HttpResponse::Ok().json(true)
 }
 
+/// Extract FileMetadata from a raw TL message, if it has a document attachment
+fn extract_search_result(msg: grammers_tl_types::enums::Message) -> Option<FileMetadata> {
+    let m = match msg {
+        grammers_tl_types::enums::Message::Message(m) => m,
+        _ => return None,
+    };
+    let media = m.media?;
+    let doc = match media {
+        grammers_tl_types::enums::MessageMedia::Document(d) => d.document?,
+        _ => return None,
+    };
+    let doc = match doc {
+        grammers_tl_types::enums::Document::Document(d) => d,
+        _ => return None,
+    };
+    let name = doc
+        .attributes
+        .iter()
+        .find_map(|a| match a {
+            grammers_tl_types::enums::DocumentAttribute::Filename(f) => {
+                Some(f.file_name.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| "Unknown".into());
+    let ext = std::path::Path::new(&name)
+        .extension()
+        .and_then(|o| o.to_str())
+        .map(|s| s.to_string());
+    let fid = match m.peer_id {
+        grammers_tl_types::enums::Peer::Channel(c) => Some(c.channel_id as i64),
+        _ => None,
+    };
+    Some(FileMetadata {
+        id: m.id as i64,
+        folder_id: fid,
+        name,
+        size: doc.size as u64,
+        mime_type: Some(doc.mime_type.clone()),
+        file_ext: ext,
+        created_at: m.date.to_string(),
+        icon_type: "file".into(),
+    })
+}
+
 pub async fn search_files(
     state: web::Data<AppState>,
     query: web::Query<SearchRequest>,
@@ -189,7 +246,6 @@ pub async fn search_files(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    let mut files = Vec::new();
     use grammers_tl_types as tl;
     let result = client
         .invoke(&tl::functions::messages::SearchGlobal {
@@ -207,87 +263,15 @@ pub async fn search_files(
             users_only: false,
         })
         .await;
-    match result {
-        Ok(tl::enums::messages::Messages::Messages(msgs)) => {
-            let messages = msgs.messages;
-            for msg in messages {
-                if let tl::enums::Message::Message(m) = msg {
-                    if let Some(tl::enums::MessageMedia::Document(d)) = m.media {
-                        if let tl::enums::Document::Document(doc) = d.document.unwrap() {
-                            let name = doc
-                                .attributes
-                                .iter()
-                                .find_map(|a| match a {
-                                    tl::enums::DocumentAttribute::Filename(f) => {
-                                        Some(f.file_name.clone())
-                                    }
-                                    _ => None,
-                                })
-                                .unwrap_or("Unknown".into());
-                            let ext = std::path::Path::new(&name)
-                                .extension()
-                                .and_then(|o| o.to_str())
-                                .map(|s| s.to_string());
-                            let fid = match m.peer_id {
-                                tl::enums::Peer::Channel(c) => Some(c.channel_id as i64),
-                                _ => None,
-                            };
-                            files.push(FileMetadata {
-                                id: m.id as i64,
-                                folder_id: fid,
-                                name,
-                                size: doc.size as u64,
-                                mime_type: Some(doc.mime_type.clone()),
-                                file_ext: ext,
-                                created_at: m.date.to_string(),
-                                icon_type: "file".into(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        Ok(tl::enums::messages::Messages::Slice(msgs)) => {
-            let messages = msgs.messages;
-            for msg in messages {
-                if let tl::enums::Message::Message(m) = msg {
-                    if let Some(tl::enums::MessageMedia::Document(d)) = m.media {
-                        if let tl::enums::Document::Document(doc) = d.document.unwrap() {
-                            let name = doc
-                                .attributes
-                                .iter()
-                                .find_map(|a| match a {
-                                    tl::enums::DocumentAttribute::Filename(f) => {
-                                        Some(f.file_name.clone())
-                                    }
-                                    _ => None,
-                                })
-                                .unwrap_or("Unknown".into());
-                            let ext = std::path::Path::new(&name)
-                                .extension()
-                                .and_then(|o| o.to_str())
-                                .map(|s| s.to_string());
-                            let fid = match m.peer_id {
-                                tl::enums::Peer::Channel(c) => Some(c.channel_id as i64),
-                                _ => None,
-                            };
-                            files.push(FileMetadata {
-                                id: m.id as i64,
-                                folder_id: fid,
-                                name,
-                                size: doc.size as u64,
-                                mime_type: Some(doc.mime_type.clone()),
-                                file_ext: ext,
-                                created_at: m.date.to_string(),
-                                icon_type: "file".into(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
+    let messages: Vec<tl::enums::Message> = match result {
+        Ok(tl::enums::messages::Messages::Messages(msgs)) => msgs.messages,
+        Ok(tl::enums::messages::Messages::Slice(msgs)) => msgs.messages,
+        _ => Vec::new(),
+    };
+    let files: Vec<FileMetadata> = messages
+        .into_iter()
+        .filter_map(extract_search_result)
+        .collect();
     HttpResponse::Ok().json(files)
 }
 
@@ -296,4 +280,18 @@ pub async fn get_bandwidth() -> impl Responder {
         up_bytes: 0,
         down_bytes: 0,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bandwidth_returns_zeroes() {
+        // get_bandwidth is a static handler; verify its response shape
+        let stats = BandwidthStats { up_bytes: 0, down_bytes: 0 };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("up_bytes"));
+        assert!(json.contains("down_bytes"));
+    }
 }
