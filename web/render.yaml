@@ -1,0 +1,52 @@
+# Render Blueprint for Telegram Drive Web
+# Deploy this from the render.yaml in your repo root
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API (Rust)
+  - type: web
+    name: telegram-drive-web
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    # Use instance type with enough RAM for large file uploads
+    # free: 512MB RAM (limited, max ~1GB files)
+    # standard: 2GB RAM (supports up to 5GB with temp files)
+    plan: standard
+    envVars:
+      - key: RUST_LOG
+        value: info
+      - key: PORT
+        value: 8080
+      - key: RENDER
+        sync: false
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: BACKUP_CHANNEL_ID
+        sync: false
+      - key: AI_PROXY_URL
+        sync: false
+    # Persistent disk for session data (survives restarts)
+    disks:
+      - name: session-data
+        mountPath: /app/data
+        sizeGB: 1
+    # Auto-deploy on push to main
+    autoDeploy: true
+    # Pre-deploy command to build frontend
+    preDeployCommand: cd ../frontend && npm install && npm run build
+
+  # Frontend (Static Site - can also use Cloudflare Pages)
+  - type: static_site
+    name: telegram-drive-frontend
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
