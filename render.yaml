@@ -1,0 +1,32 @@
+# Render Free Tier - Telegram Drive Backend
+# Place this at REPO ROOT. If your GitHub repo root is `web/`, use web/render.yaml instead.
+# Docs: https://render.com/docs/infrastructure-as-code
+services:
+  - type: web
+    name: telegram-drive-backend
+    plan: free
+    runtime: docker
+    # Folder Selection: backend lives in web/backend relative to repo root
+    rootDir: web/backend
+    dockerfilePath: ./Dockerfile
+    # Render auto-injects PORT=10000, app binds 0.0.0.0:$PORT (src/main.rs:34)
+    healthCheckPath: /api/check-connection
+    autoDeploy: true
+    branch: main
+    envVars:
+      - key: TG_API_ID
+        sync: false
+      - key: TG_API_HASH
+        sync: false
+      - key: RUST_LOG
+        value: info
+      # Set AFTER first deploy to your assigned URL, then redeploy
+      # e.g. telegram-drive-backend.onrender.com
+      - key: DOMAIN
+        value: your-app.onrender.com
+      # Free Tier: no disk, ephemeral FS - session wiped on deploy only, survives sleep
+      # Do NOT set FRONTEND_DIST for backend-only deploy
+      - key: SESSION_PATH
+        value: telegram.session
+      - key: SETTINGS_PATH
+        value: settings.json

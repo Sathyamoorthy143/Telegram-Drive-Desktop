@@ -1,0 +1,11 @@
+C:\Users\Sathya\Downloads\Project\new telegram as storage from old github as desktop\web\backend\target\debug\deps\sha1-c1a5ada9a6500cee.d: C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\lib.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\block_api.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\consts.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\../README.md C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress\soft.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress\x86_sha.rs
+
+C:\Users\Sathya\Downloads\Project\new telegram as storage from old github as desktop\web\backend\target\debug\deps\libsha1-c1a5ada9a6500cee.rmeta: C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\lib.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\block_api.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\consts.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\../README.md C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress\soft.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress\x86_sha.rs
+
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\lib.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\block_api.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\consts.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\../README.md:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress\soft.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha1-0.11.0\src\compress\x86_sha.rs:

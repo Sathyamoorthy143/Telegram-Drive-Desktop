@@ -1,0 +1,46 @@
+# Render Blueprint for Telegram Drive Web
+# Deploy this from the render.yaml in your repo root
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API (Rust) - FREE TIER ONLY
+  - type: web
+    name: telegram-drive-web
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    plan: free
+    envVars:
+      - key: RUST_LOG
+        value: info
+      - key: SESSION_PATH
+        value: /app/data/telegram.session
+      - key: SETTINGS_PATH
+        value: /app/data/settings.json
+      - key: RENDER
+        sync: false
+      # Telegram credentials - support both naming conventions for compatibility
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TG_API_ID
+        sync: false
+      - key: TG_API_HASH
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: BACKUP_CHANNEL_ID
+        sync: false
+      - key: AI_PROXY_URL
+        sync: false
+      - key: DOMAIN
+        sync: false
+    # Free Tier: no disk - session is ephemeral (wiped on deploy, survives sleep)
+    # To enable persistence, upgrade to Standard and uncomment disks:
+    # disks:
+    #   - name: session-data
+    #     mountPath: /app/data
+    #     sizeGB: 1
+    autoDeploy: true

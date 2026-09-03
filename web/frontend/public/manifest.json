@@ -1,0 +1,17 @@
+{
+  "name": "Telegram Drive",
+  "short_name": "TG Drive",
+  "description": "Unlimited Telegram Cloud Storage - Self-hosted",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e1621",
+  "theme_color": "#2481cc",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

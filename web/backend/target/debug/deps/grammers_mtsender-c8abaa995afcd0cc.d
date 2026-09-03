@@ -1,0 +1,13 @@
+C:\Users\Sathya\Downloads\Project\new telegram as storage from old github as desktop\web\backend\target\debug\deps\grammers_mtsender-c8abaa995afcd0cc.d: C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\lib.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\configuration.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\errors.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\net\mod.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\net\tcp.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\sender.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\sender_pool.rs
+
+C:\Users\Sathya\Downloads\Project\new telegram as storage from old github as desktop\web\backend\target\debug\deps\libgrammers_mtsender-c8abaa995afcd0cc.rmeta: C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\lib.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\configuration.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\errors.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\net\mod.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\net\tcp.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\sender.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\sender_pool.rs
+
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\lib.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\configuration.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\errors.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\net\mod.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\net\tcp.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\sender.rs:
+C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grammers-mtsender-0.10.0\src\sender_pool.rs:
+
+# env-dep:CARGO_PKG_VERSION=0.10.0

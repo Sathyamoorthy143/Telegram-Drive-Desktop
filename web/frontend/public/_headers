@@ -1,0 +1,8 @@
+# Cloudflare Pages cache policy.
+# - sw.js must NEVER be cached: a stale worker pins an old index.html whose
+#   hashed chunks get pruned on the next deploy -> "MIME type text/html" errors.
+# - Vite hashed assets are content-addressed: safe to cache immutably.
+/sw.js
+  Cache-Control: no-cache
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
