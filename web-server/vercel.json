@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/main.rs",
+      "use": "vercel-rust",
+      "config": {
+        "includeFiles": ["frontend/dist/**"]
+      }
+    },
+    {
+      "src": "frontend/dist/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "src/main.rs" },
+    { "source": "/((?!api/).*)", "destination": "/frontend/dist/index.html" }
+  ]
+}

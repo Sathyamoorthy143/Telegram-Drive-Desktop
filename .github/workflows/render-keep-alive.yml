@@ -1,0 +1,34 @@
+# Keep Render service alive by pinging every 5 minutes
+# This prevents Render free tier from sleeping due to inactivity
+#
+# Setup:
+# 1. Set RENDER_URL in repository secrets with your Render service URL
+#    (e.g., https://telegram-drive-web.onrender.com)
+#
+# 2. This workflow runs every 5 minutes via cron
+
+name: Render Keep-Alive
+
+on:
+  workflow_dispatch: # Allow manual trigger
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Service
+        run: |
+          URL="${{ secrets.RENDER_URL }}/api/health"
+          echo "Pinging: $URL"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$URL" 2>&1)
+          echo "Response status: $RESPONSE"
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Service is alive!"
+          else
+            echo "⚠️ Service returned status: $RESPONSE"
+            # Still exit 0 so the workflow doesn't fail
+            # The self-ping in the app should also keep it alive
+          fi

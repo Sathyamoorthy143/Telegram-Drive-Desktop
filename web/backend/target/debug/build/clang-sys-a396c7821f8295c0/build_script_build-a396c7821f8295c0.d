@@ -1,9 +1,0 @@
-C:\Users\Sathya\Downloads\Project\new telegram as storage from old github as desktop\web\backend\target\debug\build\clang-sys-a396c7821f8295c0\build_script_build-a396c7821f8295c0.d: C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\macros.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\common.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\dynamic.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\static.rs
-
-C:\Users\Sathya\Downloads\Project\new telegram as storage from old github as desktop\web\backend\target\debug\build\clang-sys-a396c7821f8295c0\build_script_build-a396c7821f8295c0.exe: C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\macros.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\common.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\dynamic.rs C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\static.rs
-
-C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build.rs:
-C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\macros.rs:
-C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\common.rs:
-C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\dynamic.rs:
-C:\Users\Sathya\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-sys-1.9.1\build\static.rs:

@@ -1,0 +1,48 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. v1.1.22)'
+        required: true
+        default: 'v1.1.176'
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install frontend dependencies
+        run: |
+          cd app
+          npm install
+
+      - name: build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_BUNDLER_DMG_IGNORE_CI: true
+        with:
+          projectPath: app
+          tagName: ${{ github.event.inputs.version }}
+          releaseName: "Telegram Drive Desktop ${{ github.event.inputs.version }}"
+          releaseBody: "Automated build of the enhanced Telegram Drive Desktop."
+          releaseDraft: true
+          prerelease: false
