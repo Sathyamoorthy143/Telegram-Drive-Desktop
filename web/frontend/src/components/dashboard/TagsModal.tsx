@@ -8,7 +8,7 @@ export function TagsModal({ file, onClose }: { file: any; onClose: () => void })
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    api.getTags(file.id).then(setTags).catch(()=>{}).finally(()=>setLoading(false));
+    api.getTags(file.id, file.folder_id).then(setTags).catch(()=>{}).finally(()=>setLoading(false));
   }, [file]);
   const add = () => {
     const t = input.trim().toLowerCase().replace(/\s+/g, '-');
@@ -17,7 +17,7 @@ export function TagsModal({ file, onClose }: { file: any; onClose: () => void })
     setTags([...tags, t]); setInput('');
   };
   const save = async () => {
-    try { await api.setTags(file.id, tags); toast.success('Tags saved'); onClose(); }
+    try { await api.setTags(file.id, tags, file.folder_id); toast.success('Tags saved'); onClose(); }
     catch (e: any) { toast.error(`Save failed: ${e.message}`); }
   };
   return (

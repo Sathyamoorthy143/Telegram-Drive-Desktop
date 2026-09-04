@@ -167,7 +167,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         try { return await api.searchFiles(query); } catch { return []; }
     }, []);
 
-    const handleRename = useCallback(async (id: number, name: string) => {
+    const handleRename = useCallback(async (id: number, name: string, _isFolder: boolean) => {
         const file = (displayedFiles as any[]).find((f) => f.id === id);
         if (!file) return;
         const isFolder = file.type === 'folder' || file.icon_type === 'folder';
@@ -394,7 +394,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     activeFolderId={activeFolderId}
                     onFileClick={handleFileClick}
                     onDelete={handleDelete}
-                    onDownload={(id, name) => { api.downloadFile(activeFolderId ?? 0, id).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }).catch(() => toast.error('Download failed')); }}
+                    onDownload={(id, name, _size) => { api.downloadFile(activeFolderId ?? 0, id).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }).catch(() => toast.error('Download failed')); }}
                     onPreview={handlePreview}
                     onManualUpload={handleManualUpload}
                     onFolderUpload={handleFolderUpload}

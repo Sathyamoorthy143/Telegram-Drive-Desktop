@@ -421,7 +421,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         for (const id of selectedIds) {
             const f = displayedFiles.find(x => x.id === id);
             if (!f || f.type === 'folder') continue;
-            try { await api.starFile(id, (f as any).folder_id ?? activeFolderId ?? undefined, f.name, starred); ok++; } catch {}
+            try { await api.starFile(id, (f as any).folder_id ?? activeFolderId ?? undefined, starred); ok++; } catch {}
         }
         refetchFav(); queryClient.invalidateQueries({ queryKey: ['favorites'] });
         api.logActivity(starred ? 'bulk-star' : 'bulk-unstar', `${ok} files`, undefined).catch(()=>{});
@@ -445,7 +445,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             if (!f || f.type === 'folder') continue;
             try {
                 const cur = await api.getTags(id, (f as any).folder_id ?? undefined);
-                if (!cur.includes(t)) await api.setTags(id, (f as any).folder_id ?? undefined, [...cur, t]);
+                if (!cur.includes(t)) await api.setTags(id, [...cur, t], (f as any).folder_id ?? undefined);
                 ok++;
             } catch {}
         }
@@ -513,7 +513,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const handleStar = useCallback(async (file: any) => {
         try {
             const isFav = (favRows as any[]).some((x: any) => (x.message_id ?? x.id) === file.id && (x.folder_id ?? null) === (file.folder_id ?? null));
-            await api.starFile(file.id, file.folder_id ?? activeFolderId ?? undefined, file.name, !isFav);
+            await api.starFile(file.id, file.folder_id ?? activeFolderId ?? undefined, !isFav);
             toast.success(isFav ? 'Removed from Starred' : 'Starred');
             refetchFav(); queryClient.invalidateQueries({ queryKey: ['favorites'] });
             api.logActivity(isFav ? 'unstar' : 'star', undefined, file.name).catch(()=>{});
@@ -586,7 +586,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 });
             }
             if (encIv) {
-                try { await api.setTags(Date.now() % 2147483647, activeFolderId ?? undefined, []); } catch {}
+                try { await api.setTags(Date.now() % 2147483647, [], activeFolderId ?? undefined); } catch {}
                 const m = JSON.parse(localStorage.getItem('enc_iv') || '{}');
                 m[`${activeFolderId ?? 'null'}:${upFile.name}`] = encIv;
                 try { localStorage.setItem('enc_iv', JSON.stringify(m)); } catch {}
