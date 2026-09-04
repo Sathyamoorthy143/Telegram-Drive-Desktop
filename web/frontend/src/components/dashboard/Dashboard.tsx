@@ -28,6 +28,7 @@ import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
 import { PropertiesModal } from './PropertiesModal';
 import { AiAssistant } from './AiAssistant';
+import { AllVersionsModal } from './AllVersionsModal';
 
 // Simple keyboard shortcuts hook
 function useKeyboardShortcuts(handlers: {
@@ -134,6 +135,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [isSearching, setIsSearching] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showActivityLog, setShowActivityLog] = useState(false);
+    const [showAllVersions, setShowAllVersions] = useState(false);
     const [showAi, setShowAi] = useState(false);
     const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
@@ -893,6 +895,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 )}
                 {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} key="settings-modal" />}
                 {showActivityLog && <TransferLogs onClose={() => setShowActivityLog(false)} key="activity-modal" />}
+                {showAllVersions && <AllVersionsModal onClose={() => setShowAllVersions(false)} key="all-versions-modal" />}
                 {propertyFile && <PropertiesModal file={propertyFile} onClose={() => setPropertyFile(null)} key="props-modal" />}
                 {showAi && <AiAssistant onClose={() => setShowAi(false)} currentFolderFiles={allFiles} key="ai-modal" />}
             </AnimatePresence>
@@ -913,6 +916,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         onSync={syncFolders} onLogout={handleLogout}
         onSettings={() => setShowSettingsModal(true)} bandwidth={bandwidth || null}
         onActivityLog={() => setShowActivityLog(!showActivityLog)}
+        onAllVersions={() => setShowAllVersions(true)}
     />
 
             {/* Floating buttons */}

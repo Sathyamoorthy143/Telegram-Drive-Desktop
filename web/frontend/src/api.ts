@@ -161,6 +161,9 @@ export const getShareUrl = (share_id: string) =>
 export const getVersions = (name: string, folder_id?: number) =>
   api<any[]>('GET', `/api/versions?name=${encodeURIComponent(name)}${folder_id !== undefined ? `&folder_id=${folder_id}` : ''}`);
 
+export const getAllVersions = () =>
+  api<any[]>('GET', `/api/versions`);
+
 export const restoreVersion = (message_id: number, version_message_id: number, folder_id?: number, name?: string) =>
   api<boolean>('POST', '/api/versions/restore', { folder_id, name, version_message_id: version_message_id, current_message_id: message_id });
 

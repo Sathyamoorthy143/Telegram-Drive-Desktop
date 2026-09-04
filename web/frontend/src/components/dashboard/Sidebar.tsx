@@ -27,6 +27,7 @@ interface SidebarProps {
     bandwidth: BandwidthStats | null;
     stats?: { count: number; fileCount: number; folderCount: number; bytes: number } | null;
     onActivityLog: () => void;
+    onAllVersions: () => void;
 }
 
 function RecursiveTree({
@@ -191,7 +192,7 @@ function formatBytesShort(n: number): string {
 
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate,
-    isSyncing, isConnected, onSync, onLogout, onSettings, bandwidth, userInfo, stats, onActivityLog
+    isSyncing, isConnected, onSync, onLogout, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -285,14 +286,23 @@ export function Sidebar({
                      folderId={-1}
                  />
                  <SidebarItem
-                     icon={History}
-                     label="Activity Log"
-                     active={false}
-                     onClick={onActivityLog}
-                     onDrop={(e: React.DragEvent) => e.preventDefault()}
-                     onContextMenu={(e) => e.preventDefault()}
-                     folderId={null}
-                 />
+                      icon={History}
+                      label="Activity Log"
+                      active={false}
+                      onClick={onActivityLog}
+                      onDrop={(e: React.DragEvent) => e.preventDefault()}
+                      onContextMenu={(e) => e.preventDefault()}
+                      folderId={null}
+                  />
+                  <SidebarItem
+                      icon={History}
+                      label="Versions"
+                      active={false}
+                      onClick={onAllVersions}
+                      onDrop={(e: React.DragEvent) => e.preventDefault()}
+                      onContextMenu={(e) => e.preventDefault()}
+                      folderId={null}
+                  />
 
                 {rootContextMenu && (
                     <div

@@ -269,7 +269,7 @@ pub async fn record_version(
 #[derive(Deserialize)]
 pub struct VersionListQuery {
     pub folder_id: Option<i64>,
-    pub name: String,
+    pub name: Option<String>,
 }
 
 pub async fn list_versions(
@@ -280,7 +280,10 @@ pub async fn list_versions(
     let rows: Vec<serde_json::Value> = version_rows(q.folder_id)
         .await
         .into_iter()
-        .filter(|r| r.get("name").and_then(|v| v.as_str()) == Some(q.name.as_str()))
+        .filter(|r| match &q.name {
+            Some(n) => r.get("name").and_then(|v| v.as_str()) == Some(n.as_str()),
+            None => true,
+        })
         .collect();
     HttpResponse::Ok().json(rows)
 }

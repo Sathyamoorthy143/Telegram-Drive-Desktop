@@ -22,6 +22,7 @@ import { SettingsModal } from './dashboard/SettingsModal';
 import { TransferLogs } from './dashboard/TransferLogs';
 import { PropertiesModal } from './dashboard/PropertiesModal';
 import { AiAssistant } from './dashboard/AiAssistant';
+import { AllVersionsModal } from './dashboard/AllVersionsModal';
 
 import { useTelegramConnection } from '../hooks/useTelegramConnection';
 import { useFileOperations } from '../hooks/useFileOperations';
@@ -52,6 +53,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [isSearching, setIsSearching] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+    const [showAllVersions, setShowAllVersions] = useState(false);
     const [showAi, setShowAi] = useState(false);
     const [internalDragFileId, _setInternalDragFileId] = useState<number | null>(null);
     const internalDragRef = useRef<number | null>(null);
@@ -328,6 +330,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 {isDragging && internalDragFileId === null && <DragDropOverlay key="drag-drop-overlay" />}
                 {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} key="settings-modal" />}
                 {showHistory && <TransferLogs onClose={() => setShowHistory(false)} key="history-modal" />}
+                {showAllVersions && <AllVersionsModal onClose={() => setShowAllVersions(false)} key="all-versions-modal" />}
                 {propertyFile && <PropertiesModal file={propertyFile} onClose={() => setPropertyFile(null)} key="props-modal" />}
                 {showAi && <AiAssistant onClose={() => setShowAi(false)} currentFolderFiles={allFiles} key="ai-modal" />}
             </AnimatePresence>
@@ -354,6 +357,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 bandwidth={bandwidth || null}
                 stats={{ count: allFiles.length, fileCount: allFiles.filter((f: any) => f.type !== 'folder').length, folderCount: folders.length, bytes: allFiles.reduce((s: number, f: any) => s + (f.size || 0), 0) }}
                 onActivityLog={() => setShowHistory(true)}
+                onAllVersions={() => setShowAllVersions(true)}
             />
 
             <button onClick={() => setShowHistory(true)} className="fixed bottom-6 left-72 z-40 p-3 bg-telegram-surface border border-telegram-border rounded-full shadow-lg hover:bg-telegram-hover text-telegram-secondary transition-all hover:scale-110 group" title="Transfer History">
