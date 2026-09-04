@@ -28,6 +28,7 @@ Telegram offers **unlimited free cloud storage** — but using it as a real driv
 | 🏠 **Fully Self-Hosted** | Backend runs on Render, Railway, Fly.io, or any VPS. You control the data path. |
 | ⚡ **Lightning Fast** | Rust backend handles concurrent uploads/downloads with minimal overhead. |
 | 🔒 **Privacy First** | Files go directly from your browser to Telegram through your relay — no middleman storage. |
+| 🗂️ **Version History** | Every edit creates a version snapshot. Restore previous versions with one click. |
 
 ---
 
@@ -102,6 +103,68 @@ graph LR
 | **Tauri v2** | Rust-based desktop shell — tiny bundle size (~3 MB) vs Electron (~100+ MB) |
 | **Shared Rust core** | Backend logic can be reused between web server and desktop app |
 | **OS-native webview** | Uses system WebView on Windows/macOS/Linux — better performance and OS integration |
+
+---
+
+## 🗂️ Version Control System
+
+Telegram Drive includes a built-in **file versioning system** that automatically tracks edits to your documents.
+
+### How It Works
+
+1. **Automatic Snapshots** — Every time you save an edited file (Word, Excel, PowerPoint, text), the previous version is stored automatically
+2. **Version History** — Open any file’s **Versions** modal to see all previous versions with timestamps and sizes
+3. **One-Click Restore** — Restore any previous version; the current file is moved to Trash and the selected version becomes live
+4. **Download Versions** — Download any historical version as a separate file (`filename.v2`)
+5. **Activity Log** — All version restores are logged in the Activity Log for audit trail
+
+### Supported File Types for Versioning
+
+| File Type | Edit Support | Version Control |
+|-----------|-------------|-----------------|
+| **Word** (`.docx`, `.doc`) | ✅ TipTap editor | ✅ |
+| **Excel** (`.xlsx`, `.xls`, `.csv`) | ✅ SheetJS + Univer | ✅ |
+| **PowerPoint** (`.pptx`) | ✅ PptxGenJS | ✅ |
+| **PDF** (`.pdf`) | ✅ pdf.js viewer | ✅ |
+| **Text** (`.txt`, `.md`, code) | ✅ TipTap editor | ✅ |
+| **Images** (`.jpg`, `.png`) | ❌ | ❌ |
+| **Video/Audio** (`.mp4`, `.mp3`) | ❌ | ❌ |
+
+### Version Control Architecture
+
+```
+Frontend (React)           Backend (Rust)           Supabase
+     │                         │                      │
+     │  POST /api/versions/record                     │
+     │  ─────────────────────►  │                      │
+     │  ─────────────────────►  │  INSERT file_versions│
+     │                         │─────────────────────►│
+     │                         │                      │
+     │  GET /api/versions?name=...                     │
+     │  ◄─────────────────────  │                      │
+     │                         │  SELECT file_versions │
+     │                         │─────────────────────►│
+     │                         │  ◄──────────────────│
+     │  ◄─────────────────────  │                      │
+     │                         │                      │
+     │  POST /api/versions/restore                     │
+     │  ─────────────────────►  │                      │
+     │                         │  trash current file  │
+     │                         │  restore version msg │
+     │                         │  record old as version│
+     │                         │─────────────────────►│
+```
+
+### Why Supabase for Version Metadata?
+
+| Decision | Justification |
+|---------|--------------|
+| **PostgreSQL** | Structured querying for version history by file name + folder |
+| **Realtime** | Optional live updates for shared folders |
+| **Row-level security** | Future multi-user support with per-file access control |
+| **Free tier** | Generous limits for personal/self-hosted use |
+
+> **Note:** Actual file versions are stored as Telegram messages in your channel. Supabase only stores lightweight metadata (`message_id`, `version_no`, `size`, `timestamp`). This means your version history survives even if Supabase goes down — you just lose the index, not the files.
 
 ---
 
