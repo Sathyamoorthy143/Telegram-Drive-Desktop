@@ -42,7 +42,6 @@ src/
 │       ├── ContextMenu.tsx, DragDropOverlay.tsx, ExternalDropBlocker.tsx
 │       ├── UploadQueue.tsx, DownloadQueue.tsx, TransferLogs.tsx
 │       ├── BandwidthWidget.tsx, EmptyState.tsx
-│       └── AiAssistant.tsx  # Gemini chat panel
 ├── context/                 # ConfirmContext, ThemeContext
 ├── contexts/                # DropZoneContext
 ├── hooks/                   # useTelegramConnection, useFileUpload/Download/Operations, ...

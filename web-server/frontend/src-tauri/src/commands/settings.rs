@@ -6,21 +6,17 @@ use std::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
-    pub gemini_api_key: Option<String>,
     pub telegram_api_id: Option<i32>,
     pub theme: String,
     pub auto_login: bool,
-    pub ai_proxy_url: String,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            gemini_api_key: None,
             telegram_api_id: None,
             theme: "dark".to_string(),
             auto_login: true,
-            ai_proxy_url: "https://telegram-drive-desktop.onrender.com/chat".to_string(),
         }
     }
 }

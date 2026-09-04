@@ -15,9 +15,9 @@ services:
       - key: RUST_LOG
         value: info
       - key: SESSION_PATH
-        value: /app/data/telegram.session
+        value: /tmp/telegram.session
       - key: SETTINGS_PATH
-        value: /app/data/settings.json
+        value: /tmp/settings.json
       - key: RENDER
         sync: false
       # Telegram credentials - support both naming conventions for compatibility
@@ -37,8 +37,8 @@ services:
         sync: false
       - key: DOMAIN
         sync: false
-    # Free Tier: no disk - session is ephemeral (wiped on deploy, survives sleep)
-    # To enable persistence, upgrade to Standard and uncomment disks:
+    # Free Tier: no disk - session/settings are ephemeral (wiped on deploy, survives sleep)
+    # Session persistence across deploys requires Supabase backup/restore
     # disks:
     #   - name: session-data
     #     mountPath: /app/data

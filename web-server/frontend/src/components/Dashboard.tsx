@@ -9,7 +9,7 @@ import { formatBytes, isMediaFile, isPdfFile } from '../utils';
 
 // Components
 import { Sidebar } from './dashboard/Sidebar';
-import { History, Bot } from 'lucide-react';
+import { History } from 'lucide-react';
 import { TopBar } from './dashboard/TopBar';
 import { FileExplorer } from './dashboard/FileExplorer';
 import { UploadQueue } from './dashboard/UploadQueue';
@@ -22,7 +22,6 @@ import { PdfViewer } from './dashboard/PdfViewer';
 import { SettingsModal } from './dashboard/SettingsModal';
 import { TransferLogs } from './dashboard/TransferLogs';
 import { PropertiesModal } from './dashboard/PropertiesModal';
-import { AiAssistant } from './dashboard/AiAssistant';
 
 // Hooks
 import { useTelegramConnection } from '../hooks/useTelegramConnection';
@@ -56,7 +55,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [isSearching, setIsSearching] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
-    const [showAi, setShowAi] = useState(false);
     
     const internalDragRef = useRef<number | null>(null);
 
@@ -430,7 +428,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} key="settings-modal" />}
                 {showHistory && <TransferLogs onClose={() => setShowHistory(false)} key="history-modal" />}
                 {propertyFile && <PropertiesModal file={propertyFile} onClose={() => setPropertyFile(null)} key="props-modal" />}
-                {showAi && <AiAssistant onClose={() => setShowAi(false)} currentFolderFiles={allFiles} key="ai-modal" />}
             </AnimatePresence>
 
             <Sidebar
@@ -480,16 +477,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 title="Transfer History"
             >
                 <History className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-            </button>
-
-            {/* Floating AI Assistant Toggle Button */}
-            <button 
-                onClick={() => setShowAi(prev => !prev)}
-                className={`fixed bottom-6 right-8 z-40 p-4 rounded-2xl shadow-2xl transition-all hover:scale-110 active:scale-95 group flex items-center gap-2 border ${showAi ? 'bg-purple-600 border-purple-400 text-white' : 'bg-telegram-surface border-telegram-border text-purple-400 hover:bg-white/5'}`}
-                title="AI Assistant"
-            >
-                <Bot className={`w-6 h-6 ${showAi ? 'animate-bounce' : 'group-hover:rotate-12 transition-transform'}`} />
-                {!showAi && <span className="text-xs font-bold uppercase tracking-wider pr-1">Ask AI</span>}
             </button>
 
             <main className="flex-1 flex flex-col" onClick={(e) => { if (e.target === e.currentTarget) setSelectedIds([]); }}>

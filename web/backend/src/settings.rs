@@ -19,9 +19,6 @@ pub fn load_settings() -> Settings {
     if let Ok(id) = std::env::var("BACKUP_CHANNEL_ID") {
         settings.backup_channel_id = id.parse().ok();
     }
-    if let Ok(url) = std::env::var("AI_PROXY_URL") {
-        settings.ai_proxy_url = Some(url);
-    }
     if let Ok(id) = std::env::var("TELEGRAM_API_ID") {
         settings.telegram_api_id = id.parse().ok();
     }
@@ -142,13 +139,11 @@ mod tests {
         std::env::set_var("SETTINGS_PATH", "/tmp/nonexistent_settings_test.json");
         std::env::remove_var("TELEGRAM_CHANNEL_ID");
         std::env::remove_var("BACKUP_CHANNEL_ID");
-        std::env::remove_var("AI_PROXY_URL");
         std::env::remove_var("TELEGRAM_API_ID");
 
         let s = load_settings();
         assert_eq!(s.channel_id, None);
         assert_eq!(s.backup_channel_id, None);
-        assert_eq!(s.ai_proxy_url, None);
     }
 
     #[test]
@@ -161,7 +156,6 @@ mod tests {
             backup_channel_id: Some(99),
             telegram_api_id: Some(12345),
             theme: Some("dark".into()),
-            ai_proxy_url: None,
             lock_pin_hash: None,
             lock_interval_ms: None,
             notification_mode: None,
@@ -171,7 +165,6 @@ mod tests {
         std::env::set_var("SETTINGS_PATH", path.to_str().unwrap());
         std::env::remove_var("TELEGRAM_CHANNEL_ID");
         std::env::remove_var("BACKUP_CHANNEL_ID");
-        std::env::remove_var("AI_PROXY_URL");
 
         let s = load_settings();
         assert_eq!(s.channel_id, Some(42));
@@ -180,23 +173,19 @@ mod tests {
 
         std::env::set_var("TELEGRAM_CHANNEL_ID", "999");
         std::env::set_var("BACKUP_CHANNEL_ID", "888");
-        std::env::set_var("AI_PROXY_URL", "https://proxy.test");
 
         let s = load_settings();
         assert_eq!(s.channel_id, Some(999));
         assert_eq!(s.backup_channel_id, Some(888));
-        assert_eq!(s.ai_proxy_url.as_deref(), Some("https://proxy.test"));
 
         std::env::remove_var("TELEGRAM_CHANNEL_ID");
         std::env::remove_var("BACKUP_CHANNEL_ID");
-        std::env::remove_var("AI_PROXY_URL");
 
         let roundtrip = Settings {
             channel_id: Some(100),
             backup_channel_id: Some(200),
             telegram_api_id: None,
             theme: None,
-            ai_proxy_url: Some("https://roundtrip.test".into()),
             lock_pin_hash: None,
             lock_interval_ms: None,
             notification_mode: None,
@@ -206,6 +195,5 @@ mod tests {
         let reloaded = load_settings();
         assert_eq!(reloaded.channel_id, Some(100));
         assert_eq!(reloaded.backup_channel_id, Some(200));
-        assert_eq!(reloaded.ai_proxy_url.as_deref(), Some("https://roundtrip.test"));
     }
 }

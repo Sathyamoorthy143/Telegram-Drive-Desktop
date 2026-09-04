@@ -59,9 +59,6 @@ async fn main() -> std::io::Result<()> {
                     .route("/files/delete", web::post().to(handlers::delete_file))
                     .route("/get-bandwidth", web::get().to(handlers::get_bandwidth))
                     
-                    // AI
-                    .route("/gemini-chat", web::post().to(handlers::gemini_chat))
-                    
                     // Streaming & Previews
                     .route("/get-stream-info", web::get().to(handlers::get_stream_info))
                     .route("/get-preview", web::get().to(handlers::get_preview))

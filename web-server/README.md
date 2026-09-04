@@ -17,7 +17,6 @@ web-server/
 │   ├── handlers/         # request handlers
 │   │   ├── auth.rs       # request-code / sign-in / user-info
 │   │   ├── fs.rs         # list files, delete, bandwidth
-│   │   ├── ai.rs         # Gemini chat proxy (/api/gemini-chat)
 │   │   ├── preview.rs    # thumbnails + preview bytes
 │   │   └── streaming.rs  # streaming info for media playback
 │   ├── models.rs         # shared request/response models
@@ -26,7 +25,7 @@ web-server/
 ├── frontend/             # React + Vite + Tauri client (builds to ./dist)
 │   ├── src/
 │   │   ├── components/   # AuthWizard, Dashboard, MediaPlayer, PdfViewer, ...
-│   │   ├── components/dashboard/  # FileExplorer, Sidebar, TopBar, AI Assistant, ...
+│   │   ├── components/dashboard/  # FileExplorer, Sidebar, TopBar, ...
 │   │   ├── context/      # Confirm + Theme contexts
 │   │   ├── hooks/        # useTelegramConnection, useFileUpload, ...
 │   │   └── services/     # apiBridge.ts (frontend ↔ backend)
@@ -51,7 +50,6 @@ Base path `/api`. CORS is permissive (`Cors::permissive()`).
 | POST | `/api/folders/create` | Create a folder |
 | POST | `/api/files/delete` | Delete a file |
 | GET  | `/api/get-bandwidth` | Bandwidth usage stats |
-| POST | `/api/gemini-chat` | Relay a chat message to Gemini |
 | GET  | `/api/get-stream-info` | Streaming metadata for media |
 | GET  | `/api/get-preview` | File preview bytes |
 | GET  | `/api/get-thumbnail` | Thumbnail bytes |

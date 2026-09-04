@@ -113,7 +113,6 @@ pub fn run() {
             commands::cmd_clean_cache,
             commands::cmd_get_thumbnail,
             commands::cmd_get_stream_info,
-            commands::cmd_gemini_chat,
             commands::cmd_get_folder_properties,
             get_settings,
             save_settings,

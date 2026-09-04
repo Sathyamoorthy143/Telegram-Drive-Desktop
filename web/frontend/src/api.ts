@@ -104,13 +104,10 @@ export const getPreviewUrl = (folder_id: number | string, message_id: number) =>
 export const getThumbnailUrl = (folder_id: number | string, message_id: number) =>
   `${API_BASE}/api/thumbnail/${folder_id}/${message_id}`;
 
-export const geminiChat = (message: string) =>
-  api<{ reply: string }>('POST', '/api/ai/chat', { message });
-
 export const getSettings = () =>
-  api<{ telegram_api_id?: number; theme?: string; auto_login?: boolean; ai_proxy_url?: string; encryption_enabled?: boolean }>('GET', '/api/settings');
+  api<{ telegram_api_id?: number; theme?: string; auto_login?: boolean; encryption_enabled?: boolean }>('GET', '/api/settings');
 
-export const saveSettings = (settings: { telegram_api_id?: number; theme?: string; auto_login?: boolean; ai_proxy_url?: string; encryption_enabled?: boolean }) =>
+export const saveSettings = (settings: { telegram_api_id?: number; theme?: string; auto_login?: boolean; encryption_enabled?: boolean }) =>
   api<boolean>('PUT', '/api/settings', settings);
 
 export const getStore = async () => ({
@@ -211,6 +208,99 @@ export const uploadFileResumable = (file: File, folder_id?: number, options?: {
     if (options?.signal) (xhr as XMLHttpRequest & { signal?: AbortSignal }).signal = options.signal;
     xhr.send(formData);
   });
+};
+
+export const CHUNK_WORKERS = 4;
+
+async function sha256(buffer: ArrayBuffer): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+const CHUNKED_SIZE = 8 * 1024 * 1024;
+
+export const uploadFileChunked = (file: File, folder_id?: number, options?: {
+  signal?: AbortSignal;
+  onProgress?: (done: number, total: number) => void;
+  onUploadId?: (id: string) => void;
+  waitIfPaused?: () => Promise<void>;
+  isCancelled?: () => boolean;
+}) => {
+  const total = file.size;
+  const totalChunks = Math.ceil(total / CHUNKED_SIZE);
+  const abortController = new AbortController();
+
+  return (async () => {
+    const initRes = await api<any>('POST', '/api/files/upload/init', {
+      name: file.name,
+      size: total,
+      folder_id,
+      total_chunks: totalChunks,
+      chunk_size: CHUNKED_SIZE,
+    });
+    const uploadId = initRes.upload_id as string;
+    options?.onUploadId?.(uploadId);
+
+    const uploaded = new Set<number>(initRes.received as number[]);
+    let doneBytes = uploaded.size * CHUNK_SIZE;
+    const speedMap = new Map<string, { t: number; done: number; speed: number }>();
+    const report = (chunkIndex: number, chunkBytes: number) => {
+      const now = Date.now();
+      const prev = speedMap.get(`${chunkIndex}`);
+      let speed = prev?.speed ?? 0;
+      if (prev && now - prev.t >= 250 && chunkBytes > prev.done) {
+        const inst = ((chunkBytes - prev.done) / (now - prev.t)) * 1000;
+        speed = prev.speed > 0 ? prev.speed * 0.6 + inst * 0.4 : inst;
+        speedMap.set(`${chunkIndex}`, { t: now, done: chunkBytes, speed });
+      } else if (!prev) {
+        speedMap.set(`${chunkIndex}`, { t: now, done: chunkBytes, speed: 0 });
+      }
+      doneBytes += chunkBytes;
+      options?.onProgress?.(doneBytes, total);
+    };
+
+    const uploadChunk = async (index: number) => {
+      if (options?.isCancelled?.() || abortController.signal.aborted) return;
+      const start = index * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, total);
+      const blob = file.slice(start, end);
+      const buffer = await blob.arrayBuffer();
+
+      const res = await fetch(`${API_BASE}/api/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`, {
+        method: 'PUT',
+        body: buffer,
+        signal: options?.signal ?? abortController.signal,
+      });
+      if (!res.ok) throw new Error(`Chunk ${index} failed: ${res.status}`);
+      report(index, end - start);
+      return index;
+    };
+
+    const runWorker = async (queue: number[], workerIndex: number) => {
+      while (queue.length > 0) {
+        if (options?.isCancelled?.() || abortController.signal.aborted) return;
+        await options?.waitIfPaused?.();
+        const idx = queue.shift();
+        if (idx === undefined) return;
+        if (uploaded.has(idx)) continue;
+        await uploadChunk(idx);
+        uploaded.add(idx);
+      }
+    };
+
+    const pending = Array.from({ length: totalChunks }, (_, i) => i);
+    const workers: Promise<void>[] = [];
+    for (let w = 0; w < CHUNK_WORKERS; w++) {
+      workers.push(runWorker(pending, w));
+    }
+    await Promise.all(workers);
+    if (options?.isCancelled?.() || abortController.signal.aborted) {
+      throw new DOMException('cancelled', 'AbortError');
+    }
+
+    const complete = await api<any>('POST', '/api/files/upload/complete', { upload_id: uploadId });
+    return complete;
+  })();
 };
 
 export const uploadFileWithProgress = (file: File, folder_id?: number, options?: {

@@ -41,7 +41,6 @@ graph LR
     C -->|MTProto| D[📱 Telegram API]
     D --> E[📂 Main Channel]
     E -->|Auto-forward| F[💾 Backup Channel]
-    C -->|Optional| G[🤖 Gemini AI Proxy]
 ```
 
 ### 🔄 Request Flow
@@ -321,7 +320,6 @@ services:
 | `SESSION_PATH` | SQLite session file path | `telegram.session` | ❌ |
 | `SETTINGS_PATH` | Settings JSON file path | `settings.json` | ❌ |
 | `FRONTEND_DIST` | Path to built frontend | `../frontend/dist` | ❌ |
-| `AI_PROXY_URL` | Gemini AI proxy URL | — | ❌ |
 | `DOMAIN` | Public domain for streaming URLs | `localhost:8080` | ❌ |
 | `RUST_LOG` | Log level (`error`, `warn`, `info`, `debug`, `trace`) | `info` | ❌ |
 
@@ -358,7 +356,6 @@ services:
 | `GET` | `/api/preview/:fid/:mid` | Preview file content |
 | `GET` | `/api/thumbnail/:fid/:mid` | Get file thumbnail |
 | **Advanced** |||
-| `POST` | `/api/ai/chat` | Gemini AI chat assistant |
 | `GET` | `/api/bandwidth` | Bandwidth usage statistics |
 | `GET` | `/api/settings` | Get user settings |
 | `PUT` | `/api/settings` | Save user settings |
@@ -383,14 +380,13 @@ services:
 
 ## 🗂️ Repository Structure
 
-This repo contains **three build variants** of the same Telegram Drive app, plus an optional AI helper:
+This repo contains **three build variants** of the same Telegram Drive app:
 
 | 📁 Path | 🎯 What It Is | 📚 Docs |
 |---------|--------------|---------|
 | `app/` | 🖥️ **Desktop App** — Tauri shell wrapping a Rust + React client (native installers) | `app/README.md` |
 | `web/` | 🌐 **Web App** — canonical split build: `web/frontend` (React+Vite) + `web/backend` (Rust Actix-web) | `web/README.md` |
 | `web-server/` | 📦 **All-in-One** — backend in `web-server/src` + client in `web-server/frontend`, served from one binary; deploys to Docker/Render **and** Vercel | `web-server/README.md` |
-| `ai_proxy.py` | 🤖 **AI Helper** — standalone Flask proxy to Google Gemini (optional, separate from Rust relays) | `AI_PROXY.md` |
 | `screenshots/` | 📸 UI screenshots (login, dashboard, dark mode, playback, …) | — |
 | `.github/workflows/` | ⚙️ CI: `main.yml` (auto Tauri release), `release.yml` (manual build/release), `render-keep-alive.yml` (5-min ping) | — |
 

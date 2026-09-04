@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthWizard } from "./components/AuthWizard";
-import { Dashboard } from "./components/Dashboard";
+import { Dashboard } from "./components/dashboard/Dashboard";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./App.css";
 
@@ -9,6 +9,7 @@ import { Toaster } from "sonner";
 import { ConfirmProvider } from "./context/ConfirmContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { DropZoneProvider } from "./contexts/DropZoneContext";
+import { LockProvider } from "./context/LockContext";
 import * as api from "./api";
 
 const queryClient = new QueryClient();
@@ -80,7 +81,9 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <ConfirmProvider>
             <DropZoneProvider>
-              <AppContent />
+              <LockProvider>
+                <AppContent />
+              </LockProvider>
             </DropZoneProvider>
           </ConfirmProvider>
         </QueryClientProvider>

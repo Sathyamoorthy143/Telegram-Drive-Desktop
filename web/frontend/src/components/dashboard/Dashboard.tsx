@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { History, Bot } from 'lucide-react';
+import { History } from 'lucide-react';
 
 import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings, FolderMetadata } from '../../types';
 import { formatBytes } from '../../utils';
@@ -27,7 +27,6 @@ import { DragDropOverlay } from './DragDropOverlay';
 import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
 import { PropertiesModal } from './PropertiesModal';
-import { AiAssistant } from './AiAssistant';
 import { AllVersionsModal } from './AllVersionsModal';
 
 // Simple keyboard shortcuts hook
@@ -136,7 +135,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showActivityLog, setShowActivityLog] = useState(false);
     const [showAllVersions, setShowAllVersions] = useState(false);
-    const [showAi, setShowAi] = useState(false);
     const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
     const [previewContextFiles, setPreviewContextFiles] = useState<TelegramFile[]>([]);
@@ -560,28 +558,25 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     upFile = new File([blob], encName(file.name), { type: 'application/octet-stream' });
                 }
             } catch (e: any) { if (e?.message?.includes('cancelled')) throw e; }
-            if (upFile.size > api.CHUNK_SIZE) {
-                // P3: parallel chunked resumable upload (8MB chunks x4)
+            if (upFile.size > 1024 * 1024 * 1024) {
                 let resumeId: string | undefined;
                 setUploadQueue(q => { resumeId = q.find(x => x.id === qid)?.uploadId; return q; });
-                await api.uploadFileResumable(upFile, activeFolderId ?? undefined, {
-                    signal: ctrl.signal,
-                    resumeUploadId: resumeId,
-                    onProgress: (done, total) => reportProgress(qid, done, total),
-                    onUploadId: (id) => setUploadQueue(q =>
-                        q.map(x => x.id === qid ? { ...x, uploadId: id } : x)),
-                    waitIfPaused: async () => {
-                        while (uploadsPausedRef.current) {
-                            if (readStatus() === 'cancelled') throw new DOMException('cancelled', 'AbortError');
-                            setUploadQueue(q => q.map(x => (x.id === qid && (x.status === 'pending' || x.status === 'uploading')) ? { ...x, status: 'paused' as const } : x));
-                            await new Promise(r => setTimeout(r, 300));
-                        }
-                        if (readStatus() === 'cancelled') throw new DOMException('cancelled', 'AbortError');
-                        setUploadQueue(q => q.map(x => x.id === qid && x.status === 'paused' ? { ...x, status: 'uploading' as const } : x));
-                    },
-                    isCancelled: () => readStatus() === 'cancelled',
+                await api.uploadFileChunked(upFile, activeFolderId ?? undefined, {
+                  signal: ctrl.signal,
+                  onProgress: (done, total) => reportProgress(qid, done, total),
+                  onUploadId: (id) => setUploadQueue(q => q.map(x => x.id === qid ? { ...x, uploadId: id } : x)),
+                  waitIfPaused: async () => {
+                    while (uploadsPausedRef.current) {
+                      if (readStatus() === 'cancelled') throw new DOMException('cancelled', 'AbortError');
+                      setUploadQueue(q => q.map(x => (x.id === qid && (x.status === 'pending' || x.status === 'uploading')) ? { ...x, status: 'paused' as const } : x));
+                      await new Promise(r => setTimeout(r, 300));
+                    }
+                    if (readStatus() === 'cancelled') throw new DOMException('cancelled', 'AbortError');
+                    setUploadQueue(q => q.map(x => x.id === qid && x.status === 'paused' ? { ...x, status: 'uploading' as const } : x));
+                  },
+                  isCancelled: () => readStatus() === 'cancelled',
                 });
-            } else {
+            } else if (upFile.size > api.CHUNK_SIZE) {
                 await api.uploadFileWithProgress(upFile, activeFolderId ?? undefined, {
                     signal: ctrl.signal,
                     onProgress: (done, total) => reportProgress(qid, done, total || upFile.size),
@@ -897,7 +892,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 {showActivityLog && <TransferLogs onClose={() => setShowActivityLog(false)} key="activity-modal" />}
                 {showAllVersions && <AllVersionsModal onClose={() => setShowAllVersions(false)} key="all-versions-modal" />}
                 {propertyFile && <PropertiesModal file={propertyFile} onClose={() => setPropertyFile(null)} key="props-modal" />}
-                {showAi && <AiAssistant onClose={() => setShowAi(false)} currentFolderFiles={allFiles} key="ai-modal" />}
             </AnimatePresence>
 
 <Sidebar
@@ -922,10 +916,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             {/* Floating buttons */}
             <button onClick={() => setShowActivityLog(true)} className="fixed bottom-6 left-72 z-40 p-3 bg-telegram-surface border border-telegram-border rounded-full shadow-lg hover:bg-telegram-hover text-telegram-secondary transition-all hover:scale-110 group" title="Activity Log">
                 <History className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-            </button>
-            <button onClick={() => setShowAi(prev => !prev)} className={`fixed bottom-6 right-8 z-40 p-4 rounded-2xl shadow-2xl transition-all hover:scale-110 active:scale-95 group flex items-center gap-2 border ${showAi ? 'bg-purple-600 border-purple-400 text-white' : 'bg-telegram-surface border-telegram-border text-purple-400 hover:bg-white/5'}`} title="AI Assistant">
-                <Bot className={`w-6 h-6 ${showAi ? 'animate-bounce' : 'group-hover:rotate-12 transition-transform'}`} />
-                {!showAi && <span className="text-xs font-bold uppercase tracking-wider pr-1">Ask AI</span>}
             </button>
 
             <main className="flex-1 flex flex-col" onClick={(e) => { if (e.target === e.currentTarget) setSelectedIds([]); }}>

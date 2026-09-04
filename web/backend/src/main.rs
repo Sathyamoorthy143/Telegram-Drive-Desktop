@@ -1,4 +1,3 @@
-mod ai;
 mod auth;
 mod chunked;
 mod debug;
@@ -85,7 +84,7 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .app_data(state.clone())
-            .app_data(web::PayloadConfig::new(16 * 1024 * 1024))
+            .app_data(web::PayloadConfig::new(5 * 1024 * 1024 * 1024))
             .wrap(cors)
             .route("/api/health", web::get().to(keep_alive::health_check))
             .route("/health", web::get().to(keep_alive::health_check))
@@ -143,7 +142,6 @@ async fn main() -> std::io::Result<()> {
                     .route("/stream/{fid}/{mid}", web::get().to(streaming::stream_media))
                     .route("/preview/{fid}/{mid}", web::get().to(preview::get_preview))
                     .route("/thumbnail/{fid}/{mid}", web::get().to(preview::get_thumbnail))
-                    .route("/ai/chat", web::post().to(ai::gemini_chat))
                     .route("/settings", web::get().to(settings::get_settings))
                     .route("/settings", web::put().to(settings::save_settings_handler))
                     .route("/settings/lock", web::get().to(settings::get_lock_settings))

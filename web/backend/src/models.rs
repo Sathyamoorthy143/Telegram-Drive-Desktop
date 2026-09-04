@@ -41,7 +41,6 @@ pub struct Settings {
     pub theme: Option<String>,
     pub channel_id: Option<i64>,
     pub backup_channel_id: Option<i64>,
-    pub ai_proxy_url: Option<String>,
     pub encryption_enabled: Option<bool>,
     pub lock_pin_hash: Option<String>,
     pub lock_interval_ms: Option<i64>,
@@ -141,16 +140,6 @@ pub struct SearchRequest {
 #[derive(Deserialize)]
 pub struct ConnectRequest {
     pub api_id: i32,
-}
-
-#[derive(Deserialize)]
-pub struct ChatRequest {
-    pub message: String,
-}
-
-#[derive(Serialize)]
-pub struct ChatResponse {
-    pub reply: String,
 }
 
 #[cfg(test)]

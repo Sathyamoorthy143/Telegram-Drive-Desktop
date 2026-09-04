@@ -28,6 +28,6 @@ services:
       # Attach a persistent disk at /app/data for session survival across deploys
       # Do NOT set FRONTEND_DIST for backend-only deploy
       - key: SESSION_PATH
-        value: /app/data/telegram.session
+        value: /tmp/telegram.session
       - key: SETTINGS_PATH
-        value: settings.json
+        value: /tmp/settings.json

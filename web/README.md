@@ -107,7 +107,6 @@ The dev server starts on `http://localhost:5173` with API proxy to `localhost:80
 | `SESSION_PATH` | SQLite session file path | `telegram.session` |
 | `SETTINGS_PATH` | Settings JSON file path | `settings.json` |
 | `FRONTEND_DIST` | Path to built frontend | `../frontend/dist` |
-| `AI_PROXY_URL` | Gemini AI proxy URL | — |
 | `DOMAIN` | Public domain for streaming URLs | `localhost:8080` |
 | `RUST_LOG` | Log level | `info` |
 
@@ -138,6 +137,5 @@ The dev server starts on `http://localhost:5173` with API proxy to `localhost:80
 | GET | `/api/stream/:fid/:mid` | Stream media |
 | GET | `/api/preview/:fid/:mid` | Preview file |
 | GET | `/api/thumbnail/:fid/:mid` | Thumbnail |
-| POST | `/api/ai/chat` | Gemini AI chat |
 | GET | `/api/settings` | Get settings |
 | PUT | `/api/settings` | Save settings |

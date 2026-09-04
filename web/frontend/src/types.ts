@@ -89,7 +89,5 @@ export interface AppSettings {
     telegram_api_id?: number;
     theme?: string;
     auto_login?: boolean;
-    ai_proxy_url?: string;
     encryption_enabled?: boolean;
-    gemini_api_key?: string;
 }
