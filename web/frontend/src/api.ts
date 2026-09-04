@@ -158,11 +158,11 @@ export const createShare = (message_id: number, folder_id: number, expires_in?: 
 export const getShareUrl = (share_id: string) =>
   `${API_BASE}/s/${share_id}`;
 
-export const getVersions = (message_id: number, name: string, folder_id?: number) =>
+export const getVersions = (name: string, folder_id?: number) =>
   api<any[]>('GET', `/api/versions?name=${encodeURIComponent(name)}${folder_id !== undefined ? `&folder_id=${folder_id}` : ''}`);
 
 export const restoreVersion = (message_id: number, version_message_id: number, folder_id?: number, name?: string) =>
-  api<boolean>('POST', '/api/versions/restore', { folder_id, name, version_message_id: message_id, current_message_id: version_message_id });
+  api<boolean>('POST', '/api/versions/restore', { folder_id, name, version_message_id: version_message_id, current_message_id: message_id });
 
 export const recordVersion = (message_id: number, folder_id: number, name: string) =>
   api<boolean>('POST', '/api/versions/record', { message_id, folder_id, name });

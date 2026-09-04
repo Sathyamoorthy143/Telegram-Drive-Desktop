@@ -20,7 +20,7 @@ export function VersionsModal({ file, activeFolderId, onClose, onRestored }: Ver
     const load = async () => {
         setLoading(true);
         try {
-            setVersions(await api.getVersions(file.id, file.name, folderId));
+            setVersions(await api.getVersions(file.name, folderId));
         } catch {
             setVersions([]);
         } finally {
