@@ -103,6 +103,9 @@ pub async fn get_session(user_id: i64) -> Option<Vec<u8>> {
 pub async fn restore_session_if_needed(user_id: Option<i64>) -> bool {
     // if file exists and non-empty, no need
     let path = std::env::var("SESSION_PATH").unwrap_or_else(|_| "telegram.session".into());
+    if let Some(p) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
     if let Ok(meta) = tokio::fs::metadata(&path).await {
         if meta.len() > 100 {
             return false;

@@ -5,6 +5,9 @@ use crate::AppState;
 
 pub fn load_settings() -> Settings {
     let path = std::env::var("SETTINGS_PATH").unwrap_or_else(|_| "settings.json".into());
+    if let Some(p) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
     let mut settings: Settings = std::fs::read_to_string(&path)
         .ok()
         .and_then(|d| serde_json::from_str(&d).ok())
@@ -39,6 +42,9 @@ pub fn load_settings() -> Settings {
 
 pub fn save_settings(s: &Settings) {
     let path = std::env::var("SETTINGS_PATH").unwrap_or_else(|_| "settings.json".into());
+    if let Some(p) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
     if let Ok(j) = serde_json::to_string_pretty(s) {
         let _ = std::fs::write(path, j);
     }

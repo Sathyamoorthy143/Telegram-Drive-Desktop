@@ -31,6 +31,9 @@ pub async fn get_client(state: &AppState) -> Result<Client, String> {
         return Err(format!("CONNECTION_API_ID_INVALID: API ID {} too small, check my.telegram.org", api_id));
     }
     let sp = std::env::var("SESSION_PATH").unwrap_or_else(|_| "telegram.session".to_string());
+    if let Some(p) = std::path::Path::new(&sp).parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
     if tokio::fs::metadata(&sp).await.is_err() {
         let _ = crate::supabase::restore_session_if_needed(None).await;
     }
