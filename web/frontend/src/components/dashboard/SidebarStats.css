@@ -1,0 +1,34 @@
+@keyframes sidebarStatsCardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sidebarTypeItemEnter {
+  0% {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sidebar-stats-card-animate {
+  animation: sidebarStatsCardEnter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-type-item-animate {
+  opacity: 0;
+  animation: sidebarTypeItemEnter 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

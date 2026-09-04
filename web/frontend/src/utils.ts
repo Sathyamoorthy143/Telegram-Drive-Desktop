@@ -76,6 +76,24 @@ export function getFileExtension(name: string): string {
     return (name || '').split('.').pop()?.toLowerCase() || '';
 }
 
+export function getFileTypeCategory(name: string): string {
+    if (isOfficeFile(name)) {
+        const ext = getFileExtension(name);
+        if (['doc', 'docx', 'odt', 'rtf'].includes(ext)) return 'docs';
+        if (['xls', 'xlsx', 'ods'].includes(ext)) return 'excel';
+        if (['ppt', 'pptx', 'odp'].includes(ext)) return 'slides';
+        return 'docs';
+    }
+    if (isImageFile(name)) return 'images';
+    if (isVideoFile(name)) return 'video';
+    if (isAudioFile(name)) return 'audio';
+    if (isPdfFile(name)) return 'pdf';
+    if (isArchiveFile(name)) return 'archives';
+    if (isTextFile(name)) return 'text';
+    if (isExecutableFile(name)) return 'executable';
+    return 'other';
+}
+
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'unknown' | 'none' | 'office';
 
 export function getPreviewKind(file: { name: string; mime_type?: string; file_ext?: string }): PreviewKind {

@@ -22,7 +22,7 @@ import { FrameViewer } from './FrameViewer';
 import { SheetEditor } from './SheetEditor';
 import { DocEditor } from './DocEditor';
 import { SlideEditor } from './SlideEditor';
-import { getEditKind, EditKind } from '../../utils';
+import { getEditKind, getFileTypeCategory, EditKind } from '../../utils';
 import { DragDropOverlay } from './DragDropOverlay';
 import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
@@ -865,7 +865,12 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         if (isSpecial) return null;
         const filesOnly = (allFiles as any[]).filter((f: any) => f.type !== 'folder');
         const bytes = filesOnly.reduce((s: number, f: any) => s + (f.size || 0), 0);
-        return { count: filesOnly.length + subFolders.length, fileCount: filesOnly.length, folderCount: subFolders.length, bytes };
+        const byType: Record<string, number> = {};
+        for (const f of filesOnly) {
+            const cat = getFileTypeCategory(f.name || '');
+            byType[cat] = (byType[cat] || 0) + 1;
+        }
+        return { count: filesOnly.length + subFolders.length, fileCount: filesOnly.length, folderCount: subFolders.length, bytes, byType };
     })();
 
     return (

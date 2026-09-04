@@ -4,6 +4,8 @@ import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
 import { FolderMetadata, BandwidthStats, UserInfo } from '../../types';
 import { buildFolderTree, FolderNode } from '../../utils/treeUtils';
+import { getFileTypeCategory } from '../../utils';
+import './SidebarStats.css';
 
 interface SidebarProps {
     folders: FolderMetadata[];
@@ -25,7 +27,7 @@ interface SidebarProps {
     onSync: () => void;
     onLogout: () => void;
     bandwidth: BandwidthStats | null;
-    stats?: { count: number; fileCount: number; folderCount: number; bytes: number } | null;
+    stats?: { count: number; fileCount: number; folderCount: number; bytes: number; byType?: Record<string, number> } | null;
     onActivityLog: () => void;
     onAllVersions: () => void;
 }
@@ -398,10 +400,24 @@ export function Sidebar({
                 </div>
 
                 {stats && (
-                    <div className="mt-3 px-3 py-2 bg-white/5 border border-telegram-border rounded-xl">
+                    <div className="mt-3 px-3 py-2 bg-white/5 border border-telegram-border rounded-xl sidebar-stats-card-animate">
                         <p className="text-[10px] uppercase tracking-widest text-telegram-subtext font-bold mb-1">This folder</p>
                         <p className="text-sm font-bold text-telegram-text">{formatBytesShort(stats.bytes)}</p>
                         <p className="text-[11px] text-telegram-subtext">{stats.fileCount} file(s) • {stats.folderCount} folder(s)</p>
+                        {stats.byType && Object.keys(stats.byType).length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-telegram-border/50">
+                                <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                                    {Object.entries(stats.byType)
+                                        .filter(([, count]) => count > 0)
+                                        .sort((a, b) => b[1] - a[1])
+                                        .map(([type, count], idx) => (
+                                            <span key={type} className="text-[10px] text-telegram-subtext sidebar-type-item-animate" style={{ animationDelay: `${idx * 40}ms` }}>
+                                                <span className="capitalize">{type}</span> - {count}
+                                            </span>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
