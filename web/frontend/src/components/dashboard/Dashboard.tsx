@@ -672,22 +672,17 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             if (!files) return;
             const fileList = Array.from(files);
             const now = Date.now();
-            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
-            toast.loading(`Uploading ${fileList.length} files...`);
-            let ok = 0;
+            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, path: (f as any).webkitRelativePath || f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+            setBusy(true);
             for (let i = 0; i < fileList.length; i++) {
-                const file = fileList[i];
-                const qid = `${now}-${i}`;
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'uploading' as const, progress: 10 } : x));
-                try { await api.uploadFile(file, activeFolderId ?? undefined); setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'success' as const, progress: 100 } : x)); ok++; } catch { setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'error' as const } : x)); }
+                await runOneFileUpload(fileList[i], `${now}-${i}`);
             }
-            toast.dismiss();
-            toast.success(`${ok}/${fileList.length} files uploaded`);
+            setBusy(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-            setTimeout(() => setUploadQueue(q => q.filter(x => x.status === 'pending' || x.status === 'uploading')), 4000);
+            setTimeout(() => setUploadQueue(q => q.filter(x => x.status === 'pending' || x.status === 'uploading' || x.status === 'paused')), 4000);
         };
         input.click();
-    }, [activeFolderId, queryClient]);
+    }, [activeFolderId, queryClient, setBusy, runOneFileUpload]);
 
     const handleCameraUpload = useCallback(() => {
         const input = document.createElement('input');
