@@ -20,7 +20,7 @@ export function VersionsModal({ file, activeFolderId, onClose, onRestored }: Ver
     const load = async () => {
         setLoading(true);
         try {
-            setVersions(await api.getVersions(folderId, file.name));
+            setVersions(await api.getVersions(file.id));
         } catch {
             setVersions([]);
         } finally {
@@ -47,9 +47,9 @@ export function VersionsModal({ file, activeFolderId, onClose, onRestored }: Ver
         if (!confirm(`Restore v${v.version_no} of "${file.name}"? The current file will be moved to Trash.`)) return;
         setBusy(v.message_id);
         try {
-            await api.restoreVersion(folderId, file.name, v.message_id, file.id);
+            await api.restoreVersion(file.id, v.message_id);
             toast.success(`Restored v${v.version_no}`);
-            api.logActivity('version-restore', `v${v.version_no}`, file.name).catch(() => {});
+            api.logActivity('version-restore', file.id, `v${v.version_no}`).catch(() => {});
             onRestored();
             await load();
         } catch (e: any) {

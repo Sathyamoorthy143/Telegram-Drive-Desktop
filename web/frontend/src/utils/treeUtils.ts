@@ -1,26 +1,31 @@
-export interface FolderNode {
+import { TelegramFolder } from '../types';
+
+export interface FolderNode extends TelegramFolder {
     id: number;
     name: string;
     parent_id?: number;
     children: FolderNode[];
 }
 
-export function buildFolderTree(folders: { id: number; name: string; parent_id?: number }[]): FolderNode[] {
+export function buildFolderTree(folders: TelegramFolder[]): FolderNode[] {
     const map = new Map<number, FolderNode>();
     const roots: FolderNode[] = [];
 
-    for (const folder of folders) {
-        map.set(folder.id, { ...folder, children: [] });
-    }
+    // Initialize all nodes
+    folders.forEach(f => {
+        map.set(f.id, { ...f, children: [] });
+    });
 
-    for (const folder of folders) {
-        const node = map.get(folder.id)!;
-        if (folder.parent_id && map.has(folder.parent_id)) {
-            map.get(folder.parent_id)!.children.push(node);
+    // Connect children to parents
+    folders.forEach(f => {
+        const node = map.get(f.id)!;
+        if (f.parent_id && map.has(f.parent_id)) {
+            const parent = map.get(f.parent_id)!;
+            parent.children.push(node);
         } else {
             roots.push(node);
         }
-    }
+    });
 
     return roots;
 }

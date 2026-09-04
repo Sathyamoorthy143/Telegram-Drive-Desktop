@@ -122,3 +122,90 @@ export const getStore = async () => ({
   delete: async (key: string) => localStorage.removeItem(key),
   save: async () => {},
 });
+
+export const CHUNK_SIZE = 1024 * 1024;
+
+export const getTrash = () =>
+  api<any[]>('GET', '/api/trash');
+
+export const restoreTrash = (message_id: number, folder_id?: number) =>
+  api<boolean>('POST', '/api/trash/restore', { message_id, folder_id });
+
+export const emptyTrash = () =>
+  api<boolean>('DELETE', '/api/trash/empty');
+
+export const purgeTrash = (message_id: number) =>
+  api<boolean>('DELETE', `/api/trash/${message_id}/purge`);
+
+export const getFavorites = () =>
+  api<any[]>('GET', '/api/favorites');
+
+export const getRecent = () =>
+  api<any[]>('GET', '/api/recent');
+
+export const starFile = (message_id: number, folder_id: number, starred: boolean) =>
+  api<boolean>('POST', '/api/files/star', { message_id, folder_id, starred });
+
+export const getTags = (message_id: number) =>
+  api<string[]>('GET', `/api/files/${message_id}/tags`);
+
+export const setTags = (message_id: number, tags: string[]) =>
+  api<boolean>('POST', `/api/files/${message_id}/tags`, { tags });
+
+export const createShare = (message_id: number, folder_id: number, expires_in?: number) =>
+  api<{ url: string }>('POST', '/api/shares', { message_id, folder_id, expires_in });
+
+export const getShareUrl = (share_id: string) =>
+  `${API_BASE}/api/shares/${share_id}`;
+
+export const getVersions = (message_id: number) =>
+  api<any[]>('GET', `/api/files/${message_id}/versions`);
+
+export const restoreVersion = (message_id: number, version_id: number) =>
+  api<boolean>('POST', `/api/files/${message_id}/versions/${version_id}/restore`);
+
+export const recordVersion = (message_id: number, folder_id: number) =>
+  api<boolean>('POST', '/api/versions', { message_id, folder_id });
+
+export const logActivity = (action: string, file_id?: number, details?: string) =>
+  api<boolean>('POST', '/api/activity', { action, file_id, details });
+
+export const getActivity = () =>
+  api<any[]>('GET', '/api/activity');
+
+export const clearActivity = () =>
+  api<boolean>('DELETE', '/api/activity');
+
+export const touchRecent = (message_id: number, folder_id: number) =>
+  api<boolean>('POST', '/api/recent/touch', { message_id, folder_id });
+
+export const searchFilesAdvanced = (query: string, filters?: any) =>
+  api<any[]>('GET', `/api/files/search?q=${encodeURIComponent(query)}${filters ? '&' + new URLSearchParams(filters).toString() : ''}`);
+
+export const uploadFileResumable = (file: File, folder_id?: number) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (folder_id !== undefined) formData.append('folder_id', folder_id.toString());
+  return api<string>('POST', '/api/files/upload-resumable', formData);
+};
+
+export const uploadFileWithProgress = (file: File, folder_id: number, onProgress: (done: number, total: number, id: string) => void) => {
+  const id = crypto.randomUUID();
+  const xhr = new XMLHttpRequest();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('folder_id', folder_id.toString());
+
+  return new Promise<string>((resolve, reject) => {
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total, id);
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
+      else reject(new Error(xhr.responseText || `Upload failed: ${xhr.status}`));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Upload network error')));
+    xhr.open('POST', `${API_BASE}/api/files/upload`);
+    xhr.send(formData);
+  });
+};

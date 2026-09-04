@@ -3,13 +3,7 @@ import { X, Save, Bot, Palette, Power, ShieldCheck, Lock, Timer, Bell } from 'lu
 import * as api from '../../api';
 import { toast } from 'sonner';
 import { useLock } from '../../context/LockContext';
-
-interface AppSettings {
-    gemini_api_key?: string;
-    theme: string;
-    auto_login: boolean;
-    ai_proxy_url: string;
-}
+import { AppSettings } from '../../types';
 
 interface SettingsModalProps {
     onClose: () => void;
@@ -32,7 +26,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         const loadSettings = async () => {
             try {
                 const data = await api.getSettings();
-                setSettings(data);
+                setSettings(prev => ({ ...prev, ...data }));
             } catch (err) {
                 console.error("Failed to load settings:", err);
             } finally {
@@ -46,7 +40,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         setSaving(true);
         try {
             try { localStorage.setItem('encryption_enabled', encEnabled ? '1' : '0'); } catch {}
-            await api.saveSettings({ ...settings, encryption_enabled: encEnabled });
+            await api.saveSettings(settings);
             try { const { setEncryptionEnabled } = await import('../../lib/crypto'); setEncryptionEnabled(encEnabled); } catch {}
             toast.success("Settings saved successfully");
             onClose();

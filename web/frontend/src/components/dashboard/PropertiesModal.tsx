@@ -21,7 +21,7 @@ export function PropertiesModal({ file, onClose }: PropertiesModalProps) {
                 .then(setExtra)
                 .finally(() => setLoading(false));
         } else {
-            api.getTags(file.id, (file as any).folder_id ?? undefined).then(setTags).catch(()=>{});
+            api.getTags(file.id).then(setTags).catch(()=>{});
         }
     }, [file]);
 

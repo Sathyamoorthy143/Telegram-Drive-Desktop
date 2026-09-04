@@ -95,9 +95,9 @@ export function DocEditor({ file, activeFolderId, onClose, onSaved }: DocEditorP
                 });
             }
             await api.uploadFile(upFile, (file as any).folder_id ?? activeFolderId ?? undefined);
-            try { await api.recordVersion((file as any).folder_id ?? activeFolderId ?? undefined, file.name, file.id, (file as any).size); } catch {}
+            try { await api.recordVersion(file.id, (file as any).folder_id ?? activeFolderId ?? undefined); } catch {}
             try { await api.deleteFile(file.id, (file as any).folder_id ?? activeFolderId ?? undefined); } catch {}
-            api.logActivity('edit-save', `doc:${file.name}`, file.name).catch(() => {});
+            api.logActivity('edit-save', file.id, `doc:${file.name}`).catch(() => {});
             toast.success(`Saved ${file.name} (old version moved to Trash)`);
             onSaved();
             onClose();

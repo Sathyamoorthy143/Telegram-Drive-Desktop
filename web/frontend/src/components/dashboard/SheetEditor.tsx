@@ -148,10 +148,9 @@ export function SheetEditor({ file, activeFolderId, onClose, onSaved }: SheetEdi
                 type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             });
             await api.uploadFile(upFile, (file as any).folder_id ?? activeFolderId ?? undefined);
-            // move old version to Trash (soft delete), keep history recoverable
-            try { await api.recordVersion((file as any).folder_id ?? activeFolderId ?? undefined, file.name, file.id, (file as any).size); } catch {}
+            try { await api.recordVersion(file.id, (file as any).folder_id ?? activeFolderId ?? undefined); } catch {}
             try { await api.deleteFile(file.id, (file as any).folder_id ?? activeFolderId ?? undefined); } catch {}
-            api.logActivity('edit-save', `sheet:${file.name}`, file.name).catch(() => {});
+            api.logActivity('edit-save', file.id, `sheet:${file.name}`).catch(() => {});
             toast.success(`Saved ${file.name} (old version moved to Trash)`);
             onSaved();
             onClose();

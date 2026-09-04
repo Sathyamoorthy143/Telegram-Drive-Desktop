@@ -36,8 +36,8 @@ describe('types compile and have expected shape', () => {
   });
 
   it('FileClipboard cut vs copy', () => {
-    const cut: FileClipboard = { type: 'cut', messageIds: [1], folderIds: [] };
-    const copy: FileClipboard = { type: 'copy', messageIds: [1, 2], folderIds: [3] };
+    const cut: FileClipboard = { type: 'cut', messageIds: [1], folderIds: [], canPaste: true };
+    const copy: FileClipboard = { type: 'copy', messageIds: [1, 2], folderIds: [3], canPaste: true };
     expect(cut.type).toBe('cut');
     expect(copy.type).toBe('copy');
   });

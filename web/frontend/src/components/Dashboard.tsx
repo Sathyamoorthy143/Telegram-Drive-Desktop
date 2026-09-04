@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings, FolderMetadata } from '../types';
+import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings, FolderMetadata, QueueItem, DownloadItem } from '../types';
 import { formatBytes, isMediaFile, isPdfFile } from '../utils';
 import * as api from '../api';
 
@@ -23,8 +23,17 @@ import { TransferLogs } from './dashboard/TransferLogs';
 import { PropertiesModal } from './dashboard/PropertiesModal';
 import { AiAssistant } from './dashboard/AiAssistant';
 
+import { useTelegramConnection } from '../hooks/useTelegramConnection';
+import { useFileOperations } from '../hooks/useFileOperations';
+import { useFileUpload } from '../hooks/useFileUpload';
+import { useFileDownload } from '../hooks/useFileDownload';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+
 export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const queryClient = useQueryClient();
+    const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
+    const [downloadQueue, setDownloadQueue] = useState<DownloadItem[]>([]);
+    const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
     const [folders, setFolders] = useState<FolderMetadata[]>([]);
     const [activeFolderId, setActiveFolderId] = useState<number | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -55,7 +64,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
     const [previewContextFiles, setPreviewContextFiles] = useState<TelegramFile[]>([]);
     const [previewContextIndex, setPreviewContextIndex] = useState(-1);
-    const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
     const [propertyFile, setPropertyFile] = useState<TelegramFile | null>(null);
 
     // Load view settings from localStorage
@@ -159,9 +167,43 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         try { return await api.searchFiles(query); } catch { return []; }
     }, []);
 
-    const handleRename = useCallback(async (id: number, newName: string, isFolder: boolean) => {
-        if (isFolder) { try { await api.renameFolder(id, newName); await syncFolders(); } catch { toast.error('Rename failed'); } }
-    }, [syncFolders]);
+    const handleRename = useCallback(async (id: number, name: string) => {
+        const file = (displayedFiles as any[]).find((f) => f.id === id);
+        if (!file) return;
+        const isFolder = file.type === 'folder' || file.icon_type === 'folder';
+        if (isFolder) { try { await api.renameFolder(id, name); await syncFolders(); } catch { toast.error('Rename failed'); } }
+    }, [syncFolders, displayedFiles]);
+
+    const handleCut = useCallback((ids: number[]) => {
+        setClipboard({ type: 'cut', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId ?? null, canPaste: true });
+    }, [activeFolderId]);
+
+    const handleCopy = useCallback((ids: number[]) => {
+        setClipboard({ type: 'copy', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId ?? null, canPaste: true });
+    }, [activeFolderId]);
+
+    const handlePaste = useCallback(async (targetFolderId: number | null) => {
+        if (!clipboard) return;
+        try {
+            if (clipboard.type === 'cut') {
+                await api.moveFiles(clipboard.messageIds, [], clipboard.sourceFolderId ?? undefined, targetFolderId ?? undefined);
+            } else {
+                await api.copyFiles(clipboard.messageIds, [], clipboard.sourceFolderId ?? undefined, targetFolderId ?? undefined);
+            }
+            setClipboard(null);
+            queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
+            toast.success(clipboard.type === 'cut' ? 'Moved' : 'Copied');
+        } catch { toast.error('Paste failed'); }
+    }, [clipboard, activeFolderId, queryClient]);
+
+    const canPaste = !!clipboard?.canPaste;
+
+    const [uploadPaused, setUploadPaused] = useState(false);
+    const handleUploadCancelItem = useCallback((id: string) => {
+        setUploadQueue(items => items.filter(i => i.id !== id));
+    }, []);
+    const handleUploadPauseAll = useCallback(() => setUploadPaused(true), []);
+    const handleUploadResumeAll = useCallback(() => setUploadPaused(false), []);
 
     const handleManualUpload = useCallback(() => {
         const input = document.createElement('input');
@@ -287,7 +329,29 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 {showAi && <AiAssistant onClose={() => setShowAi(false)} currentFolderFiles={allFiles} key="ai-modal" />}
             </AnimatePresence>
 
-            <Sidebar folders={folders} activeFolderId={activeFolderId} setActiveFolderId={setActiveFolderId} onDrop={handleDropOnFolder} onDelete={handleFolderDelete} onCreate={handleCreateFolder} onRename={handleRename} isSyncing={isSyncing} isConnected={isConnected} userInfo={userInfo} onSync={syncFolders} onLogout={handleLogout} onSettings={() => setShowSettingsModal(true)} bandwidth={bandwidth || null} />
+            <Sidebar
+                folders={folders}
+                activeFolderId={activeFolderId}
+                setActiveFolderId={setActiveFolderId}
+                onDrop={handleDropOnFolder}
+                onDelete={handleFolderDelete}
+                onCreate={handleCreateFolder}
+                onRename={handleRename}
+                onCut={handleCut}
+                onCopy={handleCopy}
+                onPaste={handlePaste}
+                canPaste={canPaste}
+                onProperties={(id) => setPropertyFile(id ? { id, name: folders.find(f => f.id === id)?.name || '', type: 'folder', icon_type: 'folder' } as any : null)}
+                onSettings={() => setShowSettingsModal(true)}
+                isSyncing={isSyncing}
+                isConnected={isConnected}
+                onSync={syncFolders}
+                onLogout={handleLogout}
+                userInfo={userInfo as any}
+                bandwidth={bandwidth || null}
+                stats={{ count: allFiles.length, fileCount: allFiles.filter((f: any) => f.type !== 'folder').length, folderCount: folders.length, bytes: allFiles.reduce((s: number, f: any) => s + (f.size || 0), 0) }}
+                onActivityLog={() => setShowHistory(true)}
+            />
 
             <button onClick={() => setShowHistory(true)} className="fixed bottom-6 left-72 z-40 p-3 bg-telegram-surface border border-telegram-border rounded-full shadow-lg hover:bg-telegram-hover text-telegram-secondary transition-all hover:scale-110 group" title="Transfer History">
                 <History className="w-5 h-5 group-hover:rotate-12 transition-transform" />
@@ -298,15 +362,63 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             </button>
 
             <main className="flex-1 flex flex-col" onClick={(e) => { if (e.target === e.currentTarget) setSelectedIds([]); }}>
-                <TopBar selectedIds={selectedIds} onShowMoveModal={() => setShowMoveModal(true)} onBulkDownload={handleBulkDownload} onBulkDelete={handleBulkDelete} onManualUpload={handleManualUpload} onFolderUpload={handleFolderUpload} onCreateFolder={async () => { const name = window.prompt("Enter folder name:"); if (name) await handleCreateFolder(name, activeFolderId || undefined); }} viewSettings={viewSettings} onUpdateViewSettings={onUpdateViewSettings} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+                <TopBar
+                    selectedIds={selectedIds}
+                    onShowMoveModal={() => setShowMoveModal(true)}
+                    onBulkDownload={handleBulkDownload}
+                    onBulkDelete={handleBulkDelete}
+                    onBulkStar={() => {}}
+                    onBulkTag={() => {}}
+                    onBulkRename={() => {}}
+                    onManualUpload={handleManualUpload}
+                    onFolderUpload={handleFolderUpload}
+                    onCameraUpload={() => {}}
+                    onCreateFolder={async () => { const name = window.prompt("Enter folder name:"); if (name) await handleCreateFolder(name, activeFolderId || undefined); }}
+                    onPaste={() => handlePaste(activeFolderId)}
+                    onCut={handleCut}
+                    onCopy={handleCopy}
+                    canPaste={canPaste}
+                    viewSettings={viewSettings}
+                    onUpdateViewSettings={onUpdateViewSettings}
+                    searchTerm={searchTerm}
+                    onSearchChange={setSearchTerm}
+                />
                 {searchTerm.length > 2 && <div className="px-6 pt-4 pb-0"><h2 className="text-sm font-medium text-telegram-subtext">Search Results for <span className="text-telegram-primary">"{searchTerm}"</span></h2></div>}
-                <FileExplorer files={displayedFiles} loading={isLoading || isSearching} error={error} viewSettings={viewSettings} onUpdateViewSettings={onUpdateViewSettings} selectedIds={selectedIds} activeFolderId={activeFolderId} onFileClick={handleFileClick} onDelete={handleDelete} onDownload={(id, name) => { api.downloadFile(activeFolderId ?? 0, id).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }).catch(() => toast.error('Download failed')); }} onPreview={handlePreview} onManualUpload={handleManualUpload} onFolderUpload={handleFolderUpload} handleDroppedFiles={handleDroppedFiles} onSelectionClear={() => setSelectedIds([])} onToggleSelection={handleToggleSelection} onDrop={(e, targetId) => handleDropOnFolder(e, targetId)} onDragStart={(fileId) => setInternalDragFileId(fileId)} onDragEnd={() => setTimeout(() => setInternalDragFileId(null), 50)} onRename={handleRename} onMove={() => setShowMoveModal(true)} onOpenFolder={(id) => setActiveFolderId(id)} onProperties={(file) => { if (!file) setPropertyFile({ id: activeFolderId || 0, name: currentFolderName, type: 'folder', icon_type: 'folder' } as any); else setPropertyFile(file); }} />
+                <FileExplorer
+                    files={displayedFiles}
+                    loading={isLoading || isSearching}
+                    error={error}
+                    viewSettings={viewSettings}
+                    onUpdateViewSettings={onUpdateViewSettings}
+                    selectedIds={selectedIds}
+                    activeFolderId={activeFolderId}
+                    onFileClick={handleFileClick}
+                    onDelete={handleDelete}
+                    onDownload={(id, name) => { api.downloadFile(activeFolderId ?? 0, id).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }).catch(() => toast.error('Download failed')); }}
+                    onPreview={handlePreview}
+                    onManualUpload={handleManualUpload}
+                    onFolderUpload={handleFolderUpload}
+                    handleDroppedFiles={handleDroppedFiles}
+                    onSelectionClear={() => setSelectedIds([])}
+                    onToggleSelection={handleToggleSelection}
+                    onDrop={(e, targetId) => handleDropOnFolder(e, targetId)}
+                    onDragStart={(fileId) => setInternalDragFileId(fileId)}
+                    onDragEnd={() => setTimeout(() => setInternalDragFileId(null), 50)}
+                    onRename={handleRename}
+                    onMove={() => setShowMoveModal(true)}
+                    onOpenFolder={(id) => setActiveFolderId(id)}
+                    onProperties={(file) => { if (!file) setPropertyFile({ id: activeFolderId || 0, name: currentFolderName, type: 'folder', icon_type: 'folder' } as any); else setPropertyFile(file); }}
+                    onCut={handleCut}
+                    onCopy={handleCopy}
+                    onPaste={() => handlePaste(activeFolderId)}
+                    canPaste={canPaste}
+                />
             </main>
 
             {previewFile && <PreviewModal file={previewFile} activeFolderId={activeFolderId} onClose={() => setPreviewFile(null)} onNext={handleNextPreview} onPrev={handlePrevPreview} currentIndex={previewContextIndex} totalItems={previewContextFiles.length} nextFile={previewNeighbors.nextFile} prevFile={previewNeighbors.prevFile} />}
 
-            <UploadQueue items={[]} onClearFinished={() => {}} onCancelAll={() => {}} />
-            <DownloadQueue items={[]} onClearFinished={() => {}} onCancelAll={() => {}} />
+            <UploadQueue items={uploadQueue} paused={uploadPaused} onClearFinished={() => setUploadQueue([])} onCancelAll={() => setUploadQueue([])} onCancelItem={handleUploadCancelItem} onPauseAll={handleUploadPauseAll} onResumeAll={handleUploadResumeAll} />
+            <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue([])} onCancelAll={() => setDownloadQueue([])} />
         </motion.div>
     );
 }

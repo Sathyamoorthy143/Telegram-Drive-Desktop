@@ -17,6 +17,8 @@ export interface FolderMetadata {
     parent_id?: number;
 }
 
+export type TelegramFolder = FolderMetadata;
+
 export interface BandwidthStats {
     up_bytes: number;
     down_bytes: number;
@@ -27,13 +29,14 @@ export interface FileClipboard {
     messageIds: number[];
     folderIds: number[];
     sourceFolderId?: number | null;
+    canPaste: boolean;
 }
 
 export type SortField = 'name' | 'date' | 'type' | 'size';
 export type GroupBy = 'none' | 'type' | 'date';
 
 export interface ViewSettings {
-    viewMode: 'grid' | 'list';
+    viewMode: 'grid' | 'list' | 'tree';
     groupBy: GroupBy;
     showPreviewPane: boolean;
     sortField: SortField;
@@ -53,4 +56,37 @@ export interface TransferProgress {
     percent: number;
     speed: number;
     eta: number;
+}
+
+export interface QueueItem {
+    id: string;
+    path: string;
+    size: number;
+    folderId: number | null;
+    status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled';
+    error?: string;
+    progress?: number;
+    speed?: number;
+    eta?: number;
+}
+
+export interface DownloadItem {
+    id: string;
+    messageId: number;
+    filename: string;
+    size: number;
+    folderId: number | null;
+    status: 'pending' | 'downloading' | 'success' | 'error' | 'cancelled';
+    error?: string;
+    progress?: number;
+    speed?: number;
+    eta?: number;
+}
+
+export interface AppSettings {
+    telegram_api_id?: number;
+    theme?: string;
+    auto_login?: boolean;
+    ai_proxy_url?: string;
+    encryption_enabled?: boolean;
 }
