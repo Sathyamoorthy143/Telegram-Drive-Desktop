@@ -104,7 +104,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             await requestCode(phone, idInt, apiHash);
             setStep("code");
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : JSON.stringify(err);
+            const raw = err instanceof Error ? err.message : err;
+            const msg = typeof raw === 'string' ? raw : JSON.stringify(raw);
             if (msg.includes("FLOOD_WAIT_")) {
                 const parts = msg.split("FLOOD_WAIT_");
                 if (parts[1]) {

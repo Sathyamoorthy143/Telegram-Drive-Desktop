@@ -58,7 +58,7 @@ export function PreviewPane({ file, onClose, onDownload, onDelete, onProperties,
                         <h4 className="text-[10px] font-bold uppercase tracking-widest text-telegram-subtext mb-3 px-1">Details</h4>
                         <div className="bg-telegram-hover/30 rounded-xl border border-telegram-border overflow-hidden">
                             <DetailRow icon={Database} label="Size" value={isFolder ? '--' : formatBytes(file.size)} />
-                            <DetailRow icon={Type} label="Type" value={isFolder ? 'Folder' : file.name.split('.').pop()?.toUpperCase() || 'File'} />
+                            <DetailRow icon={Type} label="Type" value={isFolder ? 'Folder' : (file.name || '').split('.').pop()?.toUpperCase() || 'File'} />
                             <DetailRow icon={Calendar} label="Modified" value={file.created_at || 'Recently'} />
                         </div>
                     </section>

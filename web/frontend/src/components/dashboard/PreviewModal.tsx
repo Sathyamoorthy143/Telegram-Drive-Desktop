@@ -225,7 +225,7 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                                 <File className="w-16 h-16 text-telegram-primary mx-auto mb-4" />
                                 <h3 className="text-xl text-white font-medium mb-2">{file.name}</h3>
                                 <p className="text-gray-400 mb-6">Preview not supported in app.</p>
-                                <p className="text-xs text-gray-500">File type: {file.name.split('.').pop()}</p>
+                                <p className="text-xs text-gray-500">File type: {(file.name || '').split('.').pop()}</p>
                             </div>
                         )}
                     </div>

@@ -58,7 +58,7 @@ export function isExecutableFile(name: string): boolean {
 }
 
 export function isTextFile(name: string): boolean {
-    const ext = name.split('.').pop()?.toLowerCase() || '';
+    const ext = (name || '').split('.').pop()?.toLowerCase() || '';
     return ['txt', 'md', 'json', 'js', 'ts', 'tsx', 'jsx', 'css', 'html', 'xml', 'yaml', 'yml', 'py', 'rs', 'toml', 'csv', 'log', 'sql', 'rb', 'php', 'sh', 'bat', 'ini', 'env', 'gitignore', 'editorconfig', 'prettierrc', 'eslintrc', 'dockerfile', 'makefile', 'cmake', 'gradle', 'properties', 'toml', 'lock', 'graphql', 'prisma', 'env'].includes(ext);
 }
 
@@ -73,7 +73,7 @@ export function formatDuration(seconds: number): string {
 }
 
 export function getFileExtension(name: string): string {
-    return name.split('.').pop()?.toLowerCase() || '';
+    return (name || '').split('.').pop()?.toLowerCase() || '';
 }
 
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'unknown' | 'none' | 'office';

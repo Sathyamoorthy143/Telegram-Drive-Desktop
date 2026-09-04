@@ -144,7 +144,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#1c1c1c] text-center p-8 z-10">
                             {isEncrypted ? <Lock className="w-12 h-12 text-telegram-primary" /> : <FileWarning className="w-12 h-12 text-yellow-500" />}
                             <p className="text-white font-medium">{error}</p>
-                            <p className="text-xs text-white/50">File type: {file.name.split('.').pop()}</p>
+                            <p className="text-xs text-white/50">File type: {(file.name || '').split('.').pop()}</p>
                             <button onClick={handleDownload} className="mt-2 px-5 py-2 bg-telegram-primary text-white rounded-xl text-sm font-bold flex items-center gap-2">
                                 <Download className="w-4 h-4" /> Download instead
                             </button>

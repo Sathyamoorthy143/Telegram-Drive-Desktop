@@ -89,7 +89,7 @@ export function SlideEditor({ file, activeFolderId, onClose, onSaved }: SlideEdi
                             const mediaFile = zip.file(mediaPath) || zip.file(`ppt/${target.replace(/^\.\.\//, '')}`);
                             if (!mediaFile) continue;
                             const b64 = await mediaFile.async('base64');
-                            const ext = (mediaPath.split('.').pop() || 'png').toLowerCase();
+                            const ext = ((mediaPath || '').split('.').pop() || 'png').toLowerCase();
                             const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'bmp' ? 'image/bmp' : 'image/png';
                             images.push(`data:${mime};base64,${b64}`);
                             if (images.length >= 4) break;
@@ -134,7 +134,7 @@ export function SlideEditor({ file, activeFolderId, onClose, onSaved }: SlideEdi
                 if (s.title.trim()) {
                     slide.addText(s.title, { x: 0.5, y: 0.3, w: 12.33, h: 1.1, fontSize: 28, bold: true });
                 }
-                const lines = s.bullets.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                const lines = (s.bullets || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
                 if (lines.length > 0) {
                     slide.addText(
                         lines.map(t => ({ text: t, options: { bullet: { code: '2022' }, fontSize: 18 } })),
@@ -204,7 +204,7 @@ export function SlideEditor({ file, activeFolderId, onClose, onSaved }: SlideEdi
                                 <button key={i} onClick={() => setActive(i)} className={`w-full text-left p-2 rounded-xl border transition-colors ${i === active ? 'border-telegram-primary bg-telegram-primary/10' : 'border-telegram-border hover:bg-white/5'}`}>
                                     <p className="text-[10px] font-bold text-telegram-subtext mb-1">Slide {i + 1}</p>
                                     <p className="text-xs font-semibold text-telegram-text truncate">{s.title || '(no title)'}</p>
-                                    <p className="text-[10px] text-telegram-subtext truncate">{s.bullets.split('\n')[0] || ''}</p>
+                                    <p className="text-[10px] text-telegram-subtext truncate">{(s.bullets || '').split('\n')[0] || ''}</p>
                                 </button>
                             ))}
                             <button onClick={() => { setSlides([...slides, { title: '', bullets: '', images: [] }]); setActive(slides.length); }} className="w-full p-2 rounded-xl border border-dashed border-telegram-border text-telegram-subtext hover:text-telegram-primary text-xs flex items-center justify-center gap-1">

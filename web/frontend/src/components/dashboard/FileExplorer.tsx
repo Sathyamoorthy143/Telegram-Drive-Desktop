@@ -167,7 +167,7 @@ export function FileExplorer({
         sortedFiles.forEach(file => {
             let key = 'Other';
             if (viewSettings.groupBy === 'type') {
-                key = file.type === 'folder' ? 'Folders' : (file.name.split('.').pop()?.toUpperCase() || 'Other');
+                key = file.type === 'folder' ? 'Folders' : ((file.name || '').split('.').pop()?.toUpperCase() || 'Other');
             } else if (viewSettings.groupBy === 'date') {
                 // Simplified date grouping
                 const date = file.created_at ? new Date(file.created_at) : new Date();

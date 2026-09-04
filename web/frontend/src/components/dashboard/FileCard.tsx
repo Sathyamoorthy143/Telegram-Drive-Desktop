@@ -24,7 +24,7 @@ interface FileCardProps {
 
 // Check if file is an image type that can have a thumbnail
 function isImageFile(filename: string): boolean {
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const ext = (filename || '').split('.').pop()?.toLowerCase() || '';
     return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
 }
 

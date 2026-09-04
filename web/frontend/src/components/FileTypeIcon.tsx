@@ -84,7 +84,7 @@ const extensionMap: Record<string, { icon: typeof File; color: string }> = {
 };
 
 export function getFileTypeInfo(filename: string): { icon: typeof File; color: string } {
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const ext = (filename || '').split('.').pop()?.toLowerCase() || '';
     return extensionMap[ext] || { icon: File, color: 'text-telegram-subtext' };
 }
 
