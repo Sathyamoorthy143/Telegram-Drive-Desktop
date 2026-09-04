@@ -15,12 +15,18 @@ const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 's
 const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'iso', 'dmg']);
 const EXEC_EXTENSIONS = new Set(['exe', 'msi', 'apk', 'bat', 'sh', 'app', 'pkg', 'sdk', 'bin']);
 
+const OFFICE_EXTENSIONS = new Set(['doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'ppt', 'pptx', 'odp']);
+
 function endsWithAny(name: string, exts: Set<string>): boolean {
     const lower = name.toLowerCase();
     for (const ext of exts) {
         if (lower.endsWith(ext)) return true;
     }
     return false;
+}
+
+export function isOfficeFile(name: string): boolean {
+    return endsWithAny(name, OFFICE_EXTENSIONS);
 }
 
 export function isMediaFile(name: string): boolean {
@@ -53,7 +59,7 @@ export function isExecutableFile(name: string): boolean {
 
 export function isTextFile(name: string): boolean {
     const ext = name.split('.').pop()?.toLowerCase() || '';
-    return ['txt', 'md', 'json', 'js', 'ts', 'tsx', 'jsx', 'css', 'html', 'xml', 'yaml', 'yml', 'py', 'rs', 'toml', 'csv', 'log', 'doc', 'docx', 'pdf', 'rtf'].includes(ext);
+    return ['txt', 'md', 'json', 'js', 'ts', 'tsx', 'jsx', 'css', 'html', 'xml', 'yaml', 'yml', 'py', 'rs', 'toml', 'csv', 'log', 'sql', 'rb', 'php', 'sh', 'bat', 'ini', 'env', 'gitignore', 'editorconfig', 'prettierrc', 'eslintrc', 'dockerfile', 'makefile', 'cmake', 'gradle', 'properties', 'toml', 'lock', 'graphql', 'prisma', 'env'].includes(ext);
 }
 
 export function formatDuration(seconds: number): string {
@@ -80,8 +86,9 @@ export function getPreviewKind(file: { name: string; mime_type?: string; file_ex
     if (mime.startsWith('video/') || isVideoFile(file.name)) return 'video';
     if (mime.startsWith('audio/') || isAudioFile(file.name)) return 'audio';
     if (mime === 'application/pdf' || isPdfFile(file.name)) return 'pdf';
-    if (isTextFile(file.name)) return 'text';
+    if (isOfficeFile(file.name)) return 'office';
     if (['js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'html', 'json', 'xml', 'yaml', 'yml', 'toml', 'md', 'sh', 'bat', 'sql', 'rb', 'php'].includes(ext)) return 'code';
+    if (isTextFile(file.name)) return 'text';
 
     return 'unknown';
 }
