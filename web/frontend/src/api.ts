@@ -205,12 +205,12 @@ export const uploadFileResumable = (file: File, folder_id?: number, options?: {
     });
     xhr.addEventListener('error', () => reject(new Error('Upload network error')));
     xhr.open('POST', `${API_BASE}/api/files/upload`);
-    if (options?.signal) xhr.upload.signal = options.signal;
+    if (options?.signal) (xhr as XMLHttpRequest & { signal?: AbortSignal }).signal = options.signal;
     xhr.send(formData);
   });
 };
 
-export const uploadFileWithProgress = (file: File, folder_id: number, options?: {
+export const uploadFileWithProgress = (file: File, folder_id?: number, options?: {
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }) => {
@@ -218,7 +218,7 @@ export const uploadFileWithProgress = (file: File, folder_id: number, options?: 
   const xhr = new XMLHttpRequest();
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('folder_id', folder_id.toString());
+  if (folder_id !== undefined) formData.append('folder_id', folder_id.toString());
 
   return new Promise<string>((resolve, reject) => {
     xhr.upload.addEventListener('progress', (e) => {
@@ -230,7 +230,7 @@ export const uploadFileWithProgress = (file: File, folder_id: number, options?: 
     });
     xhr.addEventListener('error', () => reject(new Error('Upload network error')));
     xhr.open('POST', `${API_BASE}/api/files/upload`);
-    if (options?.signal) xhr.upload.signal = options.signal;
+    if (options?.signal) (xhr as XMLHttpRequest & { signal?: AbortSignal }).signal = options.signal;
     xhr.send(formData);
   });
 };

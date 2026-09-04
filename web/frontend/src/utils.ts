@@ -70,7 +70,7 @@ export function getFileExtension(name: string): string {
     return name.split('.').pop()?.toLowerCase() || '';
 }
 
-export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'unknown';
+export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'unknown' | 'none' | 'office';
 
 export function getPreviewKind(file: { name: string; mime_type?: string; file_ext?: string }): PreviewKind {
     const ext = getFileExtension(file.name);
@@ -86,7 +86,7 @@ export function getPreviewKind(file: { name: string; mime_type?: string; file_ex
     return 'unknown';
 }
 
-export type EditKind = 'doc' | 'sheet' | 'slide' | 'pdf' | 'image' | 'video' | 'audio' | 'archive' | 'code' | 'unknown';
+export type EditKind = 'doc' | 'sheet' | 'slide' | 'pdf' | 'image' | 'video' | 'audio' | 'archive' | 'code' | 'text' | 'unknown';
 
 export function getEditKind(file: { name: string; mime_type?: string; file_ext?: string }): EditKind {
     const ext = getFileExtension(file.name);

@@ -61,9 +61,10 @@ export interface TransferProgress {
 export interface QueueItem {
     id: string;
     path: string;
+    name?: string;
     size: number;
     folderId: number | null;
-    status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled';
+    status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled' | 'paused';
     error?: string;
     progress?: number;
     speed?: number;
@@ -74,6 +75,7 @@ export interface DownloadItem {
     id: string;
     messageId: number;
     filename: string;
+    name?: string;
     size: number;
     folderId: number | null;
     status: 'pending' | 'downloading' | 'success' | 'error' | 'cancelled';
@@ -89,4 +91,5 @@ export interface AppSettings {
     auto_login?: boolean;
     ai_proxy_url?: string;
     encryption_enabled?: boolean;
+    gemini_api_key?: string;
 }

@@ -19,7 +19,7 @@ const OFFICE_EMBED = 'https://view.officeapps.live.com/op/embed.aspx?src=';
 
 export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentIndex, totalItems, activeFolderId }: FrameViewerProps) {
     const isEncrypted = file.name.endsWith('.enc');
-    const kind: PreviewKind = isEncrypted ? 'none' : getPreviewKind(file.name);
+    const kind: PreviewKind = isEncrypted ? 'none' : getPreviewKind({ name: file.name, mime_type: file.mime_type, file_ext: file.file_ext });
     const [frameSrc, setFrameSrc] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(
@@ -113,7 +113,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                             {kind === 'office' && <span className="ml-2 text-white/30">via Office viewer • link expires in 1 day</span>}
                         </p>
                     </div>
-                    {onEdit && getEditKind(file.name) && !isEncrypted && (
+                    {onEdit && getEditKind(file) && !isEncrypted && (
                         <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-2 text-black bg-telegram-primary hover:bg-telegram-primary/90 rounded-full transition-colors text-xs font-bold" title="Edit in built-in editor">
                             <PenLine className="w-4 h-4" /> Edit
                         </button>

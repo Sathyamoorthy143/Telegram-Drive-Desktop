@@ -477,12 +477,12 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     }, [selectedIds, displayedFiles, activeFolderId, syncFolders, queryClient, askPrompt]);
 
     const handleCut = useCallback((ids: number[]) => {
-        setClipboard({ type: 'cut', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId });
+        setClipboard({ type: 'cut', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId, canPaste: true });
         toast.info(`${ids.length} item(s) cut to clipboard.`);
     }, [activeFolderId]);
 
     const handleCopy = useCallback((ids: number[]) => {
-        setClipboard({ type: 'copy', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId });
+        setClipboard({ type: 'copy', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId, canPaste: true });
         toast.info(`${ids.length} item(s) copied to clipboard.`);
     }, [activeFolderId]);
 
@@ -901,8 +901,8 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         folders={folders} activeFolderId={activeFolderId} setActiveFolderId={setActiveFolderId} stats={folderStats}
         onDrop={handleDropOnFolder} onDelete={handleFolderDelete} onCreate={handleCreateFolder}
         onRename={(id, name) => handleRename(id, name, true)}
-        onCut={(id) => { setClipboard({ type: 'cut', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId }); toast.info('Folder cut to clipboard.'); }}
-        onCopy={(id) => { setClipboard({ type: 'copy', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId }); toast.info('Folder copied to clipboard.'); }}
+        onCut={(id) => { setClipboard({ type: 'cut', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId, canPaste: true }); toast.info('Folder cut to clipboard.'); }}
+        onCopy={(id) => { setClipboard({ type: 'copy', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId, canPaste: true }); toast.info('Folder copied to clipboard.'); }}
         onPaste={(targetId) => handlePaste(targetId)}
         canPaste={!!clipboard}
         onProperties={(id) => {

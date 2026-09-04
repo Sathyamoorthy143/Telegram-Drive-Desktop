@@ -167,7 +167,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         try { return await api.searchFiles(query); } catch { return []; }
     }, []);
 
-    const handleRename = useCallback(async (id: number, name: string, _isFolder: boolean) => {
+    const handleRename = useCallback(async (id: number, name: string) => {
         const file = (displayedFiles as any[]).find((f) => f.id === id);
         if (!file) return;
         const isFolder = file.type === 'folder' || file.icon_type === 'folder';
@@ -181,6 +181,9 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const handleCopy = useCallback((ids: number[]) => {
         setClipboard({ type: 'copy', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId ?? null, canPaste: true });
     }, [activeFolderId]);
+
+    const handleSidebarCut = useCallback((id: number) => handleCut([id]), [handleCut]);
+    const handleSidebarCopy = useCallback((id: number) => handleCopy([id]), [handleCopy]);
 
     const handlePaste = useCallback(async (targetFolderId: number | null) => {
         if (!clipboard) return;
@@ -337,8 +340,8 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 onDelete={handleFolderDelete}
                 onCreate={handleCreateFolder}
                 onRename={handleRename}
-                onCut={handleCut}
-                onCopy={handleCopy}
+                onCut={handleSidebarCut}
+                onCopy={handleSidebarCopy}
                 onPaste={handlePaste}
                 canPaste={canPaste}
                 onProperties={(id) => setPropertyFile(id ? { id, name: folders.find(f => f.id === id)?.name || '', type: 'folder', icon_type: 'folder' } as any : null)}

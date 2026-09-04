@@ -153,7 +153,8 @@ export function useFileOperations(
             type: 'cut', 
             messageIds, 
             folderIds,
-            sourceFolderId: activeFolderId 
+            sourceFolderId: activeFolderId,
+            canPaste: true
         });
         toast.info(`Cut ${ids.length} items to clipboard.`);
     };
@@ -167,7 +168,8 @@ export function useFileOperations(
             type: 'copy', 
             messageIds, 
             folderIds,
-            sourceFolderId: activeFolderId 
+            sourceFolderId: activeFolderId,
+            canPaste: true
         });
         toast.info(`Copied ${ids.length} items to clipboard.`);
     };
