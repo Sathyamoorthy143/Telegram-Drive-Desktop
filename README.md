@@ -14,13 +14,15 @@
 
 ---
 
-## 📖 Documentation
+## 📚 Documentation Menu
 
-For full documentation, quick start guides, deployment instructions, API reference, and architecture details, see:
+> **👉 Main documentation:** [`web/README.md`](web/README.md)
 
-👉 **[`web/README.md`](web/README.md)**
+<details>
+<summary><strong>📖 Click to expand README sections</strong></summary>
 
-That file is the canonical README for this repository, covering:
+The canonical [`web/README.md`](web/README.md) covers:
+
 - 🌟 Why Telegram Drive?
 - 🏗️ Architecture & request flow
 - ⚖️ Desktop vs Web comparison
@@ -31,6 +33,8 @@ That file is the canonical README for this repository, covering:
 - 📡 Full API endpoint reference
 - 🧪 Testing instructions
 - 🤝 Contributing guidelines
+
+</details>
 
 ---
 
