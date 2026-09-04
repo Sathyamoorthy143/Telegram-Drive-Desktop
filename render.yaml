@@ -25,8 +25,9 @@ services:
       - key: DOMAIN
         value: your-app.onrender.com
       # Free Tier: no disk, ephemeral FS - session wiped on deploy only, survives sleep
+      # Attach a persistent disk at /app/data for session survival across deploys
       # Do NOT set FRONTEND_DIST for backend-only deploy
       - key: SESSION_PATH
-        value: telegram.session
+        value: /app/data/telegram.session
       - key: SETTINGS_PATH
         value: settings.json
