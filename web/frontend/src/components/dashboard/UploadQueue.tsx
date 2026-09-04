@@ -70,8 +70,8 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                                     item.status === 'cancelled' ? 'bg-gray-500' :
                                         item.status === 'error' ? 'bg-red-500' : 'bg-green-500'
                                 }`} />
-                            <div className="flex-1 truncate text-telegram-subtext text-xs" title={item.path}>
-                                {item.path.split(/[/\\]/).pop() || item.name}
+                            <div className="flex-1 truncate text-telegram-subtext text-xs" title={item.path || item.name}>
+                                {(item.path || item.name || '').split(/[/\\]/).pop()}
                             </div>
                             {item.status === 'uploading' && item.progress !== undefined && (
                                 <div className="text-xs text-blue-400 font-mono font-bold">{item.progress}%</div>

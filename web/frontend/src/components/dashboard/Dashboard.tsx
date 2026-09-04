@@ -651,7 +651,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             }
             // init queue
             const now = Date.now();
-            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
             setBusy(true);
             for (let i = 0; i < fileList.length; i++) {
                 await runOneFileUpload(fileList[i], `${now}-${i}`);
@@ -672,7 +672,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             if (!files) return;
             const fileList = Array.from(files);
             const now = Date.now();
-            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
             toast.loading(`Uploading ${fileList.length} files...`);
             let ok = 0;
             for (let i = 0; i < fileList.length; i++) {
@@ -699,7 +699,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             if (!files || files.length === 0) return;
             const file = files[0];
             const qid = `${Date.now()}-cam`;
-            setUploadQueue(prev => [...prev, { id: qid, name: file.name, size: file.size, status: 'pending' as const, progress: 0 }]);
+            setUploadQueue(prev => [...prev, { id: qid, path: file.name, name: file.name, size: file.size, status: 'pending' as const, progress: 0 }]);
             setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'uploading' as const, progress: 5 } : x));
             const tid = toast.loading(`Uploading ${file.name}...`);
             try {
@@ -720,7 +720,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const handleDroppedFiles = useCallback(async (files: File[]) => {
         if (files.length === 0) return;
         const now = Date.now();
-        setUploadQueue(prev => [...prev, ...files.map((f, i) => ({ id: `${now}-${i}`, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+        setUploadQueue(prev => [...prev, ...files.map((f, i) => ({ id: `${now}-${i}`, path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const qid = `${now}-${i}`;
