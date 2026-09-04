@@ -99,9 +99,13 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
         setLoading(true);
         setError(null);
         try {
+            const trimmedPhone = phone.trim();
+            if (!trimmedPhone) throw new Error("Phone number is required.");
             const idInt = parseInt(apiId, 10);
             if (isNaN(idInt)) throw new Error("API ID must be a number");
-            await requestCode(phone, idInt, apiHash);
+            const trimmedHash = apiHash.trim();
+            if (!trimmedHash) throw new Error("API Hash is required");
+            await requestCode(trimmedPhone, idInt, trimmedHash);
             setStep("code");
         } catch (err: unknown) {
             const raw = err instanceof Error ? err.message : err;
@@ -113,7 +117,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                     if (!isNaN(seconds)) { setFloodWait(seconds); return; }
                 }
             }
-            setError(msg);
+            setError(msg || "Failed to send login code");
         } finally {
             setLoading(false);
         }

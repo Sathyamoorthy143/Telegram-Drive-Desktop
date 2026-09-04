@@ -103,6 +103,9 @@ pub async fn request_code(
     if api_hash.contains(' ') {
         return HttpResponse::BadRequest().body("API Hash cannot contain spaces");
     }
+    if req.phone.trim().is_empty() {
+        return HttpResponse::BadRequest().body("Phone number is required");
+    }
     *state.api_id.lock().await = Some(req.api_id);
     {
         let mut s = state.settings.lock().unwrap();
@@ -113,7 +116,7 @@ pub async fn request_code(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    for _ in 0..2 {
+    for attempt in 0..2 {
         match client
             .request_login_code(&req.phone, &api_hash)
             .await
@@ -124,14 +127,31 @@ pub async fn request_code(
             }
             Err(e) => {
                 let m = e.to_string();
-                if m.contains("AUTH_RESTART") || m.contains("500") {
-                    continue;
+                if m.contains("AUTH_RESTART") || m.to_lowercase().contains("500") || m.contains("FLOOD_WAIT") {
+                    if attempt < 1 {
+                        continue;
+                    }
+                    let friendly = if m.contains("FLOOD_WAIT") {
+                        format!("Telegram flood wait: {}", m)
+                    } else {
+                        format!("Telegram temporary error after retry: {}", m)
+                    };
+                    return HttpResponse::BadGateway().body(friendly);
                 }
-                return HttpResponse::InternalServerError().body(map_error(e));
+                let friendly = if m.contains("PHONE_NUMBER_INVALID") || m.contains("PhoneNumberInvalid") {
+                    "Phone number appears invalid. Use international format, e.g. +1234567890".into()
+                } else if m.contains("API_ID_INVALID") || m.contains("ApiIdInvalid") {
+                    "Telegram rejected the API ID/Hash pair. Verify them at https://my.telegram.org".into()
+                } else if m.contains("PASSWORD_HASH_INVALID") || m.contains("PasswordHashInvalid") {
+                    "API ID/Hash are invalid for this account. Regenerate them at https://my.telegram.org".into()
+                } else {
+                    format!("request_login_code failed: {}", m)
+                };
+                return HttpResponse::BadRequest().body(friendly);
             }
         }
     }
-    HttpResponse::InternalServerError().body("Telegram error after retry")
+    HttpResponse::BadGateway().body("Telegram error after retry")
 }
 
 pub async fn sign_in(
@@ -145,8 +165,11 @@ pub async fn sign_in(
     let token = { state.login_token.lock().await.take() };
     let token = match token {
         Some(t) => t,
-        None => return HttpResponse::BadRequest().body("No login session"),
+        None => return HttpResponse::BadRequest().body("No login session: request a new code first"),
     };
+    if req.code.trim().is_empty() {
+        return HttpResponse::BadRequest().body("Code is required");
+    }
     match client.sign_in(&token, &req.code).await {
         Ok(_) => {
             if let Ok(me) = client.get_me().await {
@@ -168,7 +191,21 @@ pub async fn sign_in(
                 error: None,
             })
         }
-        Err(e) => HttpResponse::InternalServerError().body(format!("Sign in failed: {}", e)),
+        Err(e) => {
+            let m = e.to_string();
+            let friendly = if m.contains("SESSION_PASSWORD_NEEDED") || m.contains("PasswordRequired") {
+                "Two-factor authentication is enabled for this account.".into()
+            } else if m.contains("CODE_INVALID") || m.contains("PhoneCodeInvalid") {
+                "Invalid code. Request a new code and try again.".into()
+            } else if m.contains("CODE_EXPIRED") || m.contains("PhoneCodeExpired") {
+                "Code expired. Request a new code.".into()
+            } else if m.contains("FLOOD_WAIT") {
+                format!("Too many attempts: {}", m)
+            } else {
+                format!("sign_in failed: {}", m)
+            };
+            HttpResponse::BadRequest().body(friendly)
+        }
     }
 }
 
@@ -183,8 +220,11 @@ pub async fn check_password(
     let pw = { state.password_token.lock().await.take() };
     let pw = match pw {
         Some(t) => t,
-        None => return HttpResponse::BadRequest().body("No password session"),
+        None => return HttpResponse::BadRequest().body("No password session: sign in again first"),
     };
+    if req.password.trim().is_empty() {
+        return HttpResponse::BadRequest().body("Password is required");
+    }
     match client.check_password(pw, &req.password).await {
         Ok(_) => {
             if let Ok(me) = client.get_me().await {
@@ -198,7 +238,15 @@ pub async fn check_password(
                 error: None,
             })
         }
-        Err(e) => HttpResponse::InternalServerError().body(format!("2FA Failed: {}", e)),
+        Err(e) => {
+            let m = e.to_string();
+            let friendly = if m.contains("PASSWORD_HASH_INVALID") || m.to_lowercase().contains("invalid") {
+                "Invalid password. Please try again.".into()
+            } else {
+                format!("2FA failed: {}", m)
+            };
+            HttpResponse::BadRequest().body(friendly)
+        }
     }
 }
 
