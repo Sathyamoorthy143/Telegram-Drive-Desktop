@@ -54,6 +54,10 @@ async fn main() -> std::io::Result<()> {
                     
                     // Files & Folders
                     .route("/files", web::get().to(handlers::get_files))
+                    .route("/files/upload", web::post().to(handlers::upload_file))
+                    .route("/files/upload/init", web::post().to(handlers::upload_init))
+                    .route("/files/upload/chunk", web::put().to(handlers::upload_chunk))
+                    .route("/files/upload/complete", web::post().to(handlers::upload_complete))
                     .route("/folders/scan", web::get().to(handlers::scan_folders))
                     .route("/folders/create", web::post().to(handlers::create_folder))
                     .route("/files/delete", web::post().to(handlers::delete_file))

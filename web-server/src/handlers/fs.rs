@@ -1,11 +1,18 @@
 use actix_web::{web, HttpResponse, Responder};
+use actix_multipart::Multipart;
 use crate::TelegramState;
 use crate::models::{FileMetadata, FolderMetadata};
 use crate::utils::{resolve_peer, map_error};
 use crate::handlers::auth::get_client;
+use futures_util::stream::StreamExt;
 use grammers_client::types::{Media, Peer};
+use grammers_client::InputMessage;
 use grammers_tl_types as tl;
 use serde::Deserialize;
+use std::fs;
+use std::io::{Cursor, Write};
+use std::path::Path;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct GetFilesRequest {
@@ -162,4 +169,196 @@ pub async fn get_bandwidth() -> impl Responder {
         up_bytes: 1024 * 1024 * 10,
         down_bytes: 1024 * 1024 * 50,
     })
+}
+
+#[derive(Deserialize)]
+pub struct UploadInitRequest {
+    pub name: String,
+    pub size: u64,
+    pub folder_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct UploadCompleteRequest {
+    pub upload_id: String,
+    pub folder_id: Option<i64>,
+    pub name: String,
+}
+
+pub async fn upload_file(
+    state: web::Data<TelegramState>,
+    mut payload: Multipart,
+) -> impl Responder {
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_name = "uploaded_file".to_string();
+    let mut folder_id: Option<i64> = None;
+
+    while let Some(Ok(mut field)) = payload.next().await {
+        let name = field.name().unwrap_or("");
+        if name == "file" {
+            if let Some(cd) = field.content_disposition() {
+                if let Some(filename) = cd.get_filename() {
+                    file_name = filename.to_string();
+                }
+            }
+            let mut data = Vec::new();
+            while let Some(chunk) = field.next().await {
+                match chunk {
+                    Ok(bytes) => data.extend_from_slice(&bytes),
+                    Err(_) => return HttpResponse::BadRequest().body("Failed to read file chunk"),
+                }
+            }
+            if data.is_empty() {
+                return HttpResponse::BadRequest().body("Empty file");
+            }
+            file_bytes = Some(data);
+        } else if name == "folder_id" {
+            let mut text = String::new();
+            while let Some(chunk) = field.next().await {
+                match chunk {
+                    Ok(bytes) => text.push_str(std::str::from_utf8(&bytes).unwrap_or("")),
+                    Err(_) => continue,
+                }
+            }
+            folder_id = text.parse::<i64>().ok();
+        }
+    }
+
+    let bytes = match file_bytes {
+        Some(b) => b,
+        None => return HttpResponse::BadRequest().body("No file provided"),
+    };
+
+    let client = match get_client(&state).await {
+        Ok(c) => c,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    let peer = match resolve_peer(&client, folder_id, &state.peer_cache).await {
+        Ok(p) => p,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    let mut cursor = Cursor::new(bytes);
+    let size = cursor.get_ref().len();
+    let uploaded = match client.upload_stream(&mut cursor, size, file_name.clone()).await {
+        Ok(u) => u,
+        Err(e) => return HttpResponse::InternalServerError().body(format!("Upload failed: {}", e)),
+    };
+
+    match client.send_message(&peer, InputMessage::new().document(uploaded)).await {
+        Ok(message) => HttpResponse::Ok().json(serde_json::json!({
+            "id": message.id(),
+            "name": file_name
+        })),
+        Err(e) => HttpResponse::InternalServerError().body(map_error(e)),
+    }
+}
+
+pub async fn upload_init(
+    _state: web::Data<TelegramState>,
+    req: web::Json<UploadInitRequest>,
+) -> impl Responder {
+    let upload_id = Uuid::new_v4().to_string();
+    let upload_dir = std::env::temp_dir().join(format!("telegram_upload_{}", upload_id));
+    if let Err(e) = fs::create_dir_all(&upload_dir) {
+        return HttpResponse::InternalServerError().body(format!("Failed to create upload dir: {}", e));
+    }
+    HttpResponse::Ok().json(serde_json::json!({
+        "upload_id": upload_id
+    }))
+}
+
+pub async fn upload_chunk(
+    _state: web::Data<TelegramState>,
+    upload_id: web::Path<String>,
+    chunk: web::Bytes,
+) -> impl Responder {
+    let upload_dir = std::env::temp_dir().join(format!("telegram_upload_{}", upload_id));
+    if !upload_dir.exists() {
+        return HttpResponse::BadRequest().body("Invalid upload_id");
+    }
+    let chunk_files: Vec<_> = match fs::read_dir(&upload_dir) {
+        Ok(entries) => entries.filter_map(|e| e.ok()).collect(),
+        Err(_) => vec![],
+    };
+    let chunk_index = chunk_files.len();
+    let chunk_path = upload_dir.join(format!("chunk_{:05}", chunk_index));
+    if let Err(e) = fs::write(&chunk_path, &chunk) {
+        return HttpResponse::InternalServerError().body(format!("Failed to write chunk: {}", e));
+    }
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "chunk_received",
+        "chunk_index": chunk_index
+    }))
+}
+
+pub async fn upload_complete(
+    state: web::Data<TelegramState>,
+    req: web::Json<UploadCompleteRequest>,
+) -> impl Responder {
+    let upload_dir = std::env::temp_dir().join(format!("telegram_upload_{}", req.upload_id));
+    if !upload_dir.exists() {
+        return HttpResponse::BadRequest().body("Invalid upload_id");
+    }
+
+    let mut chunk_files: Vec<_> = match fs::read_dir(&upload_dir) {
+        Ok(entries) => entries.filter_map(|e| e.ok()).collect(),
+        Err(_) => vec![],
+    };
+    chunk_files.sort_by_key(|e| e.path());
+
+    let temp_path = upload_dir.join(&req.name);
+    let mut out = match fs::File::create(&temp_path) {
+        Ok(f) => f,
+        Err(e) => return HttpResponse::InternalServerError().body(format!("Failed to create output file: {}", e)),
+    };
+
+    for entry in chunk_files {
+        let path = entry.path();
+        if path.extension().map(|e| e == "part").unwrap_or(false) || path.file_name().map(|e| e != "complete").unwrap_or(true) {
+            let data = match fs::read(&path) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            if let Err(e) = out.write_all(&data) {
+                return HttpResponse::InternalServerError().body(format!("Failed to write chunk: {}", e));
+            }
+        }
+    }
+
+    let client = match get_client(&state).await {
+        Ok(c) => c,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    let peer = match resolve_peer(&client, req.folder_id, &state.peer_cache).await {
+        Ok(p) => p,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    let uploaded = match client.upload_file(&temp_path).await {
+        Ok(u) => u,
+        Err(e) => {
+            let _ = fs::remove_file(&temp_path);
+            let _ = fs::remove_dir(&upload_dir);
+            return HttpResponse::InternalServerError().body(format!("Upload failed: {}", e));
+        }
+    };
+
+    match client.send_message(&peer, InputMessage::new().document(uploaded)).await {
+        Ok(message) => {
+            let _ = fs::remove_file(&temp_path);
+            let _ = fs::remove_dir(&upload_dir);
+            HttpResponse::Ok().json(serde_json::json!({
+                "id": message.id(),
+                "name": req.name
+            }))
+        },
+        Err(e) => {
+            let _ = fs::remove_file(&temp_path);
+            let _ = fs::remove_dir(&upload_dir);
+            HttpResponse::InternalServerError().body(map_error(e))
+        }
+    }
 }
