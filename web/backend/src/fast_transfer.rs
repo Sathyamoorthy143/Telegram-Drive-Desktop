@@ -29,13 +29,15 @@ pub const PART_SIZE: usize = 512 * 1024;
 const BIG_FILE_THRESHOLD: usize = 10 * 1024 * 1024;
 const MAX_RETRIES: u32 = 4;
 
-/// Worker count from `TG_WORKERS` env (default 8, clamped 1..=12).
+/// Worker count from `TG_WORKERS` env (default 12, clamped 1..=16).
+/// Telegram throttles per-connection, so higher parallelism = higher
+/// throughput up to the flood-wait limit (handled with transient backoff).
 pub fn worker_count() -> usize {
     std::env::var("TG_WORKERS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(8)
-        .clamp(1, 12)
+        .unwrap_or(12)
+        .clamp(1, 16)
 }
 
 /// If this is a flood-wait error, return the requested wait seconds.

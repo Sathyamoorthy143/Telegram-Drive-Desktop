@@ -215,7 +215,8 @@ export const uploadFileResumable = (file: File, folder_id?: number, options?: {
   });
 };
 
-export const CHUNK_WORKERS = 4;
+export const CHUNK_WORKERS = 8;
+export const MAX_CONCURRENT_FILES = 4;
 
 async function sha256(buffer: ArrayBuffer): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', buffer);
@@ -273,14 +274,39 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
       const blob = file.slice(start, end);
       const buffer = await blob.arrayBuffer();
 
-      const res = await fetch(`${API_BASE}/api/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`, {
-        method: 'PUT',
-        body: buffer,
-        signal: abortController.signal,
-      });
-      if (!res.ok) throw new Error(`Chunk ${index} failed: ${res.status}`);
-      report(index, end - start);
-      return index;
+      // Max-speed: 3 attempts with exponential backoff on transient failures
+      // (5xx / 429 / network). 4xx (except 429) fails fast — retrying is useless.
+      let lastErr: any = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
+        // Pause cooperatively between retries as well.
+        await options?.waitIfPaused?.();
+        try {
+          const res = await fetch(`${API_BASE}/api/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`, {
+            method: 'PUT',
+            body: buffer,
+            signal: abortController.signal,
+          });
+          if (res.ok) {
+            report(index, end - start);
+            return index;
+          }
+          // 429 / 5xx are transient — retry; other 4xx fail immediately.
+          if (res.status === 429 || res.status >= 500) {
+            lastErr = new Error(`Chunk ${index} transient: ${res.status}`);
+          } else {
+            throw new Error(`Chunk ${index} failed: ${res.status}`);
+          }
+        } catch (e: any) {
+          if (e?.name === 'AbortError') throw e;
+          lastErr = e;
+        }
+        if (attempt < 2) {
+          const backoff = 400 * Math.pow(2, attempt) + Math.random() * 200;
+          await new Promise(r => setTimeout(r, backoff));
+        }
+      }
+      throw lastErr || new Error(`Chunk ${index} failed after retries`);
     };
 
     const runWorker = async (queue: number[], workerIndex: number) => {

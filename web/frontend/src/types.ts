@@ -64,11 +64,15 @@ export interface QueueItem {
     name?: string;
     size: number;
     folderId: number | null;
-    status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled' | 'paused';
+    status: 'staged' | 'pending' | 'uploading' | 'success' | 'error' | 'cancelled' | 'paused';
     error?: string;
     progress?: number;
     speed?: number;
     eta?: number;
+    uploadId?: string;
+    // Checkbox selection: user ticks which staged/pending files should upload.
+    // Defaults to true when omitted.
+    selected?: boolean;
 }
 
 export interface DownloadItem {
