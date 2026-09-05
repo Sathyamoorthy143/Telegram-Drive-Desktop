@@ -526,15 +526,18 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
 
     // Single-file upload: pause/cancel/queue feedback + encryption.
     // Files bigger than one chunk use the parallel chunked resumable path.
-    const runOneFileUpload = useCallback(async (file: File, qid: string) => {
+    // batchEnc (optional) caches the encryption PIN once per batch so N
+    // blocking window.prompt modals never appear as a hang.
+    const runOneFileUpload = useCallback(async (file: File, qid: string, batchEnc?: { pin: string | null | undefined }) => {
         uploadFilesRef.current.set(qid, file);
         // honour per-item cancel before starting
         let curStatus: string | undefined;
         setUploadQueue(q => { const it = q.find(x => x.id === qid); curStatus = it?.status; return q; });
         if (curStatus === 'cancelled') return;
-        // honour pause: wait here until resumed (pending items show Paused)
+        // honour pause: wait here until resumed (flip to paused visibly;
+        // cancel is re-checked every 300ms so a paused batch never looks frozen)
         while (uploadsPausedRef.current) {
-            setUploadQueue(q => q.map(x => (x.id === qid && x.status === 'pending') ? { ...x, status: 'paused' as const } : x));
+            setUploadQueue(q => q.map(x => (x.id === qid && (x.status === 'pending' || x.status === 'uploading')) ? { ...x, status: 'paused' as const } : x));
             await new Promise(r => setTimeout(r, 300));
             setUploadQueue(q => { const it = q.find(x => x.id === qid); curStatus = it?.status; return q; });
             if (curStatus === 'cancelled') return;
@@ -554,8 +557,23 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             try {
                 const { isEncryptionEnabled, encryptFile, encName } = await import('../../lib/crypto');
                 if (isEncryptionEnabled()) {
-                    const pin = window.prompt('Encryption ON — enter your lock PIN to encrypt ' + file.name);
-                    if (!pin) throw new Error('Encryption cancelled — PIN required');
+                    let pin: string | null;
+                    if (batchEnc) {
+                        // Prompt once per batch: reuse PIN for remaining files.
+                        if (batchEnc.pin === undefined) {
+                            batchEnc.pin = window.prompt('Encryption ON — enter your lock PIN to encrypt ' + file.name + ' (applies to this batch)');
+                        }
+                        pin = batchEnc.pin;
+                    } else {
+                        pin = window.prompt('Encryption ON — enter your lock PIN to encrypt ' + file.name);
+                    }
+                    if (!pin) {
+                        // Fail fast with clear cancelled status; remaining files
+                        // still proceed (they see batchEnc.pin and mark cancelled
+                        // without re-prompting).
+                        if (batchEnc) batchEnc.pin = null;
+                        throw new Error('Encryption cancelled — PIN required');
+                    }
                     const buf = await file.arrayBuffer();
                     const { blob, ivB64 } = await encryptFile(pin, buf);
                     encIv = ivB64;
@@ -655,16 +673,21 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     toast.info(`Uploading ${dups.length} duplicate(s) anyway`);
                 }
             }
-            // init queue
-            const now = Date.now();
-            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+            // init queue with collision-free IDs (crypto.randomUUID avoids
+            // Date.now collisions across rapid batches)
+            const ids = fileList.map(() => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`));
+            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: ids[i], path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
             setBusy(true);
+            const batchEnc: { pin: string | null | undefined } = { pin: undefined };
             for (let i = 0; i < fileList.length; i++) {
-                await runOneFileUpload(fileList[i], `${now}-${i}`);
+                try {
+                    await runOneFileUpload(fileList[i], ids[i], batchEnc);
+                } catch { /* runOneFileUpload swallows internally; never block rest */ }
             }
             setBusy(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-            setTimeout(() => setUploadQueue(q => q.filter(x => x.status === 'pending' || x.status === 'uploading' || x.status === 'paused')), 4000);
+            // Auto-clear successes only; keep errors (and cancelled) until user retries/clears.
+            setTimeout(() => setUploadQueue(q => q.filter(x => x.status !== 'success')), 4000);
         };
         input.click();
     }, [activeFolderId, queryClient, setBusy, allFiles, runOneFileUpload]);
@@ -677,15 +700,19 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             const files = (e.target as HTMLInputElement).files;
             if (!files) return;
             const fileList = Array.from(files);
-            const now = Date.now();
-            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: `${now}-${i}`, path: (f as any).webkitRelativePath || f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+            const ids = fileList.map(() => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`));
+            setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: ids[i], path: (f as any).webkitRelativePath || f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
             setBusy(true);
+            const batchEnc: { pin: string | null | undefined } = { pin: undefined };
             for (let i = 0; i < fileList.length; i++) {
-                await runOneFileUpload(fileList[i], `${now}-${i}`);
+                try {
+                    await runOneFileUpload(fileList[i], ids[i], batchEnc);
+                } catch { /* never block rest */ }
             }
             setBusy(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-            setTimeout(() => setUploadQueue(q => q.filter(x => x.status === 'pending' || x.status === 'uploading' || x.status === 'paused')), 4000);
+            // Auto-clear successes only; keep errors until user retries/clears.
+            setTimeout(() => setUploadQueue(q => q.filter(x => x.status !== 'success')), 4000);
         };
         input.click();
     }, [activeFolderId, queryClient, setBusy, runOneFileUpload]);
@@ -699,46 +726,36 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             const files = (e.target as HTMLInputElement).files;
             if (!files || files.length === 0) return;
             const file = files[0];
-            const qid = `${Date.now()}-cam`;
+            const qid = (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-cam-${Math.random().toString(16).slice(2)}`);
             setUploadQueue(prev => [...prev, { id: qid, path: file.name, name: file.name, size: file.size, status: 'pending' as const, progress: 0 }]);
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'uploading' as const, progress: 5 } : x));
-            const tid = toast.loading(`Uploading ${file.name}...`);
+            setBusy(true);
             try {
-                await api.uploadFile(file, activeFolderId ?? undefined);
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'success' as const, progress: 100 } : x));
-                toast.success(`${file.name} uploaded`, { id: tid });
-            } catch (err: any) {
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'error' as const } : x));
-                if (!handleAuthError(err)) toast.error(`Failed: ${err.message}`, { id: tid });
-                else toast.dismiss(tid);
-            }
+                await runOneFileUpload(file, qid, { pin: undefined });
+            } catch { /* runOneFileUpload swallows internally */ }
+            setBusy(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-            setTimeout(() => setUploadQueue(q => q.filter(x => x.status === 'pending' || x.status === 'uploading')), 4000);
+            // Auto-clear successes only; keep errors until user retries/clears.
+            setTimeout(() => setUploadQueue(q => q.filter(x => x.status !== 'success')), 4000);
         };
         input.click();
-    }, [activeFolderId, queryClient, handleAuthError]);
+    }, [activeFolderId, queryClient, setBusy, runOneFileUpload]);
 
     const handleDroppedFiles = useCallback(async (files: File[]) => {
         if (files.length === 0) return;
-        const now = Date.now();
-        setUploadQueue(prev => [...prev, ...files.map((f, i) => ({ id: `${now}-${i}`, path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+        const ids = files.map(() => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`));
+        setUploadQueue(prev => [...prev, ...files.map((f, i) => ({ id: ids[i], path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
+        setBusy(true);
+        const batchEnc: { pin: string | null | undefined } = { pin: undefined };
         for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const qid = `${now}-${i}`;
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'uploading' as const, progress: 5 } : x));
-            const toastId = toast.loading(`Uploading ${file.name}...`);
             try {
-                await api.uploadFile(file, activeFolderId ?? undefined);
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'success' as const, progress: 100 } : x));
-                toast.success(`${file.name} uploaded`, { id: toastId });
-            } catch (err: any) {
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'error' as const } : x));
-                toast.error(`Failed: ${file.name}`, { id: toastId });
-            }
+                await runOneFileUpload(files[i], ids[i], batchEnc);
+            } catch { /* never block rest */ }
         }
+        setBusy(false);
         queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-        setTimeout(() => setUploadQueue(q => q.filter(x => x.status === 'pending' || x.status === 'uploading')), 4000);
-    }, [activeFolderId, queryClient]);
+        // Auto-clear successes only; keep errors until user retries/clears.
+        setTimeout(() => setUploadQueue(q => q.filter(x => x.status !== 'success')), 4000);
+    }, [activeFolderId, queryClient, setBusy, runOneFileUpload]);
 
     // View settings
     const onUpdateViewSettings = useCallback((s: Partial<ViewSettings>) => {

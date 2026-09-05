@@ -204,8 +204,13 @@ export const uploadFileResumable = (file: File, folder_id?: number, options?: {
       else reject(new Error(xhr.responseText || `Upload failed: ${xhr.status}`));
     });
     xhr.addEventListener('error', () => reject(new Error('Upload network error')));
+    xhr.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
     xhr.open('POST', `${API_BASE}/api/files/upload`);
-    if (options?.signal) (xhr as XMLHttpRequest & { signal?: AbortSignal }).signal = options.signal;
+    if (options?.signal?.aborted) {
+      xhr.abort();
+      return;
+    }
+    options?.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
     xhr.send(formData);
   });
 };
@@ -229,6 +234,8 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
   const total = file.size;
   const totalChunks = Math.ceil(total / CHUNKED_SIZE);
   const abortController = new AbortController();
+  if (options?.signal?.aborted) abortController.abort();
+  else options?.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
 
   return (async () => {
     const initRes = await api<any>('POST', '/api/files/upload/init', {
@@ -242,7 +249,7 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
     options?.onUploadId?.(uploadId);
 
     const uploaded = new Set<number>(initRes.received as number[]);
-    let doneBytes = uploaded.size * CHUNK_SIZE;
+    let doneBytes = uploaded.size * CHUNKED_SIZE;
     const speedMap = new Map<string, { t: number; done: number; speed: number }>();
     const report = (chunkIndex: number, chunkBytes: number) => {
       const now = Date.now();
@@ -260,16 +267,16 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
     };
 
     const uploadChunk = async (index: number) => {
-      if (options?.isCancelled?.() || abortController.signal.aborted) return;
-      const start = index * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, total);
+      if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
+      const start = index * CHUNKED_SIZE;
+      const end = Math.min(start + CHUNKED_SIZE, total);
       const blob = file.slice(start, end);
       const buffer = await blob.arrayBuffer();
 
       const res = await fetch(`${API_BASE}/api/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`, {
         method: 'PUT',
         body: buffer,
-        signal: options?.signal ?? abortController.signal,
+        signal: abortController.signal,
       });
       if (!res.ok) throw new Error(`Chunk ${index} failed: ${res.status}`);
       report(index, end - start);
@@ -278,7 +285,7 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
 
     const runWorker = async (queue: number[], workerIndex: number) => {
       while (queue.length > 0) {
-        if (options?.isCancelled?.() || abortController.signal.aborted) return;
+        if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
         await options?.waitIfPaused?.();
         const idx = queue.shift();
         if (idx === undefined) return;
@@ -294,7 +301,7 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
       workers.push(runWorker(pending, w));
     }
     await Promise.all(workers);
-    if (options?.isCancelled?.() || abortController.signal.aborted) {
+    if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) {
       throw new DOMException('cancelled', 'AbortError');
     }
 
@@ -307,13 +314,12 @@ export const uploadFileWithProgress = (file: File, folder_id?: number, options?:
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }) => {
-  const id = crypto.randomUUID();
-  const xhr = new XMLHttpRequest();
   const formData = new FormData();
   formData.append('file', file);
   if (folder_id !== undefined) formData.append('folder_id', folder_id.toString());
 
   return new Promise<string>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && options?.onProgress) options.onProgress(e.loaded, e.total);
     });
@@ -322,8 +328,13 @@ export const uploadFileWithProgress = (file: File, folder_id?: number, options?:
       else reject(new Error(xhr.responseText || `Upload failed: ${xhr.status}`));
     });
     xhr.addEventListener('error', () => reject(new Error('Upload network error')));
+    xhr.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
     xhr.open('POST', `${API_BASE}/api/files/upload`);
-    if (options?.signal) (xhr as XMLHttpRequest & { signal?: AbortSignal }).signal = options.signal;
+    if (options?.signal?.aborted) {
+      xhr.abort();
+      return;
+    }
+    options?.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
     xhr.send(formData);
   });
 };
