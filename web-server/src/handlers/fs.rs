@@ -11,8 +11,6 @@ use grammers_tl_types as tl;
 use serde::Deserialize;
 use std::fs;
 use std::io::{Cursor, Write};
-
-use std::path::Path;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
