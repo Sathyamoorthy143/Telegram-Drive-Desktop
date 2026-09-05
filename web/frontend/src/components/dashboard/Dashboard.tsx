@@ -169,6 +169,10 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     }, []);
     useEffect(() => { syncFolders(); }, [syncFolders]);
 
+    const handleRefresh = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
+    }, [queryClient, activeFolderId]);
+
     const [isOffline, setIsOffline] = useState(false);
     // File query with offline cache fallback (P1-4)
     const { data: allFiles = [], isLoading, error } = useQuery({
@@ -907,7 +911,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             else { const f = folders.find(folder => folder.id === id); if (f) setPropertyFile({ ...f, type: 'folder', icon_type: 'folder' } as any); }
         }}
         isSyncing={isSyncing} isConnected={isConnected} userInfo={userInfo}
-        onSync={syncFolders} onLogout={handleLogout}
+        onSync={syncFolders} onRefresh={handleRefresh} onLogout={handleLogout}
         onSettings={() => setShowSettingsModal(true)} bandwidth={bandwidth || null}
         onActivityLog={() => setShowActivityLog(!showActivityLog)}
         onAllVersions={() => setShowAllVersions(true)}

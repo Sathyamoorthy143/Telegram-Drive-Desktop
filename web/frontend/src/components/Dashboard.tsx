@@ -40,6 +40,10 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [isConnected, setIsConnected] = useState(true);
     const [userInfo, setUserInfo] = useState<any>(null);
 
+    const handleRefresh = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
+    }, [queryClient, activeFolderId]);
+
     const [previewFile, setPreviewFile] = useState<TelegramFile | null>(null);
     const [viewSettings, setViewSettings] = useState<ViewSettings>({
         viewMode: 'grid', groupBy: 'none', showPreviewPane: false,
@@ -349,6 +353,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 isSyncing={isSyncing}
                 isConnected={isConnected}
                 onSync={syncFolders}
+                onRefresh={handleRefresh}
                 onLogout={handleLogout}
                 userInfo={userInfo as any}
                 bandwidth={bandwidth || null}

@@ -25,6 +25,7 @@ interface SidebarProps {
     isSyncing: boolean;
     isConnected: boolean;
     onSync: () => void;
+    onRefresh: () => void;
     onLogout: () => void;
     bandwidth: BandwidthStats | null;
     stats?: { count: number; fileCount: number; folderCount: number; bytes: number; byType?: Record<string, number> } | null;
@@ -194,7 +195,7 @@ function formatBytesShort(n: number): string {
 
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate,
-    isSyncing, isConnected, onSync, onLogout, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions
+    isSyncing, isConnected, onSync, onRefresh, onLogout, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -380,6 +381,14 @@ export function Sidebar({
                     >
                         <RefreshCw className={`w-3 h-3 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
                         <span className="truncate">{isSyncing ? 'Syncing...' : 'Sync'}</span>
+                    </button>
+                    <button
+                        onClick={onRefresh}
+                        className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border"
+                        title="Refresh current folder"
+                    >
+                        <RefreshCw className="w-3 h-3 flex-shrink-0 text-telegram-subtext" />
+                        <span className="truncate">Refresh</span>
                     </button>
                     <button
                         onClick={onSettings}
