@@ -53,15 +53,18 @@ pub async fn get_client(state: &TelegramState) -> Result<Client, String> {
     }
 
     // Initialization logic
-    let session = SqliteSession::open("telegram.session").map_err(|e| e.to_string())?;
-    let pool = SenderPool::new(Arc::new(session), state.api_id.unwrap_or(0));
+    let session_path = std::env::var("SESSION_PATH").unwrap_or_else(|_| "telegram.session".to_string());
+    let session = SqliteSession::open(&session_path).map_err(|e| e.to_string())?;
+    
+    let api_id = state.api_id.ok_or_else(|| "Telegram API ID not configured".to_string())?;
+    let pool = SenderPool::new(Arc::new(session), api_id);
     let client = Client::new(&pool);
     
     let SenderPool { runner, .. } = pool;
     tokio::spawn(async move {
         let _ = runner.run().await;
     });
-
+    
     *client_guard = Some(client.clone());
     Ok(client)
 }
