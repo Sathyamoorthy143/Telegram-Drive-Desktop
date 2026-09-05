@@ -625,7 +625,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             } catch (e: any) { if (e?.message?.includes('cancelled')) throw e; }
             // Max-speed + LIVE-controllable: >1MB goes chunked (8 parallel 8MB
             // PUTs, per-chunk retry, cooperative pause checked before every
-            // chunk + between retries). Only <1MB uses single POST (instant).
+            // chunk + between retries). Only <=1MB uses single POST (instant).
             if (upFile.size > api.CHUNK_SIZE) {
                 let resumeId: string | undefined;
                 setUploadQueue(q => { resumeId = q.find(x => x.id === qid)?.uploadId; return q; });
@@ -647,11 +647,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     }
                   },
                   isCancelled: () => readStatus() === 'cancelled',
-                });
-            } else if (upFile.size > api.CHUNK_SIZE) {
-                await api.uploadFileWithProgress(upFile, activeFolderId ?? undefined, {
-                    signal: ctrl.signal,
-                    onProgress: (done, total) => reportProgress(qid, done, total || upFile.size),
                 });
             } else {
                 await api.uploadFile(upFile, activeFolderId ?? undefined);
