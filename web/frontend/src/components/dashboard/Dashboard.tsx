@@ -585,6 +585,8 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     signal: ctrl.signal,
                     onProgress: (done, total) => reportProgress(qid, done, total || upFile.size),
                 });
+            } else {
+                await api.uploadFile(upFile, activeFolderId ?? undefined);
             }
             if (encIv) {
                 try { await api.setTags(Date.now() % 2147483647, [], activeFolderId ?? undefined); } catch {}

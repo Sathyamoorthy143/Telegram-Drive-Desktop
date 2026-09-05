@@ -241,17 +241,24 @@ pub async fn upload_file(
 
     let mut cursor = Cursor::new(bytes);
     let size = cursor.get_ref().len();
+    log::info!("upload_file: name={} size={} folder_id={:?}", file_name, size, folder_id);
     let uploaded = match client.upload_stream(&mut cursor, size, file_name.clone()).await {
         Ok(u) => u,
         Err(e) => return HttpResponse::InternalServerError().body(format!("Upload failed: {}", e)),
     };
 
     match client.send_message(&peer, InputMessage::new().document(uploaded)).await {
-        Ok(message) => HttpResponse::Ok().json(serde_json::json!({
-            "id": message.id(),
-            "name": file_name
-        })),
-        Err(e) => HttpResponse::InternalServerError().body(map_error(e)),
+        Ok(message) => {
+            log::info!("upload_file: sent message id={} name={}", message.id(), file_name);
+            HttpResponse::Ok().json(serde_json::json!({
+                "id": message.id(),
+                "name": file_name
+            }))
+        },
+        Err(e) => {
+            log::error!("upload_file: send_message failed for {}: {}", file_name, e);
+            HttpResponse::InternalServerError().body(map_error(e))
+        }
     }
 }
 
