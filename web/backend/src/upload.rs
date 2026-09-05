@@ -132,17 +132,7 @@ pub async fn upload_file(
         fname
     );
 
-    let handle = tokio::spawn(async move {
-        deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size).await
-    });
-
-    let (resp, _msg_id) = match handle.await {
-        Ok(result) => result,
-        Err(join_error) => {
-            log::error!("Upload handler panicked: {}", join_error);
-            (HttpResponse::InternalServerError().body("Upload handler panicked"), None)
-        }
-    };
+    let (resp, _msg_id) = deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size).await;
 
     // Cleanup temp file (tmp_file was already flushed + dropped after writing)
     let _ = fs::remove_file(&tmp_path).await;
