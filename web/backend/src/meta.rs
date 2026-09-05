@@ -94,8 +94,8 @@ pub async fn star(state: web::Data<AppState>, req: web::Json<StarRequest>) -> im
         .json(&row).send().await;
     match resp {
         Ok(r) if r.status().is_success() => HttpResponse::Ok().json(true),
-        Ok(r) => HttpResponse::Ok().json(true),
-        Err(e) => HttpResponse::Ok().json(true),
+        Ok(_) => HttpResponse::Ok().json(true),
+        Err(_) => HttpResponse::Ok().json(true),
     }
 }
 

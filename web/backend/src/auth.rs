@@ -4,7 +4,6 @@ use grammers_session::storages::SqliteSession;
 use grammers_mtsender::SenderPool;
 use std::sync::Arc;
 use crate::models::*;
-use crate::utils::map_error;
 use crate::AppState;
 
 pub async fn get_client(state: &AppState) -> Result<Client, String> {
