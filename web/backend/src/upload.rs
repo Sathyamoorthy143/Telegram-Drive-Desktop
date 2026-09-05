@@ -4,6 +4,7 @@ use futures::StreamExt;
 use grammers_client::message::InputMessage;
 use grammers_client::media::Media;
 use grammers_client::peer::Peer;
+use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -65,7 +66,13 @@ pub async fn upload_file(
                     .unwrap_or_else(|| "upload.bin".to_string());
                 file_name = Some(fname.clone());
                 log::info!("Upload started: {} for folder {:?}", fname, folder_id);
-                let path = tmp_dir.path().join(&fname);
+                // Use only the basename for the temp file to avoid ENOENT
+                // when the browser sends a relative path like "folder/sub/file.txt".
+                let safe_name = Path::new(&fname)
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| fname.clone());
+                let path = tmp_dir.path().join(&safe_name);
                 let f = match fs::File::create(&path).await {
                     Ok(f) => f,
                     Err(e) => {
