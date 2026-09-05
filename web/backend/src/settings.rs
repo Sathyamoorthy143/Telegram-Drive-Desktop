@@ -48,7 +48,7 @@ pub fn save_settings(s: &Settings) {
 }
 
 pub async fn get_settings(state: web::Data<AppState>) -> impl Responder {
-    let s = state.settings.lock().unwrap().clone();
+    let s = (*state.settings.lock().unwrap_or_else(|e| e.into_inner())).clone();
     HttpResponse::Ok().json(s)
 }
 
@@ -56,7 +56,7 @@ pub async fn save_settings_handler(
     state: web::Data<AppState>,
     req: web::Json<Settings>,
 ) -> impl Responder {
-    let mut s = state.settings.lock().unwrap();
+    let mut s = (*state.settings.lock().unwrap_or_else(|e| e.into_inner()));
     *s = req.into_inner();
     save_settings(&s);
     if s.lock_pin_hash.is_some() || s.lock_interval_ms.is_some() || s.notification_mode.is_some() {
@@ -92,7 +92,7 @@ pub async fn save_lock_settings(
     let mode = req.notification_mode.clone();
 
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = (*state.settings.lock().unwrap_or_else(|e| e.into_inner()));
         if let Some(h) = pin_hash.clone() { s.lock_pin_hash = Some(h); }
         if interval.is_some() { s.lock_interval_ms = interval; }
         if mode.is_some() { s.notification_mode = mode.clone(); }
@@ -113,7 +113,7 @@ pub async fn save_lock_settings(
 }
 
 pub async fn get_lock_settings(state: web::Data<AppState>) -> impl Responder {
-    let s = state.settings.lock().unwrap().clone();
+    let s = (*state.settings.lock().unwrap_or_else(|e| e.into_inner())).clone();
     let client_opt = state.client.lock().await.clone();
     if let Some(c) = client_opt {
         if let Ok(me) = c.get_me().await {
