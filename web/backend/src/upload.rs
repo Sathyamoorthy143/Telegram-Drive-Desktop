@@ -6,7 +6,6 @@ use grammers_client::media::Media;
 use grammers_client::peer::Peer;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::auth::get_client;
 use crate::models::*;
@@ -133,20 +132,15 @@ pub async fn upload_file(
         fname
     );
 
-    let (resp, _msg_id) = match panic::catch_unwind(AssertUnwindSafe(|| {
-        deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size)
-    })) {
-        Ok(future) => future.await,
-        Err(panic_payload) => {
-            let msg = if let Some(s) = panic_payload.downcast_ref::<&'static str>() {
-                format!("Handler panicked: {}", s)
-            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                format!("Handler panicked: {}", s)
-            } else {
-                "Handler panicked with unknown payload".to_string()
-            };
-            log::error!("Upload handler panic: {}", msg);
-            return HttpResponse::InternalServerError().body(msg);
+    let handle = tokio::spawn(async move {
+        deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size).await
+    });
+
+    let (resp, _msg_id) = match handle.await {
+        Ok(result) => result,
+        Err(join_error) => {
+            log::error!("Upload handler panicked: {}", join_error);
+            (HttpResponse::InternalServerError().body("Upload handler panicked"), None)
         }
     };
 

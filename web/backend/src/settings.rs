@@ -92,7 +92,7 @@ pub async fn save_lock_settings(
     let mode = req.notification_mode.clone();
 
     {
-    let mut s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(h) = pin_hash.clone() { s.lock_pin_hash = Some(h); }
         if interval.is_some() { s.lock_interval_ms = interval; }
         if mode.is_some() { s.notification_mode = mode.clone(); }
