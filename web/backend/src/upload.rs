@@ -60,18 +60,18 @@ pub async fn upload_file(
             }
             "file" => {
                 got_file = true;
-                let fname = field
+                let raw_name = field
                     .content_disposition()
                     .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
                     .unwrap_or_else(|| "upload.bin".to_string());
-                file_name = Some(fname.clone());
-                log::info!("Upload started: {} for folder {:?}", fname, folder_id);
-                // Use only the basename for the temp file to avoid ENOENT
-                // when the browser sends a relative path like "folder/sub/file.txt".
-                let safe_name = Path::new(&fname)
+                // Strip any directory components the browser may include.
+                let safe_name = Path::new(&raw_name)
                     .file_name()
                     .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| fname.clone());
+                    .filter(|s| !s.is_empty() && s != ".")
+                    .unwrap_or_else(|| "upload.bin".to_string());
+                file_name = Some(safe_name.clone());
+                log::info!("Upload started: {} for folder {:?}", safe_name, folder_id);
                 let path = tmp_dir.path().join(&safe_name);
                 let f = match fs::File::create(&path).await {
                     Ok(f) => f,
