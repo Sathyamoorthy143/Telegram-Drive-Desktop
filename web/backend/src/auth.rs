@@ -2,6 +2,7 @@ use actix_web::{web, HttpResponse, Responder};
 use grammers_client::Client;
 use grammers_session::storages::SqliteSession;
 use grammers_mtsender::SenderPool;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use crate::models::*;
 use crate::utils::map_error;
@@ -17,7 +18,7 @@ pub async fn get_client(state: &AppState) -> Result<Client, String> {
         if let Ok(s) = std::env::var("TELEGRAM_API_ID").map(|s| s.trim().parse::<i32>()) { if let Ok(id) = s { api_id = id; } }
         if api_id == 0 { if let Ok(s) = std::env::var("TG_API_ID").map(|s| s.trim().parse::<i32>()) { if let Ok(id) = s { api_id = id; } } }
         if api_id == 0 {
-            let settings = state.settings.lock().unwrap().clone();
+            let settings = state.settings.lock().unwrap_or_else(|e| e.into_inner().clone());
             if let Some(id) = settings.telegram_api_id { api_id = id; }
         }
         if api_id != 0 {
@@ -108,7 +109,7 @@ pub async fn request_code(
     }
     *state.api_id.lock().await = Some(req.api_id);
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         s.telegram_api_id = Some(req.api_id);
         crate::settings::save_settings(&s);
     }
