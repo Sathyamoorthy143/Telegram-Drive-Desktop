@@ -71,6 +71,10 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const uploadControllers = useRef<Map<string, AbortController>>(new Map());
     // per-file pause: qids the user paused individually (independent of global pause-all)
     const pausedFileIdsRef = useRef<Set<string>>(new Set());
+    // Sync mirror of uploadQueue for synchronous reads. React setState updaters
+    // are async — NEVER read state inside setUploadQueue(q => {...}) and expect
+    // it synchronously (that was the no-upload regression).
+    const uploadQueueRef = useRef<any[]>([]);
     // Live parallel manager: max files in flight at once (user-controllable 1..8).
     const [maxParallelFiles, setMaxParallelFiles] = useState(4);
     const maxParallelRef = useRef(4);
@@ -159,6 +163,8 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const [propertyFile, setPropertyFile] = useState<TelegramFile | null>(null);
     const [uploadQueue, setUploadQueue] = useState<any[]>([]);
     const [downloadQueue, setDownloadQueue] = useState<any[]>([]);
+    // Keep ref mirror in sync for synchronous status reads.
+    useEffect(() => { uploadQueueRef.current = uploadQueue; }, [uploadQueue]);
     const uploadFilesRef = useRef<Map<string, File>>(new Map());
     const internalDragRef = useRef<number | null>(null);
     const [internalDragFileId, _setInternalDragFileId] = useState<number | null>(null);
@@ -571,10 +577,9 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     // blocking window.prompt modals never appear as a hang.
     const runOneFileUpload = useCallback(async (file: File, qid: string, batchEnc?: { pin: string | null | undefined }) => {
         uploadFilesRef.current.set(qid, file);
-        // honour per-item cancel before starting
-        let curStatus: string | undefined;
-        setUploadQueue(q => { const it = q.find(x => x.id === qid); curStatus = it?.status; return q; });
-        if (curStatus === 'cancelled') return;
+        // Synchronous status reads via ref mirror (setState updaters are async).
+        const readStatus = () => uploadQueueRef.current.find(x => x.id === qid)?.status as string | undefined;
+        if (readStatus() === 'cancelled') return;
         // honour pause (global OR per-file): wait here until resumed (flip to
         // paused visibly; cancel is re-checked every 300ms so a paused batch
         // never looks frozen)
@@ -582,18 +587,12 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         while (isPausedNow()) {
             setUploadQueue(q => q.map(x => (x.id === qid && (x.status === 'pending' || x.status === 'uploading' || x.status === 'staged')) ? { ...x, status: 'paused' as const } : x));
             await new Promise(r => setTimeout(r, 300));
-            setUploadQueue(q => { const it = q.find(x => x.id === qid); curStatus = it?.status; return q; });
-            if (curStatus === 'cancelled') return;
+            if (readStatus() === 'cancelled') return;
         }
         setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'uploading' as const, progress: 5 } : x));
         const toastId = isLocked ? null : toast.loading(`Uploading ${file.name}...`);
         const ctrl = new AbortController();
         uploadControllers.current.set(qid, ctrl);
-        const readStatus = () => {
-            let s: string | undefined;
-            setUploadQueue(q => { s = q.find(x => x.id === qid)?.status; return q; });
-            return s;
-        };
         try {
             let upFile: File = file;
             let encIv: string | undefined;
@@ -627,8 +626,6 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             // PUTs, per-chunk retry, cooperative pause checked before every
             // chunk + between retries). Only <=1MB uses single POST (instant).
             if (upFile.size > api.CHUNK_SIZE) {
-                let resumeId: string | undefined;
-                setUploadQueue(q => { resumeId = q.find(x => x.id === qid)?.uploadId; return q; });
                 await api.uploadFileChunked(upFile, activeFolderId ?? undefined, {
                   signal: ctrl.signal,
                   onProgress: (done, total) => reportProgress(qid, done, total),
@@ -683,19 +680,16 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         }
     }, [activeFolderId, isLocked, queueToast, handleAuthError, reportProgress]);
 
-    const handleRetryUpload = useCallback(async (qid: string) => {
+    const handleRetryUpload = useCallback((qid: string) => {
         const file = uploadFilesRef.current.get(qid);
         if (!file) { toast.error('Original file unavailable — please re-select it'); return; }
         pausedFileIdsRef.current.delete(qid);
+        startingIdsRef.current.delete(qid);
+        // Flip to pending and let the live manager own the start (avoids
+        // double-start races with the manager effect).
         setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'pending' as const, progress: 0, error: undefined, selected: true } : x));
-        setBusy(true);
-        try {
-            await runOneFileUpload(file, qid);
-        } finally {
-            setBusy(false);
-            queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-        }
-    }, [runOneFileUpload, activeFolderId, queryClient, setBusy]);
+        bumpQueue();
+    }, [bumpQueue]);
 
     // ---- Controllable staged uploads: checkbox select + per-file pause ----
     // Files are first STAGED (no network). User ticks checkboxes, then hits
@@ -726,23 +720,24 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     // checkbox-uncheck) frees a slot so the next queued file starts
     // automatically. Staging more files mid-batch just joins the queue.
     const handleStartSelectedUploads = useCallback((onlyIds?: string[]) => {
-        let targets: string[] = [];
-        setUploadQueue(q => {
-            const pool = q.filter(x => (x.status === 'staged' || x.status === 'pending' || x.status === 'paused' || (x as any).status === 'error')
-                && (x.selected !== false)
-                && (!onlyIds || onlyIds.includes(x.id)));
-            targets = pool.map(x => x.id);
-            return q.map(x => targets.includes(x.id) ? { ...x, status: 'pending' as const, error: undefined, selected: true } : x);
-        });
-        if (targets.length === 0 && !(onlyIds && onlyIds.length > 0)) {
+        // Compute targets from the ref mirror SYNCHRONOUSLY. Reading inside
+        // setUploadQueue(q => {...}) is async and always yields [] — that was
+        // the regression where Upload selected toasted "Nothing selected" and
+        // nothing ever reached Telegram.
+        const snapshot = uploadQueueRef.current;
+        const pool = snapshot.filter(x => (x.status === 'staged' || x.status === 'pending' || x.status === 'paused' || (x as any).status === 'error')
+            && (x.selected !== false)
+            && (!onlyIds || onlyIds.includes(x.id)));
+        let ids = pool.map(x => x.id);
+        if (ids.length === 0 && onlyIds && onlyIds.length > 0) {
+            ids = onlyIds.filter(id => uploadFilesRef.current.has(id));
+        }
+        if (ids.length === 0) {
             toast.info('Nothing selected — tick checkboxes first');
             return;
         }
-        const ids = (onlyIds && onlyIds.length > 0) ? onlyIds : targets;
-        if (onlyIds && onlyIds.length > 0) {
-            setUploadQueue(q => q.map(x => ids.includes(x.id) ? { ...x, status: 'pending' as const, error: undefined, selected: true } : x));
-        }
-        ids.forEach(id => pausedFileIdsRef.current.delete(id));
+        ids.forEach(id => { pausedFileIdsRef.current.delete(id); startingIdsRef.current.delete(id); });
+        setUploadQueue(q => q.map(x => ids.includes(x.id) ? { ...x, status: 'pending' as const, error: undefined, selected: true } : x));
         // Reset shared PIN when a fresh manual start begins (manager reuses it
         // for the whole live session so only one prompt appears).
         batchPinRef.current = { pin: undefined };
@@ -752,22 +747,21 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     // Checkbox works LIVE: staged/pending flips selection; unchecking a
     // RUNNING upload pauses it (frees a slot); checking a paused one queues it.
     const handleToggleUploadSelect = useCallback((qid: string) => {
-        let nextSelected = true;
-        let curStatus: string | undefined;
-        setUploadQueue(q => {
-            const it = q.find(x => x.id === qid);
-            curStatus = it?.status as any;
-            nextSelected = !((it as any)?.selected !== false);
-            return q.map(x => x.id === qid ? { ...x, selected: nextSelected } : x);
-        });
+        const it = uploadQueueRef.current.find(x => x.id === qid);
+        if (!it) return;
+        const curStatus = it.status as string;
+        const nextSelected = !((it as any)?.selected !== false);
         if (curStatus === 'uploading' && !nextSelected) {
             // Uncheck live upload => pause it now; manager starts next queued.
             pausedFileIdsRef.current.add(qid);
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'paused' as const } : x));
+            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, selected: nextSelected, status: 'paused' as const } : x));
         } else if (curStatus === 'paused' && nextSelected) {
             // Re-check paused => queue for resume (manager starts when slot free).
             pausedFileIdsRef.current.delete(qid);
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'pending' as const } : x));
+            startingIdsRef.current.delete(qid);
+            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, selected: nextSelected, status: 'pending' as const } : x));
+        } else {
+            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, selected: nextSelected } : x));
         }
         bumpQueue();
     }, [bumpQueue]);
