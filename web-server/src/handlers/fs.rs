@@ -11,6 +11,7 @@ use grammers_tl_types as tl;
 use serde::Deserialize;
 use std::fs;
 use std::io::{Cursor, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -189,77 +190,96 @@ pub async fn upload_file(
     state: web::Data<TelegramState>,
     mut payload: Multipart,
 ) -> impl Responder {
-    let mut file_bytes: Option<Vec<u8>> = None;
-    let mut file_name = "uploaded_file".to_string();
-    let mut folder_id: Option<i64> = None;
+    let inner = panic::catch_unwind(AssertUnwindSafe(|| async move {
+        let mut file_bytes: Option<Vec<u8>> = None;
+        let mut file_name = "uploaded_file".to_string();
+        let mut folder_id: Option<i64> = None;
 
-    while let Some(Ok(mut field)) = payload.next().await {
-        let name = field.name().unwrap_or("");
-        if name == "file" {
-            if let Some(cd) = field.content_disposition() {
-                if let Some(filename) = cd.get_filename() {
-                    file_name = filename.to_string();
+        while let Some(Ok(mut field)) = payload.next().await {
+            let name = field.name().unwrap_or("");
+            if name == "file" {
+                if let Some(cd) = field.content_disposition() {
+                    if let Some(filename) = cd.get_filename() {
+                        file_name = filename.to_string();
+                    }
                 }
-            }
-            let mut data = Vec::new();
-            while let Some(chunk) = field.next().await {
-                match chunk {
-                    Ok(bytes) => data.extend_from_slice(&bytes),
-                    Err(_) => return HttpResponse::BadRequest().body("Failed to read file chunk"),
+                let mut data = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    match chunk {
+                        Ok(bytes) => data.extend_from_slice(&bytes),
+                        Err(_) => return HttpResponse::BadRequest().body("Failed to read file chunk"),
+                    }
                 }
-            }
-            if data.is_empty() {
-                return HttpResponse::BadRequest().body("Empty file");
-            }
-            file_bytes = Some(data);
-        } else if name == "folder_id" {
-            let mut text = String::new();
-            while let Some(chunk) = field.next().await {
-                match chunk {
-                    Ok(bytes) => text.push_str(std::str::from_utf8(&bytes).unwrap_or("")),
-                    Err(_) => continue,
+                if data.is_empty() {
+                    return HttpResponse::BadRequest().body("Empty file");
                 }
+                file_bytes = Some(data);
+            } else if name == "folder_id" {
+                let mut text = String::new();
+                while let Some(chunk) = field.next().await {
+                    match chunk {
+                        Ok(bytes) => text.push_str(std::str::from_utf8(&bytes).unwrap_or("")),
+                        Err(_) => continue,
+                    }
+                }
+                folder_id = text.parse::<i64>().ok();
             }
-            folder_id = text.parse::<i64>().ok();
         }
-    }
 
-    let bytes = match file_bytes {
-        Some(b) => b,
-        None => return HttpResponse::BadRequest().body("No file provided"),
-    };
+        let bytes = match file_bytes {
+            Some(b) => b,
+            None => return HttpResponse::BadRequest().body("No file provided"),
+        };
 
-    let client = match get_client(&state).await {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().body(e),
-    };
+        let client = match get_client(&state).await {
+            Ok(c) => c,
+            Err(e) => return HttpResponse::InternalServerError().body(format!("Client init failed: {}", e)),
+        };
 
-    let peer = match resolve_peer(&client, folder_id, &state.peer_cache).await {
-        Ok(p) => p,
-        Err(e) => return HttpResponse::InternalServerError().body(e),
-    };
+        let peer = match resolve_peer(&client, folder_id, &state.peer_cache).await {
+            Ok(p) => p,
+            Err(e) => return HttpResponse::InternalServerError().body(format!("Peer resolve failed: {}", e)),
+        };
 
-    let mut cursor = Cursor::new(bytes);
-    let size = cursor.get_ref().len();
-    log::info!("upload_file: name={} size={} folder_id={:?}", file_name, size, folder_id);
-    let uploaded = match client.upload_stream(&mut cursor, size, file_name.clone()).await {
-        Ok(u) => u,
-        Err(e) => return HttpResponse::InternalServerError().body(format!("Upload failed: {}", e)),
-    };
+        let mut cursor = Cursor::new(bytes);
+        let size = cursor.get_ref().len();
+        log::info!("upload_file: name={} size={} folder_id={:?}", file_name, size, folder_id);
+        let uploaded = match client.upload_stream(&mut cursor, size, file_name.clone()).await {
+            Ok(u) => u,
+            Err(e) => return HttpResponse::InternalServerError().body(format!("Telegram upload failed: {}", e)),
+        };
 
-    match client.send_message(&peer, InputMessage::new().document(uploaded)).await {
-        Ok(message) => {
-            log::info!("upload_file: sent message id={} name={}", message.id(), file_name);
-            HttpResponse::Ok().json(serde_json::json!({
-                "id": message.id(),
-                "name": file_name
-            }))
-        },
-        Err(e) => {
-            log::error!("upload_file: send_message failed for {}: {}", file_name, e);
-            HttpResponse::InternalServerError().body(map_error(e))
+        match client.send_message(&peer, InputMessage::new().document(uploaded)).await {
+            Ok(message) => {
+                log::info!("upload_file: sent message id={} name={}", message.id(), file_name);
+                HttpResponse::Ok().json(serde_json::json!({
+                    "id": message.id(),
+                    "name": file_name
+                }))
+            },
+            Err(e) => {
+                log::error!("upload_file: send_message failed for {}: {}", file_name, e);
+                HttpResponse::InternalServerError().body(format!("Send message failed: {}", map_error(e)))
+            }
         }
-    }
+    }));
+
+    let future = match inner {
+        Ok(f) => f,
+        Err(panicked) => {
+            let msg = if let Some(s) = panicked.downcast_ref::<&'static str>() {
+                format!("Handler panicked: {}", s)
+            } else if let Some(s) = panicked.downcast_ref::<String>() {
+                format!("Handler panicked: {}", s)
+            } else {
+                "Handler panicked with non-string payload".to_string()
+            };
+            log::error!("{}", msg);
+            return HttpResponse::InternalServerError().body(msg);
+        }
+    };
+
+    future.await
 }
 
 pub async fn upload_init(
