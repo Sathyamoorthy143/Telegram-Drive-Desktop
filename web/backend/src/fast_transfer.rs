@@ -8,8 +8,9 @@
 //!
 //! * upload: N workers × `SaveFilePart`/`SaveBigFilePart` (512KB parts)
 //! * download: N workers × `GetFile` with ordered reassembly for streaming
-//! * flood-aware: on `FLOOD_WAIT`, sleep the requested seconds and halve the
-//!   in-flight window for the rest of the transfer (min 1)
+//! * flood-aware: on `FLOOD_WAIT`, sleep the requested seconds (capped 120s),
+//!   halve the in-flight window, then recover transiently
+//!   (`min(original, cur + 1)` on next success) instead of permanent halving
 
 use bytes::Bytes;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -28,13 +29,13 @@ pub const PART_SIZE: usize = 512 * 1024;
 const BIG_FILE_THRESHOLD: usize = 10 * 1024 * 1024;
 const MAX_RETRIES: u32 = 4;
 
-/// Worker count from `TG_WORKERS` env (default 4, clamped 1..=8).
+/// Worker count from `TG_WORKERS` env (default 8, clamped 1..=12).
 pub fn worker_count() -> usize {
     std::env::var("TG_WORKERS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(4)
-        .clamp(1, 8)
+        .unwrap_or(8)
+        .clamp(1, 12)
 }
 
 /// If this is a flood-wait error, return the requested wait seconds.
@@ -57,28 +58,46 @@ fn shrink_window(window: &AtomicUsize) {
     window.store((cur / 2).max(1), Ordering::SeqCst);
 }
 
+/// Transient recovery: on success, grow the window by one up to `max`.
+/// Flood backoffs therefore only briefly reduce parallelism instead of
+/// permanently halving throughput for the rest of the transfer.
+fn grow_window(window: &AtomicUsize, max: usize) {
+    let cur = window.load(Ordering::SeqCst);
+    if cur < max {
+        window.store((cur + 1).min(max), Ordering::SeqCst);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Upload
 // ---------------------------------------------------------------------------
 
 /// Upload one small-file part with flood-aware retries.
+/// Takes `Bytes` so retries only refcount-clone; the single `to_vec()` per
+/// RPC attempt is the only copy (Telegram API needs an owned `Vec<u8>`).
 async fn send_small_part(
     client: Client,
     file_id: i64,
     part: i32,
-    bytes: Vec<u8>,
+    bytes: Bytes,
     window: Arc<AtomicUsize>,
+    max_window: usize,
 ) -> Result<(), String> {
     for attempt in 0..MAX_RETRIES {
+        // Reuse the shared buffer; only copy once into the RPC payload.
+        let payload: Vec<u8> = bytes.to_vec();
         match client
             .invoke(&tl::functions::upload::SaveFilePart {
                 file_id,
                 file_part: part,
-                bytes: bytes.clone(),
+                bytes: payload,
             })
             .await
         {
-            Ok(true) => return Ok(()),
+            Ok(true) => {
+                grow_window(&window, max_window);
+                return Ok(());
+            }
             Ok(false) => return Err("server refused file part".to_string()),
             Err(e) => {
                 if let Some(s) = flood_wait_secs(&e) {
@@ -103,20 +122,25 @@ async fn send_big_part(
     file_id: i64,
     part: i32,
     total_parts: i32,
-    bytes: Vec<u8>,
+    bytes: Bytes,
     window: Arc<AtomicUsize>,
+    max_window: usize,
 ) -> Result<(), String> {
     for attempt in 0..MAX_RETRIES {
+        let payload: Vec<u8> = bytes.to_vec();
         match client
             .invoke(&tl::functions::upload::SaveBigFilePart {
                 file_id,
                 file_part: part,
                 file_total_parts: total_parts,
-                bytes: bytes.clone(),
+                bytes: payload,
             })
             .await
         {
-            Ok(true) => return Ok(()),
+            Ok(true) => {
+                grow_window(&window, max_window);
+                return Ok(());
+            }
             Ok(false) => return Err("server refused big file part".to_string()),
             Err(e) => {
                 if let Some(s) = flood_wait_secs(&e) {
@@ -137,8 +161,9 @@ async fn send_big_part(
 
 /// Upload a file from disk to Telegram using N parallel part workers.
 /// Small files (<=10MB): read once (<=10MB RAM), md5 in order, concurrent
-/// `SaveFilePart`. Big files: shared handle + atomic part counter, concurrent
-/// `SaveBigFilePart`. RAM stays bounded on the hot path.
+/// `SaveFilePart`. Big files: per-worker file handles (positional reads, no
+/// shared `Mutex<File>` serialization) + atomic part counter + read-ahead
+/// buffer pool, concurrent `SaveBigFilePart`. RAM stays bounded on the hot path.
 pub async fn upload_file_parallel(
     client: &Client,
     path: &std::path::Path,
@@ -150,16 +175,20 @@ pub async fn upload_file_parallel(
     let total_parts = ((size as usize + PART_SIZE - 1) / PART_SIZE) as i32;
     let workers = worker_count().min(total_parts.max(1) as usize);
     let window = Arc::new(AtomicUsize::new(workers));
+    let max_window = workers;
 
     if (size as usize) <= BIG_FILE_THRESHOLD {
         // ---- small path: sequential disk read, parallel network ----
         let data = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
-        let mut parts: Vec<(i32, Vec<u8>)> = Vec::with_capacity(total_parts as usize);
+        let mut parts: Vec<(i32, Bytes)> = Vec::with_capacity(total_parts as usize);
         let mut md5 = md5::Context::new();
         for (i, chunk) in data.chunks(PART_SIZE).enumerate() {
             md5.consume(chunk);
-            parts.push((i as i32, chunk.to_vec()));
+            // One copy into a refcounted buffer; retries only bump the refcount.
+            parts.push((i as i32, Bytes::copy_from_slice(chunk)));
         }
+        // `data` no longer needed — free before fan-out.
+        drop(data);
         let mut tasks = FuturesUnordered::new();
         for (part, bytes) in parts {
             // keep the sliding window bounded
@@ -172,7 +201,7 @@ pub async fn upload_file_parallel(
             }
             let c = client.clone();
             let w = window.clone();
-            tasks.push(async move { send_small_part(c, file_id, part, bytes, w).await });
+            tasks.push(async move { send_small_part(c, file_id, part, bytes, w, max_window).await });
         }
         while let Some(r) = tasks.next().await {
             r?;
@@ -188,46 +217,62 @@ pub async fn upload_file_parallel(
             .into(),
         ))
     } else {
-        // ---- big path: shared handle + atomic counter, parallel everything ----
-        let file = tokio::fs::File::open(path)
-            .await
-            .map_err(|e| e.to_string())?;
-        let handle = Arc::new(tokio::sync::Mutex::new(file));
+        // ---- big path: per-worker handles + buffer pool, parallel network ----
+        // Each part is read via its own `File::open` + positional
+        // `seek(offset)` + `read_exact`, so disk reads never serialize on a
+        // single `Arc<Mutex<File>>`. A small read-ahead buffer pool recycles
+        // 512KB allocations instead of allocating from scratch per part.
+        let owned_path = path.to_path_buf();
+        let pool: Arc<std::sync::Mutex<Vec<Vec<u8>>>> =
+            Arc::new(std::sync::Mutex::new(Vec::with_capacity(workers * 2)));
         let next_part = Arc::new(std::sync::atomic::AtomicI64::new(0));
 
-        // Pre-read all parts sequentially (bounded by disk speed), then send
-        // with a bounded sliding window. This keeps part ordering for md5-free
-        // big uploads simple while the network stays parallel.
-        let mut tasks = FuturesUnordered::new();
-        let mut part_idx: i64 = 0;
         // Stream parts: read ahead only as fast as the window drains.
+        let mut tasks = FuturesUnordered::new();
         let mut eof = false;
         while !eof || !tasks.is_empty() {
             while !eof && tasks.len() < window.load(Ordering::SeqCst) {
-                let part = {
-                    let p = next_part.fetch_add(1, Ordering::SeqCst);
-                    p
-                };
+                let part = next_part.fetch_add(1, Ordering::SeqCst);
                 if part >= total_parts as i64 {
                     eof = true;
                     break;
                 }
                 let offset = part as u64 * PART_SIZE as u64;
                 let len = ((size - offset).min(PART_SIZE as u64)) as usize;
-                let mut buf = vec![0u8; len];
+                // Acquire a pooled buffer (reuse allocation when available).
+                let mut buf: Vec<u8> = pool
+                    .lock()
+                    .map(|mut p| p.pop())
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| Vec::with_capacity(PART_SIZE));
+                buf.resize(len, 0);
+                // Per-worker independent handle: open + positional read.
+                // No shared mutex — the OS handles concurrent opens.
                 {
-                    let mut f = handle.lock().await;
+                    let mut f = tokio::fs::File::open(&owned_path)
+                        .await
+                        .map_err(|e| e.to_string())?;
                     f.seek(std::io::SeekFrom::Start(offset))
                         .await
                         .map_err(|e| e.to_string())?;
                     f.read_exact(&mut buf).await.map_err(|e| e.to_string())?;
                 }
-                part_idx += 1;
-                let _ = part_idx;
+                let payload = Bytes::from(buf);
                 let c = client.clone();
                 let w = window.clone();
+                let pool_clone = pool.clone();
                 tasks.push(async move {
-                    send_big_part(c, file_id, part as i32, total_parts, buf, w).await
+                    let r =
+                        send_big_part(c, file_id, part as i32, total_parts, payload, w, max_window)
+                            .await;
+                    // Recycle one 512KB allocation back into the pool so the
+                    // read-ahead buffers stay bounded (amortizes alloc churn).
+                    if let Ok(mut p) = pool_clone.lock() {
+                        if p.len() < max_window * 2 {
+                            p.push(Vec::with_capacity(PART_SIZE));
+                        }
+                    }
+                    r
                 });
             }
             if eof && tasks.is_empty() {
@@ -453,6 +498,7 @@ pub fn download_range_stream(
         }
         let workers = worker_count().min(total_parts as usize);
         let window = Arc::new(AtomicUsize::new(workers));
+        let max_window = workers;
         let mut next_fetch: i64 = first_part;
         let mut next_yield: i64 = first_part;
         let mut yielded: i64 = 0;
@@ -475,6 +521,9 @@ pub fn download_range_stream(
                         if flood_wait_secs(e).is_some() {
                             shrink_window(&w);
                         }
+                    } else {
+                        // Transient backoff: recover one slot per success.
+                        grow_window(&w, max_window);
                     }
                     r.map(|b| (part, b))
                 });

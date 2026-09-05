@@ -411,7 +411,11 @@ pub async fn complete_upload(
             return HttpResponse::BadRequest().body(format!("missing chunk {}", i));
         }
     }
-    // Reassemble into a temp file while verifying per-chunk + whole-file hashes.
+    // Reassemble into a temp file with a single streaming copy.
+    // Hash security: each chunk's SHA-256 was already verified in `put_chunk`
+    // against the manifest (or per-request hash) before being stored, so the
+    // manifest hashes are trusted here. Only the single cheap whole-file
+    // root check below runs — no per-chunk re-SHA256 re-read of all parts.
     let tmp_path = dir.join("assembled.bin");
     let mut out = match tokio::fs::File::create(&tmp_path).await {
         Ok(f) => f,
@@ -420,7 +424,6 @@ pub async fn complete_upload(
         }
     };
     let mut total: u64 = 0;
-    let mut bad_chunks: Vec<u32> = Vec::new();
     {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for i in 0..meta.total_chunks {
@@ -431,7 +434,6 @@ pub async fn complete_upload(
                 }
             };
             let mut buf = vec![0u8; 1024 * 1024];
-            let mut chunk_hasher = Sha256::new();
             loop {
                 match part.read(&mut buf).await {
                     Ok(0) => break,
@@ -440,7 +442,6 @@ pub async fn complete_upload(
                         if total > MAX_FILE_SIZE {
                             return HttpResponse::PayloadTooLarge().body("file too large");
                         }
-                        chunk_hasher.update(&buf[..n]);
                         if out.write_all(&buf[..n]).await.is_err() {
                             return HttpResponse::InternalServerError()
                                 .body("assemble write failed");
@@ -451,21 +452,10 @@ pub async fn complete_upload(
                     }
                 }
             }
-            if let Some(exp) = meta.chunk_hashes.get(i as usize) {
-                if hex::encode(chunk_hasher.finalize()).to_lowercase() != exp.to_lowercase() {
-                    bad_chunks.push(i);
-                }
-            }
         }
         if out.flush().await.is_err() {
             return HttpResponse::InternalServerError().body("assemble flush failed");
         }
-    }
-    if !bad_chunks.is_empty() {
-        return HttpResponse::UnprocessableEntity().body(format!(
-            "corrupt chunks (re-send): {:?}",
-            bad_chunks
-        ));
     }
     // File fingerprint = SHA-256 over concatenated raw chunk digests (same
     // construction the client uses — never buffers the whole file).

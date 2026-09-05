@@ -192,7 +192,7 @@ pub async fn deliver_to_telegram(
         total_size, fname, crate::fast_transfer::worker_count()
     );
     let uploaded = match tokio::time::timeout(
-        std::time::Duration::from_secs(600),
+        std::time::Duration::from_secs(1800),
         crate::fast_transfer::upload_file_parallel(&client, &tmp_path, total_size, fname.clone()),
     )
     .await
@@ -202,7 +202,7 @@ pub async fn deliver_to_telegram(
             return (HttpResponse::InternalServerError()
                 .body(format!("stage=telegram-upload: {}", e)), None)
         }
-        Err(_) => return (HttpResponse::RequestTimeout().body("stage=telegram-upload timeout (600s)"), None),
+        Err(_) => return (HttpResponse::RequestTimeout().body("stage=telegram-upload timeout (1800s)"), None),
     };
     log::info!("Upload stage: telegram-upload done");
 

@@ -679,11 +679,12 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: ids[i], path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
             setBusy(true);
             const batchEnc: { pin: string | null | undefined } = { pin: undefined };
-            for (let i = 0; i < fileList.length; i++) {
-                try {
-                    await runOneFileUpload(fileList[i], ids[i], batchEnc);
-                } catch { /* runOneFileUpload swallows internally; never block rest */ }
-            }
+            // Parallel uploads (approved C): all files start together, no pool cap.
+            // Each file runs its own runOneFileUpload (own qid, own AbortController,
+            // own waitIfPaused/readStatus checks). allSettled ensures one failure
+            // never blocks the rest. Per-file chunk parallelism (4x 8MB PUTs) lives
+            // inside api.uploadFileChunked and is unchanged.
+            await Promise.allSettled(fileList.map((f, i) => runOneFileUpload(f, ids[i], batchEnc)));
             setBusy(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
             // Auto-clear successes only; keep errors (and cancelled) until user retries/clears.
@@ -704,11 +705,11 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({ id: ids[i], path: (f as any).webkitRelativePath || f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
             setBusy(true);
             const batchEnc: { pin: string | null | undefined } = { pin: undefined };
-            for (let i = 0; i < fileList.length; i++) {
-                try {
-                    await runOneFileUpload(fileList[i], ids[i], batchEnc);
-                } catch { /* never block rest */ }
-            }
+            // Parallel uploads (approved C): all files start together, no pool cap.
+            // Each file runs its own runOneFileUpload (own qid, own AbortController,
+            // own waitIfPaused/readStatus checks). allSettled ensures one failure
+            // never blocks the rest.
+            await Promise.allSettled(fileList.map((f, i) => runOneFileUpload(f, ids[i], batchEnc)));
             setBusy(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
             // Auto-clear successes only; keep errors until user retries/clears.
@@ -746,11 +747,11 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         setUploadQueue(prev => [...prev, ...files.map((f, i) => ({ id: ids[i], path: f.name, name: f.name, size: f.size, status: 'pending' as const, progress: 0 }))]);
         setBusy(true);
         const batchEnc: { pin: string | null | undefined } = { pin: undefined };
-        for (let i = 0; i < files.length; i++) {
-            try {
-                await runOneFileUpload(files[i], ids[i], batchEnc);
-            } catch { /* never block rest */ }
-        }
+        // Parallel uploads (approved C): all files start together, no pool cap.
+        // Each file runs its own runOneFileUpload (own qid, own AbortController,
+        // own waitIfPaused/readStatus checks). allSettled ensures one failure
+        // never blocks the rest.
+        await Promise.allSettled(files.map((f, i) => runOneFileUpload(f, ids[i], batchEnc)));
         setBusy(false);
         queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
         // Auto-clear successes only; keep errors until user retries/clears.
