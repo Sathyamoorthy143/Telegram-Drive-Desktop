@@ -224,13 +224,14 @@ pub async fn public_share(
     };
     let disp = format!("inline; filename=\"{}\"", name.as_deref().unwrap_or("file"));
     let etag = format!("\"share-{}-{}\"", token, mid);
+    let workers = crate::fast_transfer::worker_count_for(crate::tier::premium_cached(&state).await);
     match crate::fast_transfer::range_decision(&req, &etag, size) {
         crate::fast_transfer::RangeDecision::NotModified => HttpResponse::NotModified().finish(),
         crate::fast_transfer::RangeDecision::Unsatisfiable => HttpResponse::build(actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE)
             .insert_header(("Content-Range", format!("bytes */{}", size)))
             .finish(),
         crate::fast_transfer::RangeDecision::Full => {
-            let stream = crate::fast_transfer::download_stream(&client, media);
+            let stream = crate::fast_transfer::download_stream(&client, media, workers);
             HttpResponse::Ok().content_type(mime)
                 .insert_header(("Content-Disposition", disp))
                 .insert_header(("Content-Length", size.to_string()))
@@ -240,7 +241,7 @@ pub async fn public_share(
                 .streaming(stream)
         }
         crate::fast_transfer::RangeDecision::Partial(s, e) => {
-            let stream = crate::fast_transfer::download_range_stream(&client, media, Some((s, e)));
+            let stream = crate::fast_transfer::download_range_stream(&client, media, Some((s, e)), workers);
             HttpResponse::PartialContent().content_type(mime)
                 .insert_header(("Content-Disposition", disp))
                 .insert_header(("Content-Length", (e - s + 1).to_string()))

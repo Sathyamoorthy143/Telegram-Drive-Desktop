@@ -162,13 +162,16 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     };
 
     return (
-        <div className="h-full w-full auth-gradient flex items-center justify-center p-6 relative">
+        <div className="h-full w-full auth-gradient flex items-center justify-center p-6 relative overflow-hidden">
+            <div className="orb w-80 h-80 bg-white/20 -top-16 -left-16 animate-float-slow" />
+            <div className="orb w-[28rem] h-[28rem] bg-telegram-secondary/50 bottom-[-6rem] right-[-6rem] animate-float-slow" style={{ animationDelay: '-3.5s' }} />
             <AuthThemeToggle />
 
             <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="auth-glass p-8 rounded-3xl shadow-2xl w-full max-w-md"
+                initial={{ opacity: 0, scale: 0.94, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 24 }}
+                className="auth-glass relative p-8 rounded-3xl shadow-2xl w-full max-w-md"
             >
                 <div className="text-center mb-8">
                     <div className="w-20 h-20 mb-6 mx-auto flex items-center justify-center filter drop-shadow-lg">

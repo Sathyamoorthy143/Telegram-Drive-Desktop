@@ -52,7 +52,7 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
     const overallEta = liveSpeed > 0 && remaining > 0 ? Math.round(remaining / liveSpeed) : undefined;
 
     return (
-        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-[22rem] bg-telegram-surface border border-telegram-border rounded-xl shadow-2xl overflow-hidden z-[100] max-md:bottom-20">
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-[22rem] glass-strong rounded-xl shadow-2xl overflow-hidden z-[100] max-md:bottom-20 animate-pop-in">
             <div className="p-3 border-b border-telegram-border bg-telegram-hover">
                 <div className="flex justify-between items-center">
                     <h4 className="text-sm font-medium text-telegram-text">Uploads{paused && <span className="ml-2 text-[10px] text-yellow-400 font-bold uppercase">Paused</span>}</h4>
@@ -126,7 +126,7 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                             </span>
                         </div>
                         <div className="w-full bg-telegram-border h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-telegram-primary h-full rounded-full transition-all duration-300" style={{ width: `${overallProgress}%` }} />
+                            <div className="bg-telegram-primary h-full rounded-full transition-all duration-300 upload-progress-shimmer" style={{ width: `${overallProgress}%` }} />
                         </div>
                     </div>
                 )}
@@ -157,7 +157,7 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                             )}
                             <div className={`w-2 h-2 rounded-full shrink-0 ${stagedItem ? 'bg-purple-400' :
                                 item.status === 'pending' ? 'bg-yellow-500' :
-                                item.status === 'uploading' ? 'bg-blue-500 animate-pulse' :
+                                item.status === 'uploading' ? 'bg-blue-500 animate-pulse-glow' :
                                     item.status === 'paused' ? 'bg-yellow-400' :
                                     item.status === 'cancelled' ? 'bg-gray-500' :
                                         item.status === 'error' ? 'bg-red-500' : 'bg-green-500'
@@ -206,7 +206,7 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                             <>
                                 <div className="w-full bg-telegram-border h-1.5 mt-1 rounded-full overflow-hidden">
                                     <div
-                                        className={`${item.status === 'paused' ? 'bg-yellow-400' : 'bg-blue-500'} h-full rounded-full transition-all duration-300`}
+                                        className={`${item.status === 'paused' ? 'bg-yellow-400' : 'bg-blue-500 upload-progress-shimmer'} h-full rounded-full transition-all duration-300`}
                                         style={{ width: `${item.progress || 0}%` }}
                                     />
                                 </div>

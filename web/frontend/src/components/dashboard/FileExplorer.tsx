@@ -251,9 +251,13 @@ export function FileExplorer({
 
                         {viewSettings.viewMode === 'grid' ? (
                             <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
-                                {group.items.map((file) => (
-                                    <FileCard
+                                {group.items.map((file, i) => (
+                                    <div
                                         key={file.id}
+                                        className="stagger-in"
+                                        style={{ animationDelay: `${Math.min(i, 24) * 25}ms` }}
+                                    >
+                                    <FileCard
                                         file={file}
                                         isSelected={selectedIds.includes(file.id)}
                                         onClick={(e) => onFileClick(e, file.id)}
@@ -269,6 +273,7 @@ export function FileExplorer({
                                         onToggleSelection={() => onToggleSelection(file.id)}
                                         onDoubleClick={file.type === 'folder' ? () => onOpenFolder?.(file.id) : () => handlePreviewRequest(file)}
                                     />
+                                    </div>
                                 ))}
                             </div>
                         ) : (

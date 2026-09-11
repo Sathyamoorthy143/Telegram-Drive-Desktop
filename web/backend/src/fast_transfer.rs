@@ -38,11 +38,18 @@ const MAX_RETRIES: u32 = 4;
 /// Telegram throttles per-connection, so higher parallelism = higher
 /// throughput up to the flood-wait limit (handled with transient backoff).
 pub fn worker_count() -> usize {
+    worker_count_for(false)
+}
+
+/// Tier-aware worker count. Premium accounts face no server-side download
+/// throttle, so they run hotter (default 40, clamped 1..=64).
+pub fn worker_count_for(premium: bool) -> usize {
+    let (def, max) = if premium { (40, 64) } else { (24, 32) };
     std::env::var("TG_WORKERS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(24)
-        .clamp(1, 32)
+        .unwrap_or(def)
+        .clamp(1, max)
 }
 
 /// If this is a flood-wait error, return the requested wait seconds.
@@ -167,6 +174,8 @@ async fn send_big_part(
 }
 
 /// Upload a file from disk to Telegram using N parallel part workers.
+/// `workers` comes from [`worker_count_for`] (tier-aware); callers resolve it
+/// once per transfer.
 /// Small files (<=10MB): read once (<=10MB RAM), md5 in order, concurrent
 /// `SaveFilePart`. Big files: per-worker file handles (positional reads, no
 /// shared `Mutex<File>` serialization) + atomic part counter + read-ahead
@@ -176,11 +185,12 @@ pub async fn upload_file_parallel(
     path: &std::path::Path,
     size: u64,
     name: String,
+    workers: usize,
 ) -> Result<Uploaded, String> {
     let file_id: i64 = rand::random();
     let name = if name.is_empty() { "a".to_string() } else { name };
     let total_parts = ((size as usize + UPLOAD_PART_SIZE - 1) / UPLOAD_PART_SIZE) as i32;
-    let workers = worker_count().min(total_parts.max(1) as usize);
+    let workers = workers.min(total_parts.max(1) as usize);
     let window = Arc::new(AtomicUsize::new(workers));
     let max_window = workers;
 
@@ -432,8 +442,9 @@ pub fn parse_range(header: &str, total: u64) -> Option<(u64, u64)> {
 pub fn download_stream(
     client: &Client,
     media: Media,
+    workers: usize,
 ) -> impl futures::Stream<Item = Result<Bytes, actix_web::Error>> {
-    download_range_stream(client, media, None)
+    download_range_stream(client, media, None, workers)
 }
 
 /// Same as [`download_stream`], but only the byte range `[start, end]`
@@ -442,6 +453,7 @@ pub fn download_range_stream(
     client: &Client,
     media: Media,
     range: Option<(u64, u64)>,
+    workers: usize,
 ) -> impl futures::Stream<Item = Result<Bytes, actix_web::Error>> {
     let client = client.clone();
     async_stream::stream! {
@@ -503,7 +515,7 @@ pub fn download_range_stream(
             }
             return;
         }
-        let workers = worker_count().min(total_parts as usize);
+        let workers = workers.min(total_parts as usize);
         let window = Arc::new(AtomicUsize::new(workers));
         let max_window = workers;
         let mut next_fetch: i64 = first_part;
@@ -628,6 +640,25 @@ mod tests {
         let invalid = worker_count();
         restore_workers_env(old);
         assert_eq!(invalid, 24);
+    }
+
+    #[test]
+    fn premium_workers_run_hotter() {
+        let old = with_workers_env(None);
+        let premium = worker_count_for(true);
+        let free = worker_count_for(false);
+        restore_workers_env(old);
+        assert_eq!(free, 24);
+        assert_eq!(premium, 40);
+        assert!(premium > free);
+    }
+
+    #[test]
+    fn premium_workers_clamp_higher() {
+        let old = with_workers_env(Some("9999"));
+        let got = worker_count_for(true);
+        restore_workers_env(old);
+        assert_eq!(got, 64);
     }
 
     #[test]

@@ -15,6 +15,7 @@ mod supabase;
 mod tier;
 mod storage;
 mod replicate;
+mod transcribe;
 mod trash;
 mod upload;
 mod utils;
@@ -36,6 +37,8 @@ pub struct AppState {
     pub peer_cache: Arc<RwLock<HashMap<i64, grammers_client::peer::Peer>>>,
     pub settings: Arc<std::sync::Mutex<Settings>>,
     pub replicate_tx: replicate::ReplicateSender,
+    /// Cached (premium, at) verdict, refreshed at most every TIER_CACHE_TTL.
+    pub premium_cache: Arc<Mutex<(Option<bool>, Option<std::time::Instant>)>>,
 }
 
 #[actix_web::main]
@@ -68,6 +71,7 @@ async fn main() -> std::io::Result<()> {
         peer_cache: Arc::new(RwLock::new(HashMap::new())),
         settings: Arc::new(std::sync::Mutex::new(initial_settings)),
         replicate_tx: replicate_tx.clone(),
+        premium_cache: Arc::new(Mutex::new((None, None))),
     });
 
     // Background MAIN → BACKUP replication worker + MAIN channel watcher.
@@ -121,6 +125,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/account/tier", web::get().to(tier::account_tier))
                     .route("/storage/provision", web::post().to(storage::provision_storage))
                     .route("/storage/status", web::get().to(storage::storage_status))
+                    .route("/storage/backfill", web::post().to(storage::backfill_saved))
                     .route("/files", web::get().to(files::get_files))
                     .route("/files/upload", web::post().to(upload::upload_file))
                     .route("/files/upload/status", web::get().to(upload::get_upload_status))
@@ -164,6 +169,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/stream/{fid}/{mid}", web::get().to(streaming::stream_media))
                     .route("/preview/{fid}/{mid}", web::get().to(preview::get_preview))
                     .route("/thumbnail/{fid}/{mid}", web::get().to(preview::get_thumbnail))
+                    .route("/preview/transcribe", web::post().to(transcribe::transcribe))
                     .route("/settings", web::get().to(settings::get_settings))
                     .route("/settings", web::put().to(settings::save_settings_handler))
                     .route("/settings/lock", web::get().to(settings::get_lock_settings))

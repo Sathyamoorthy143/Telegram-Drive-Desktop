@@ -91,6 +91,8 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
                 layout
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.92 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                 draggable={!isFolder}
                 onDragStart={(e: any) => {
                     if (onDragStart) onDragStart(file.id);
@@ -100,8 +102,9 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
                 onDragEnd={() => {
                     if (onDragEnd) onDragEnd();
                 }}
-                whileHover={{ y: -4 }}
-                className={`group cursor-pointer bg-telegram-surface rounded-xl overflow-hidden border hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all relative
+                whileHover={{ y: -5, scale: 1.015 }}
+                whileTap={{ scale: 0.97 }}
+                className={`group cursor-pointer glass-strong sheen rounded-xl overflow-hidden border hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all relative
                 ${isSelected ? 'border-telegram-primary bg-telegram-primary/5 ring-1 ring-telegram-primary' : 'border-telegram-border hover:border-telegram-primary/50'}
                 ${isDragOver ? 'ring-2 ring-telegram-primary bg-telegram-primary/20 scale-105' : ''}`}
                 style={height ? { height: `${height}px` } : { aspectRatio: '4/3' }}

@@ -1,4 +1,7 @@
-import { X, HardDrive, Trash2, Info, FileText, Calendar, Database, Type, FolderOpen } from 'lucide-react';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { X, HardDrive, Trash2, Info, FileText, Calendar, Database, Type, FolderOpen, AudioLines } from 'lucide-react';
+import { transcribeMessage } from '../../storage';
 import { TelegramFile } from '../../types';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { formatBytes } from '../../utils';
@@ -25,9 +28,32 @@ export function PreviewPane({ file, onClose, onDownload, onDelete, onProperties,
     }
 
     const isFolder = file.type === 'folder';
+    const isAudio = /\.(ogg|oga|opus|mp3|m4a|wav|amr)$/i.test(file.name || '');
+    const [transcript, setTranscript] = useState<string | null>(null);
+    const [transcribing, setTranscribing] = useState(false);
+    const [transcribeError, setTranscribeError] = useState<string | null>(null);
+
+    const handleTranscribe = async () => {
+        setTranscribing(true);
+        setTranscribeError(null);
+        try {
+            const r = await transcribeMessage(file.id, (file as any).folder_id ?? undefined);
+            setTranscript(r.text);
+        } catch (e: any) {
+            setTranscribeError(e?.message || 'Transcription failed');
+        } finally {
+            setTranscribing(false);
+        }
+    };
 
     return (
-        <div className="w-80 border-l border-telegram-border bg-telegram-surface flex flex-col animate-in slide-in-from-right duration-300">
+        <motion.div
+            key={file.id}
+            initial={{ opacity: 0, x: 48 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            className="w-80 border-l border-telegram-border glass-strong flex flex-col"
+        >
             <div className="h-12 flex items-center justify-between px-4 border-b border-telegram-border">
                 <span className="text-xs font-bold uppercase tracking-wider text-telegram-subtext">Preview</span>
                 <button onClick={onClose} className="p-1 hover:bg-telegram-hover rounded-md transition-colors">
@@ -92,6 +118,30 @@ export function PreviewPane({ file, onClose, onDownload, onDelete, onProperties,
                             </button>
                         </div>
                     </section>
+
+                    {!isFolder && isAudio && (
+                        <section>
+                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-telegram-subtext mb-3 px-1">Voice-to-Text</h4>
+                            {!transcript && (
+                                <button
+                                    onClick={handleTranscribe}
+                                    disabled={transcribing}
+                                    className="w-full flex items-center justify-center gap-2 p-3 bg-telegram-primary/10 hover:bg-telegram-primary/20 disabled:opacity-50 text-telegram-primary rounded-xl transition-all border border-telegram-primary/20"
+                                >
+                                    <AudioLines className="w-5 h-5" />
+                                    <span className="text-[10px] font-bold uppercase">{transcribing ? 'Transcribing…' : 'Transcribe'}</span>
+                                </button>
+                            )}
+                            {transcribeError && (
+                                <p className="text-[11px] text-red-400 mt-2">{transcribeError}</p>
+                            )}
+                            {transcript && (
+                                <div className="mt-2 p-3 bg-telegram-hover/40 border border-telegram-border rounded-xl text-xs text-telegram-text leading-relaxed animate-pop-in">
+                                    {transcript}
+                                </div>
+                            )}
+                        </section>
+                    )}
                 </div>
             </div>
 
@@ -104,7 +154,7 @@ export function PreviewPane({ file, onClose, onDownload, onDelete, onProperties,
                     Full Properties
                 </button>
             </div>
-        </div>
+        </motion.div>
     );
 }
 

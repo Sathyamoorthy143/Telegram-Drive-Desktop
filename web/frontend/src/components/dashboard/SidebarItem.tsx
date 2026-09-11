@@ -57,15 +57,25 @@ export function SidebarItem({ icon: Icon, label, active = false, onClick, onDrop
                     onDelete();
                 }
             }}
-            className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${active
-                ? 'bg-telegram-primary/10 text-telegram-primary'
+            className={`group relative w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${active
+                ? 'text-telegram-primary'
                 : isOver
-                    ? 'bg-telegram-primary/30 text-telegram-text ring-2 ring-telegram-primary scale-[1.02] shadow-lg'
+                    ? 'text-telegram-text ring-2 ring-telegram-primary scale-[1.02] shadow-lg'
                     : 'text-telegram-subtext hover:bg-telegram-hover hover:text-telegram-text'
                 }`}
         >
-            <Icon className={`w-4 h-4 flex-shrink-0 ${isOver ? 'text-telegram-primary' : ''}`} />
-            <span className="flex-1 text-left truncate min-w-0">{label}</span>
+            {active && (
+                <motion.span
+                    layoutId="sidebar-active-pill"
+                    className="absolute inset-0 rounded-lg bg-telegram-primary/10"
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                />
+            )}
+            {isOver && !active && (
+                <span className="absolute inset-0 rounded-lg bg-telegram-primary/30" />
+            )}
+            <Icon className={`w-4 h-4 flex-shrink-0 relative z-10 ${isOver ? 'text-telegram-primary' : ''}`} />
+            <span className="flex-1 text-left truncate min-w-0 relative z-10">{label}</span>
             {onDelete && (
                 <div onClick={(e) => { e.stopPropagation(); onDelete(); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400">
                     <Plus className="w-3 h-3 rotate-45" />

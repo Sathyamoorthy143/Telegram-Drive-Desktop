@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Eye, HardDrive, Trash2, FolderOpen, Pencil, Play, FileText, Scissors, Copy, Clipboard, Info, FolderInput, Share2, Star, Tag, PenLine, History } from 'lucide-react';
 import { TelegramFile } from '../../types';
 import { isMediaFile, isPdfFile } from '../../utils';
@@ -73,10 +74,14 @@ export function ContextMenu({
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
     return (
-        <div
+        <motion.div
             ref={menuRef}
-            className={`fixed z-50 bg-telegram-surface/95 backdrop-blur-xl border border-telegram-border shadow-2xl p-1.5 animate-in flex flex-col gap-0.5 ${isMobile ? 'inset-x-2 bottom-20 rounded-2xl fade-in slide-in-from-bottom-2 max-h-[60vh] overflow-y-auto' : 'min-w-[200px] rounded-lg fade-in zoom-in-95 duration-100'}`}
-            style={isMobile ? {} : { left: adjustedPos.x, top: adjustedPos.y }}
+            initial={{ opacity: 0, scale: 0.92, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+            style={isMobile ? { transformOrigin: 'bottom center' } : { left: adjustedPos.x, top: adjustedPos.y, transformOrigin: 'top left' }}
+            className={`fixed z-50 glass-strong p-1.5 flex flex-col gap-0.5 ${isMobile ? 'inset-x-2 bottom-20 rounded-2xl max-h-[60vh] overflow-y-auto' : 'min-w-[200px] rounded-xl'}`}
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
         >
@@ -210,7 +215,7 @@ export function ContextMenu({
                     </button>
                 </>
             )}
-        </div>
+        </motion.div>
     );
 }
 

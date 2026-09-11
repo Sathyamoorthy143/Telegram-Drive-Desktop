@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Palette, ShieldCheck, Lock, Timer, Bell, Power } from 'lucide-react';
+import { X, Save, Palette, ShieldCheck, Lock, Timer, Bell, Power, Database, CopyCheck } from 'lucide-react';
 import * as api from '../../api';
+import { getStorageStatus, provisionStorage, backfillStorage, formatBackfillResult, type StorageStatus } from '../../storage';
+import { getAccountTier, tierUploadLabel, type AccountTier } from '../../tier';
 import { toast } from 'sonner';
 import { useLock } from '../../context/LockContext';
 import { AppSettings } from '../../types';
@@ -19,6 +21,10 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const { hasPin, lockIntervalMs, notificationMode, setPin, setLockInterval, setNotificationMode } = useLock();
     const [pinInput, setPinInput] = useState('');
     const [pinConfirm, setPinConfirm] = useState('');
+    const [storage, setStorage] = useState<StorageStatus | null>(null);
+    const [tier, setTier] = useState<AccountTier | null>(null);
+    const [provisioning, setProvisioning] = useState(false);
+    const [backfilling, setBackfilling] = useState(false);
     const [encEnabled, setEncEnabled] = useState(() => { try { return localStorage.getItem('encryption_enabled') === '1'; } catch { return false; } });
 
     useEffect(() => {
@@ -33,7 +39,34 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             }
         };
         loadSettings();
+        getStorageStatus().then(setStorage).catch(() => {});
+        getAccountTier().then(setTier).catch(() => {});
     }, []);
+
+    const handleProvision = async () => {
+        setProvisioning(true);
+        try {
+            const r = await provisionStorage();
+            setStorage({ provisioned: true, main_channel_id: r.main_channel_id, backup_channel_id: r.backup_channel_id });
+            toast.success('Storage channels ready');
+        } catch (err) {
+            toast.error('Provision failed: ' + err);
+        } finally {
+            setProvisioning(false);
+        }
+    };
+
+    const handleBackfill = async () => {
+        setBackfilling(true);
+        try {
+            const r = await backfillStorage();
+            toast.success(formatBackfillResult(r));
+        } catch (err) {
+            toast.error('Backfill failed: ' + err);
+        } finally {
+            setBackfilling(false);
+        }
+    };
 
     const handleSave = async () => {
         setSaving(true);
@@ -70,6 +103,43 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
                 {/* Body */}
                 <div className="p-6 space-y-6">
+                    {/* Storage Section - MAIN/BACKUP channels + tier */}
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-telegram-text">
+                            <Database className="w-4 h-4 text-telegram-primary" />
+                            Storage Channels
+                            {tier && (
+                                <span className="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-telegram-primary/15 text-telegram-primary border border-telegram-primary/30">
+                                    {tierUploadLabel(tier)}
+                                </span>
+                            )}
+                        </div>
+                        <div className="p-3 bg-telegram-hover/40 border border-telegram-border rounded-xl text-[11px] text-telegram-subtext space-y-1">
+                            <div>Main: {storage?.main_channel_id ? <span className="font-mono text-telegram-text">{storage.main_channel_id}</span> : 'not set up'}</div>
+                            <div>Backup: {storage?.backup_channel_id ? <span className="font-mono text-telegram-text">{storage.backup_channel_id}</span> : 'not set up'}</div>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleProvision}
+                                disabled={provisioning}
+                                className="flex-1 px-3 py-2 bg-telegram-primary hover:bg-telegram-primary/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors"
+                            >
+                                {provisioning ? 'Setting up…' : storage?.provisioned ? 'Repair Channels' : 'Set Up Channels'}
+                            </button>
+                            <button
+                                onClick={handleBackfill}
+                                disabled={backfilling || !storage?.provisioned}
+                                title="Copy old Saved Messages files into MAIN (safe to rerun)"
+                                className="flex-1 px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-telegram-text rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                <CopyCheck className="w-3.5 h-3.5" />
+                                {backfilling ? 'Copying…' : 'Copy Old Files'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="h-px bg-telegram-border" />
+
                     {/* Lockscreen Section - Absolute + Background */}
                     <div className="space-y-4">
                         <div className="flex items-center gap-2 text-sm font-semibold text-telegram-text">

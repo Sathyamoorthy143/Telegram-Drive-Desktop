@@ -67,19 +67,31 @@ export function LockScreen() {
   }, [pin, handleUnlock]);
 
   return (
-    <div className="fixed inset-0 z-[200] auth-gradient flex items-center justify-center p-4">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="auth-glass p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center">
+    <div className="fixed inset-0 z-[200] auth-gradient overflow-hidden flex items-center justify-center p-4">
+      <div className="orb w-72 h-72 bg-telegram-secondary/60 -top-10 -left-10 animate-float-slow" />
+      <div className="orb w-96 h-96 bg-telegram-primary/40 bottom-0 right-0 animate-float-slow" style={{ animationDelay: '-3.5s' }} />
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0, y: 24 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+        className="auth-glass relative p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center"
+      >
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
           <Lock className="w-8 h-8 text-white" />
         </div>
         <h2 className="text-xl font-bold text-white mb-1">Locked</h2>
         <p className="text-xs text-white/60 mb-6">Locks after {Math.round(lockIntervalMs/60000)}min of inactivity • Enter PIN</p>
 
-        <div className="flex justify-center gap-3 mb-6">
+        <motion.div
+          key={tries}
+          animate={error ? { x: [0, -10, 10, -6, 6, 0] } : { x: 0 }}
+          transition={{ duration: 0.4 }}
+          className="flex justify-center gap-3 mb-6"
+        >
           {[0,1,2,3].map(i => (
             <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all ${i < pin.length ? 'bg-white border-white' : 'border-white/30'} ${error ? '!border-red-400 !bg-red-400/50' : ''}`} />
           ))}
-        </div>
+        </motion.div>
 
         {/* Hidden input to support physical keyboard + mobile numeric keyboard */}
         <input

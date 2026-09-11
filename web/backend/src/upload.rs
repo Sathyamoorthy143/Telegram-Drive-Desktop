@@ -187,15 +187,17 @@ pub async fn deliver_to_telegram(
     };
     log::info!("Upload stage: resolve_peer done");
 
+    // Tier-aware parallelism (cached verdict, ~1 RPC per 10 min max).
+    let workers = crate::fast_transfer::worker_count_for(crate::tier::premium_cached(&state).await);
     // Upload to Telegram with parallel parts (sliding window over N workers).
     // total_size was counted while streaming the request body to disk.
     log::info!(
         "Upload stage: telegram-upload size={} name={} workers={}",
-        total_size, fname, crate::fast_transfer::worker_count()
+        total_size, fname, workers
     );
     let uploaded = match tokio::time::timeout(
         std::time::Duration::from_secs(1800),
-        crate::fast_transfer::upload_file_parallel(&client, &tmp_path, total_size, fname.clone()),
+        crate::fast_transfer::upload_file_parallel(&client, &tmp_path, total_size, fname.clone(), workers),
     )
     .await
     {

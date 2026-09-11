@@ -159,6 +159,88 @@ pub async fn storage_status(state: web::Data<AppState>) -> impl Responder {
     }))
 }
 
+/// Ledger tracking one-shot Saved Messages → MAIN migration (reruns skip
+/// already-migrated messages instead of duplicating them).
+fn backfill_ledger_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        std::env::var("BACKFILL_LEDGER_PATH").unwrap_or_else(|_| "backfill_ledger.jsonl".into()),
+    )
+}
+
+#[derive(serde::Deserialize)]
+pub struct BackfillQuery {
+    pub limit: Option<usize>,
+}
+
+/// `POST /api/storage/backfill` — one-shot migration of legacy Saved Messages
+/// media into MAIN (server-side forwards, no re-upload). Reruns are safe:
+/// migrated messages are recorded in a local ledger and skipped.
+pub async fn backfill_saved(
+    state: web::Data<AppState>,
+    query: web::Query<BackfillQuery>,
+) -> impl Responder {
+    let client = match get_client(&state).await {
+        Ok(c) => c,
+        Err(e) => return HttpResponse::Unauthorized().body(e),
+    };
+    let main = match main_id(&state) {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("provision storage first"),
+    };
+    let limit = query.limit.unwrap_or(200).clamp(1, 2000);
+    let me = match client.get_me().await {
+        Ok(u) => u,
+        Err(e) => return HttpResponse::Unauthorized().body(e.to_string()),
+    };
+    let _ = me;
+    let src_ref = match crate::utils::resolve_peer_ref(&client, None, &state.peer_cache).await {
+        Ok(p) => p,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+    let dst = match crate::utils::resolve_peer_ref(&client, Some(main), &state.peer_cache).await {
+        Ok(p) => p,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+    let ledger = backfill_ledger_path();
+    let mut copied = 0u32;
+    let mut skipped = 0u32;
+    let mut checked = 0usize;
+    let mut iter = client.iter_messages(src_ref);
+    while let Ok(Some(msg)) = iter.next().await {
+        if checked >= limit {
+            break;
+        }
+        checked += 1;
+        if msg.media().is_none() {
+            continue;
+        }
+        let mid = msg.id() as i64;
+        if crate::replicate::already_copied_at(&ledger, mid) {
+            skipped += 1;
+            continue;
+        }
+        match client
+            .forward_messages(dst, &[msg.id()], src_ref)
+            .await
+        {
+            Ok(sent) => {
+                let new_id = sent.into_iter().flatten().map(|m| m.id() as i64).max().unwrap_or(0);
+                crate::replicate::record_copy_at(&ledger, mid, new_id);
+                copied += 1;
+            }
+            Err(e) => {
+                log::warn!("Backfill: forward of {} failed: {}", mid, e);
+                break;
+            }
+        }
+    }
+    HttpResponse::Ok().json(serde_json::json!({
+        "copied": copied,
+        "skipped": skipped,
+        "checked": checked,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

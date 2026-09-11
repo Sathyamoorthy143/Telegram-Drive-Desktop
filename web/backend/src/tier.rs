@@ -47,6 +47,34 @@ pub async fn current_cap(state: &AppState) -> u64 {
     }
 }
 
+/// How long a cached premium verdict stays valid (10 minutes). `get_me` is
+/// one cheap RPC, but downloads/uploads shouldn't pay it on every request.
+pub const TIER_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Pure freshness check for the cache (unit-testable).
+pub fn cache_fresh(cached_at: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    cached_at.map(|t| now.duration_since(t) < TIER_CACHE_TTL).unwrap_or(false)
+}
+
+/// Cached premium verdict: at most one `get_me` RPC per [`TIER_CACHE_TTL`].
+/// Unknown/offline defaults to free tier (safe).
+pub async fn premium_cached(state: &AppState) -> bool {
+    {
+        let g = state.premium_cache.lock().await;
+        if let (Some(p), Some(at)) = (g.0, g.1) {
+            if cache_fresh(Some(at), std::time::Instant::now()) {
+                return p;
+            }
+        }
+    }
+    let premium = match get_client(state).await {
+        Ok(client) => is_premium(&client).await,
+        Err(_) => false,
+    };
+    *state.premium_cache.lock().await = (Some(premium), Some(std::time::Instant::now()));
+    premium
+}
+
 #[derive(Serialize)]
 pub struct AccountTier {
     pub premium: bool,
@@ -79,7 +107,6 @@ mod tests {
     fn premium_accounts_cap_at_4gb() {
         assert_eq!(max_upload_bytes(true), 4 * 1024 * 1024 * 1024);
     }
-
     #[test]
     fn tier_response_carries_cap() {
         let t = AccountTier {
@@ -89,5 +116,16 @@ mod tests {
         let v = serde_json::to_value(&t).unwrap();
         assert_eq!(v["premium"], true);
         assert_eq!(v["max_upload_bytes"], PREMIUM_MAX_UPLOAD_BYTES);
+    }
+
+    #[test]
+    fn tier_cache_expires_after_ttl() {
+        let now = std::time::Instant::now();
+        assert!(cache_fresh(Some(now), now));
+        assert!(!cache_fresh(None, now));
+        assert!(!cache_fresh(
+            Some(now - std::time::Duration::from_secs(601)),
+            now
+        ));
     }
 }

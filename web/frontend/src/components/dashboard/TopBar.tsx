@@ -7,6 +7,7 @@ import {
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../../context/ThemeContext';
+import { TierBadge } from './TierBadge';
 import { ViewSettings, SortField, GroupBy } from '../../types';
 
 export interface SearchFilters { file_type: string; min_size_mb: string; max_size_mb: string; }
@@ -300,6 +301,8 @@ export function TopBar({
                 <button onClick={toggleTheme} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition">
                     {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
+
+                <TierBadge />
             </div>
         </header>
     );
