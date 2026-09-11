@@ -17,7 +17,7 @@ jobs:
       - name: list Pages projects and custom domains
         run: |
           RESP=$(curl -s -H "Authorization: Bearer $PAGES_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects?per_page=25")
+            "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects")
           echo "API success: $(echo "$RESP" | jq -r '.success')"
           echo "API errors: $(echo "$RESP" | jq -c '.errors')"
           echo "Project count: $(echo "$RESP" | jq '.result | length')"
@@ -25,7 +25,7 @@ jobs:
           for proj in $(echo "$RESP" | jq -r '.result[]? | .name'); do
             echo "--- custom domains for $proj ---"
             curl -s -H "Authorization: Bearer $PAGES_TOKEN" \
-              "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects/$proj/domains?per_page=25" \
+              "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects/$proj/domains" \
               | jq -r '.result[]? | "  DOMAIN: \(.name)"'
           done
         env:
