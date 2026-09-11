@@ -18,6 +18,9 @@ jobs:
         run: |
           RESP=$(curl -s -H "Authorization: Bearer $PAGES_TOKEN" \
             "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects?per_page=25")
+          echo "API success: $(echo "$RESP" | jq -r '.success')"
+          echo "API errors: $(echo "$RESP" | jq -c '.errors')"
+          echo "Project count: $(echo "$RESP" | jq '.result | length')"
           echo "$RESP" | jq -r '.result[]? | "PROJECT: \(.name)"'
           for proj in $(echo "$RESP" | jq -r '.result[]? | .name'); do
             echo "--- custom domains for $proj ---"
