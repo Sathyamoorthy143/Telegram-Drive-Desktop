@@ -1,0 +1,30 @@
+name: "Discover Pages Projects (temporary)"
+
+# One-shot helper: lists Pages projects + their custom domains in this
+# account so the deploy workflow can target the right project name.
+# Safe to delete after use. Run: gh workflow run discover-pages.yml
+# Prints project NAMES ONLY - the API token stays masked in logs.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: list Pages projects and custom domains
+        run: |
+          RESP=$(curl -s -H "Authorization: Bearer $PAGES_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects?per_page=25")
+          echo "$RESP" | jq -r '.result[]? | "PROJECT: \(.name)"'
+          for proj in $(echo "$RESP" | jq -r '.result[]? | .name'); do
+            echo "--- custom domains for $proj ---"
+            curl -s -H "Authorization: Bearer $PAGES_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$PAGES_ACCOUNT/pages/projects/$proj/domains?per_page=25" \
+              | jq -r '.result[]? | "  DOMAIN: \(.name)"'
+          done
+        env:
+          PAGES_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PAGES_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
