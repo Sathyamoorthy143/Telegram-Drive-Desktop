@@ -1,0 +1,49 @@
+name: "Deploy Frontend to Cloudflare Pages"
+
+# Auto-deploy web/frontend on every push to main so the hosted site never
+# goes stale. Requires two repo secrets (Settings → Secrets → Actions):
+#   CLOUDFLARE_API_TOKEN  - API token with Pages edit permission
+#   CLOUDFLARE_ACCOUNT_ID - from the Cloudflare dashboard URL
+# Optional repo variable (Settings → Secrets → Actions → Variables):
+#   VITE_API_URL - backend URL baked into the build
+#                  (e.g. https://telegram-drive-web-1dvn.onrender.com)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "web/frontend/**"
+      - ".github/workflows/cloudflare-pages.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: install frontend dependencies
+        working-directory: web/frontend
+        run: npm ci
+
+      - name: build frontend
+        working-directory: web/frontend
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+      - name: deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/frontend/dist --project-name=telegram-drive
