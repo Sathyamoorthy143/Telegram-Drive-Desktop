@@ -5,6 +5,9 @@ use crate::models::*;
 use crate::utils::resolve_peer_ref;
 use crate::AppState;
 
+/// Global search page size (doubled organizer limit: was 50).
+pub const GLOBAL_SEARCH_PAGE_SIZE: i32 = 100;
+
 pub async fn get_files(
     state: web::Data<AppState>,
     query: web::Query<GetFilesRequest>,
@@ -286,7 +289,7 @@ pub async fn search_files(
             offset_rate: 0,
             offset_peer: tl::enums::InputPeer::Empty,
             offset_id: 0,
-            limit: 50,
+            limit: GLOBAL_SEARCH_PAGE_SIZE,
             folder_id: None,
             broadcasts_only: false,
             groups_only: false,
@@ -340,6 +343,11 @@ pub async fn get_bandwidth() -> impl Responder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn global_search_page_size_is_doubled() {
+        assert_eq!(GLOBAL_SEARCH_PAGE_SIZE, 50 * 2);
+    }
 
     #[test]
     fn bandwidth_returns_zeroes() {

@@ -10,14 +10,13 @@ use tokio::io::AsyncWriteExt;
 
 use crate::auth::get_client;
 use crate::models::*;
+use crate::tier;
 use crate::utils::resolve_peer_ref;
 use crate::AppState;
 
-/// Telegram upload limits
-const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024 * 1024; // 5 GB
-
 /// Multipart upload endpoint — receives file chunks and uploads to Telegram.
-/// Handles files up to 5GB by streaming to a temp file, then uploading to Telegram.
+/// Streams to a temp file, then uploads. The size cap is tier-aware
+/// (2 GB free / 4 GB Premium, enforced server-side by Telegram).
 pub async fn upload_file(
     state: web::Data<AppState>,
     mut payload: Multipart,
@@ -38,6 +37,8 @@ pub async fn upload_file(
     let mut tmp_file: Option<fs::File> = None;
     let mut tmp_path: Option<std::path::PathBuf> = None;
     let mut got_file = false;
+    // Tier-aware cap (2 GB free / 4 GB Premium), resolved once per upload.
+    let max_size = tier::current_cap(&state).await;
 
     while let Some(item) = payload.next().await {
         let mut field = match item {
@@ -86,9 +87,9 @@ pub async fn upload_file(
                     match chunk {
                         Ok(data) => {
                             total_size += data.len() as u64;
-                            if total_size > MAX_FILE_SIZE {
+                            if total_size > max_size {
                                 return HttpResponse::PayloadTooLarge()
-                                    .body(format!("File too large. Max: {} bytes", MAX_FILE_SIZE));
+                                    .body(format!("File too large. Max: {} bytes", max_size));
                             }
                             if let Err(e) = tf.write_all(&data).await {
                                 return HttpResponse::InternalServerError()
@@ -315,11 +316,13 @@ async fn forward_to_backup(
     Ok(())
 }
 
-/// Get upload status / config info
-pub async fn get_upload_status() -> impl actix_web::Responder {
+/// Get upload status / config info (live tier-aware cap)
+pub async fn get_upload_status(state: web::Data<AppState>) -> impl actix_web::Responder {
+    let cap = tier::current_cap(&state).await;
+    let human = if cap >= tier::PREMIUM_MAX_UPLOAD_BYTES { "4 GB (Premium)" } else { "2 GB" };
     HttpResponse::Ok().json(serde_json::json!({
-        "max_file_size": MAX_FILE_SIZE,
-        "max_file_size_human": "5 GB",
+        "max_file_size": cap,
+        "max_file_size_human": human,
         "chunk_size": "adaptive (128KB-512KB, handled by grammers internally)",
         "note": "Files are streamed to temp storage then uploaded to Telegram. Backup copy is forwarded automatically."
     }))

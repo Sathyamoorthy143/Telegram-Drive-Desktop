@@ -23,10 +23,12 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use crate::tier;
 use crate::AppState;
 
 const SESSION_DIR: &str = "/tmp/telegram-uploads";
-const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024 * 1024;
+// NOTE: no local MAX_FILE_SIZE — the cap is tier-aware (see tier.rs) and
+// enforced at init/complete against the signed-in account's tier.
 const DEFAULT_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 const MAX_PART_BYTES: usize = 32 * 1024 * 1024;
 const STALE_SECS: u64 = 24 * 3600;
@@ -191,8 +193,12 @@ fn sanitize_name(name: &str) -> String {
     }
 }
 
-pub async fn init_upload(req: web::Json<InitRequest>) -> impl Responder {
-    if req.size == 0 || req.size > MAX_FILE_SIZE {
+pub async fn init_upload(
+    state: web::Data<AppState>,
+    req: web::Json<InitRequest>,
+) -> impl Responder {
+    let max_size = tier::current_cap(&state).await;
+    if req.size == 0 || req.size > max_size {
         return HttpResponse::BadRequest().body("invalid size");
     }
     if req.total_chunks == 0 || req.total_chunks > 2048 {
@@ -423,6 +429,8 @@ pub async fn complete_upload(
             return HttpResponse::InternalServerError().body(format!("assemble: {}", e))
         }
     };
+    // Tier-aware cap (2 GB free / 4 GB Premium), resolved once per completion.
+    let max_size = tier::current_cap(&state).await;
     let mut total: u64 = 0;
     {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -439,7 +447,7 @@ pub async fn complete_upload(
                     Ok(0) => break,
                     Ok(n) => {
                         total += n as u64;
-                        if total > MAX_FILE_SIZE {
+                        if total > max_size {
                             return HttpResponse::PayloadTooLarge().body("file too large");
                         }
                         if out.write_all(&buf[..n]).await.is_err() {

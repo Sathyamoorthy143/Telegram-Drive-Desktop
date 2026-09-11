@@ -2,6 +2,11 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use crate::AppState;
 
+/// Recent-files list size (doubled organizer limit: was 30).
+pub const RECENT_FILES_LIMIT: u32 = 60;
+/// Activity-log list size (doubled organizer limit: was 100).
+pub const ACTIVITY_LOG_LIMIT: u32 = 200;
+
 async fn sb(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<reqwest::Response, String> {
     let url = std::env::var("SUPABASE_URL").map_err(|_| "no supabase".to_string())?;
     let key = std::env::var("SUPABASE_SERVICE_KEY")
@@ -105,7 +110,7 @@ pub struct TouchRequest { pub message_id: i64, pub folder_id: Option<i64>, pub n
 
 pub async fn list_recent(state: web::Data<AppState>) -> impl Responder {
     let _ = need_auth(&state);
-    match sb("GET", "file_recents?select=*&order=opened_at.desc&limit=30", None).await {
+    match sb("GET", &format!("file_recents?select=*&order=opened_at.desc&limit={}", RECENT_FILES_LIMIT), None).await {
         Ok(r) if r.status().is_success() => HttpResponse::Ok().json(api_rows(r.json::<serde_json::Value>().await.unwrap_or(serde_json::json!([])))),
         _ => HttpResponse::Ok().json(serde_json::json!([])),
     }
@@ -184,7 +189,7 @@ pub struct ActivityBody { pub action: String, pub detail: Option<String>, pub na
 
 pub async fn list_activity(state: web::Data<AppState>) -> impl Responder {
     let _ = need_auth(&state);
-    match sb("GET", "activity_logs?select=*&order=created_at.desc&limit=100", None).await {
+    match sb("GET", &format!("activity_logs?select=*&order=created_at.desc&limit={}", ACTIVITY_LOG_LIMIT), None).await {
         Ok(r) if r.status().is_success() => HttpResponse::Ok().json(r.json::<serde_json::Value>().await.unwrap_or(serde_json::json!([]))),
         _ => HttpResponse::Ok().json(serde_json::json!([])),
     }
@@ -397,4 +402,19 @@ pub async fn restore_version(
         .await;
     }
     HttpResponse::Ok().json(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_files_limit_is_doubled() {
+        assert_eq!(RECENT_FILES_LIMIT, 30 * 2);
+    }
+
+    #[test]
+    fn activity_log_limit_is_doubled() {
+        assert_eq!(ACTIVITY_LOG_LIMIT, 100 * 2);
+    }
 }

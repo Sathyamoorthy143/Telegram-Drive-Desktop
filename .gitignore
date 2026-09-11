@@ -36,3 +36,7 @@ CompiledApps/
 Error.html
 **/LatestError.html
 .vercel
+
+# graphify (generated knowledge-graph artifacts)
+graphify-out/
+raw/

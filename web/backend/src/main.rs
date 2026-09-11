@@ -12,6 +12,7 @@ mod settings;
 mod share;
 mod streaming;
 mod supabase;
+mod tier;
 mod trash;
 mod upload;
 mod utils;
@@ -99,6 +100,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/auth/check-password", web::post().to(auth::check_password))
                     .route("/auth/user-info", web::get().to(auth::get_user_info))
                     .route("/auth/logout", web::post().to(auth::logout))
+                    .route("/account/tier", web::get().to(tier::account_tier))
                     .route("/files", web::get().to(files::get_files))
                     .route("/files/upload", web::post().to(upload::upload_file))
                     .route("/files/upload/status", web::get().to(upload::get_upload_status))
