@@ -74,7 +74,7 @@ export function LockScreen() {
         initial={{ scale: 0.92, opacity: 0, y: 24 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-        className="auth-glass relative p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center"
+        className="auth-glass beam-border relative p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center"
       >
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
           <Lock className="w-8 h-8 text-white" />

@@ -466,3 +466,20 @@ body,
 .ctx-menu button:hover {
   transform: translateX(3px);
 }
+
+/* Rotating conic beam border (needs @property for smooth angle animation) */
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.beam-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-telegram-surface), var(--color-telegram-surface)) padding-box,
+    conic-gradient(from var(--beam-angle), rgba(255, 174, 0, 0.7), rgba(36, 129, 204, 0.7), rgba(232, 121, 249, 0.6), rgba(255, 174, 0, 0.7)) border-box;
+  animation: beam-spin 5s linear infinite;
+}
+@keyframes beam-spin {
+  to { --beam-angle: 360deg; }
+}

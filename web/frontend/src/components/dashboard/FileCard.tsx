@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
 import { Folder, Eye, Trash2 } from 'lucide-react';
 import * as api from '../../api';
 import { TelegramFile } from '../../types';
@@ -32,6 +32,23 @@ function isImageFile(filename: string): boolean {
 export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, onClick, onContextMenu, onDrop, onDragStart, onDragEnd, activeFolderId, height, onToggleSelection, onDoubleClick }: FileCardProps) {
     const isFolder = file.type === 'folder';
     const accent = fileAccent(file.name, isFolder);
+    // 3D tilt driven by pointer position (springs for buttery return).
+    const cardRef = useRef<HTMLDivElement>(null);
+    const px = useMotionValue(0.5);
+    const py = useMotionValue(0.5);
+    const rotateX = useSpring(useTransform(py, [0, 1], [7, -7]), { stiffness: 260, damping: 22 });
+    const rotateY = useSpring(useTransform(px, [0, 1], [-7, 7]), { stiffness: 260, damping: 22 });
+
+    const handleTilt = (e: React.MouseEvent) => {
+        const rect = cardRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        px.set((e.clientX - rect.left) / rect.width);
+        py.set((e.clientY - rect.top) / rect.height);
+    };
+    const resetTilt = () => {
+        px.set(0.5);
+        py.set(0.5);
+    };
     const [isDragOver, setIsDragOver] = useState(false);
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [thumbnailLoading, setThumbnailLoading] = useState(false);
@@ -90,11 +107,20 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
             }}
         >
             <motion.div
+                ref={cardRef}
                 layout
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.92 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                style={{
+                    rotateX,
+                    rotateY,
+                    transformPerspective: 800,
+                    ...(height ? { height: `${height}px` } : { aspectRatio: '4/3' }),
+                }}
+                onMouseMove={handleTilt}
+                onMouseLeave={resetTilt}
                 draggable={!isFolder}
                 onDragStart={(e: any) => {
                     if (onDragStart) onDragStart(file.id);
@@ -109,7 +135,6 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
                 className={`group cursor-pointer glass-strong sheen rounded-xl overflow-hidden border hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all relative
                 ${isSelected ? 'border-telegram-primary bg-telegram-primary/5 ring-1 ring-telegram-primary' : 'border-telegram-border hover:border-telegram-primary/50'}
                 ${isDragOver ? 'ring-2 ring-telegram-primary bg-telegram-primary/20 scale-105' : ''}`}
-                style={height ? { height: `${height}px` } : { aspectRatio: '4/3' }}
             >
                 {/* File-type accent glow bar */}
                 <div className={`absolute top-0 left-4 right-4 h-[3px] rounded-full ${accent.bar} ${accent.glow} z-10`} />

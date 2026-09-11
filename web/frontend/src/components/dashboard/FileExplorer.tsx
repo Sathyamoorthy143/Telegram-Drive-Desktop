@@ -210,9 +210,22 @@ export function FileExplorer({
 
     if (loading) {
         return (
-            <div className="flex-1 p-6 flex justify-center items-center text-telegram-subtext flex-col gap-4">
-                <div className="w-8 h-8 border-4 border-telegram-primary border-t-transparent rounded-full animate-spin"></div>
-                Loading your files...
+            <div className="flex-1 p-4 overflow-auto">
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+                    {Array.from({ length: 12 }).map((_, i) => (
+                        <div
+                            key={i}
+                            className="stagger-in rounded-xl border border-telegram-border overflow-hidden"
+                            style={{ animationDelay: `${Math.min(i, 12) * 40}ms`, aspectRatio: '4/3' }}
+                        >
+                            <div className="skeleton-shimmer w-full h-2/3" />
+                            <div className="p-3 space-y-2">
+                                <div className="skeleton-shimmer h-3 rounded w-3/4" />
+                                <div className="skeleton-shimmer h-2 rounded w-1/3" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
         )
     }

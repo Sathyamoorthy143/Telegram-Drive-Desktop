@@ -75,7 +75,7 @@ export function TopBar({
             <>
                 <div className="fixed inset-0 z-40" onClick={closeMenus} />
                 <div
-                    className="fixed z-50 bg-telegram-surface border border-telegram-border rounded-lg shadow-2xl p-1"
+                    className="fixed z-50 glass-strong rounded-xl shadow-2xl p-1 animate-pop-in"
                     style={{ top: anchorRect.bottom + 6, left, width: menuWidth }}
                 >
                     {body}
