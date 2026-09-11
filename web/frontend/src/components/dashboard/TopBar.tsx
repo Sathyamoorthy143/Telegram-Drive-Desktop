@@ -89,7 +89,7 @@ export function TopBar({
     const showActions = canPaste || selectedIds.length > 0;
 
     return (
-        <header className="h-12 border-b border-telegram-border flex items-center px-4 justify-between bg-telegram-surface/95 backdrop-blur-md sticky top-0 z-30 select-none" onClick={closeMenus}>
+        <header className="h-12 border-b border-telegram-border flex items-center px-4 justify-between glass-strong sticky top-0 z-30 select-none" onClick={closeMenus}>
             <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0">
                 {/* New Menu */}
                 <div className="shrink-0">

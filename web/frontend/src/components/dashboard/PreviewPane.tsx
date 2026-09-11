@@ -63,7 +63,7 @@ export function PreviewPane({ file, onClose, onDownload, onDelete, onProperties,
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
                 <div className="flex flex-col items-center text-center mb-8">
-                    <div className="w-32 h-32 rounded-3xl bg-telegram-hover flex items-center justify-center mb-4 shadow-xl border border-telegram-border relative group">
+                    <div className="w-32 h-32 rounded-3xl gradient-border flex items-center justify-center mb-4 shadow-xl relative group">
                         <FileTypeIcon filename={file.name} className="w-16 h-16" />
                         {!isFolder && (
                             <div className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">

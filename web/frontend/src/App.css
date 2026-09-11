@@ -388,3 +388,73 @@ body,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ================= Polish layer ================= */
+/* Themed thin scrollbars (the `custom-scrollbar` class is used but was undefined) */
+.custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255, 174, 0, 0.35) transparent; }
+.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 174, 0, 0.3);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 174, 0, 0.55); background-clip: content-box; }
+:root.light .custom-scrollbar { scrollbar-color: rgba(230, 149, 0, 0.4) transparent; }
+
+/* Animated gradient text for headings */
+.text-gradient {
+  background: linear-gradient(90deg, #ffae00, #ff6b35, #e69500, #ffae00);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 6s ease infinite;
+}
+
+/* Gradient hairline border that slowly pans */
+.gradient-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-telegram-surface), var(--color-telegram-surface)) padding-box,
+    linear-gradient(135deg, rgba(255, 174, 0, 0.6), rgba(36, 129, 204, 0.6), rgba(255, 174, 0, 0.6)) border-box;
+  background-size: auto, 200% 200%;
+  animation: gradient-pan 7s ease infinite;
+}
+
+/* Primary CTA with glow */
+.btn-primary-glow {
+  background: linear-gradient(135deg, #ffae00, #ff8a00);
+  box-shadow: 0 8px 24px -8px rgba(255, 174, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.2s ease;
+}
+.btn-primary-glow:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 12px 32px -8px rgba(255, 174, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+.btn-primary-glow:active { transform: translateY(0) scale(0.98); }
+
+/* Generic pressable feel for icon buttons */
+.btn-interactive { transition: transform 0.15s ease, background-color 0.2s ease; }
+.btn-interactive:active { transform: scale(0.92); }
+
+/* Delayed float for layered ambient motion */
+.float-delayed { animation: float-slow 8s ease-in-out infinite; animation-delay: -4s; }
+
+/* Soft pulsing dot for live states */
+.live-dot { position: relative; }
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: live-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes live-ping {
+  0% { transform: scale(0.6); opacity: 0.7; }
+  80%, 100% { transform: scale(1.4); opacity: 0; }
+}

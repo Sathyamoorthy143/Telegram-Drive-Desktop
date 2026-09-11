@@ -107,7 +107,7 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                         <button
                             onClick={() => onStartSelected?.()}
                             disabled={stagedSelected.length === 0}
-                            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 bg-telegram-primary hover:bg-telegram-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-colors"
+                            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 btn-primary-glow disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold"
                         >
                             <Upload className="w-3.5 h-3.5" />
                             Upload selected ({stagedSelected.length})
@@ -157,7 +157,7 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                             )}
                             <div className={`w-2 h-2 rounded-full shrink-0 ${stagedItem ? 'bg-purple-400' :
                                 item.status === 'pending' ? 'bg-yellow-500' :
-                                item.status === 'uploading' ? 'bg-blue-500 animate-pulse-glow' :
+                                item.status === 'uploading' ? 'bg-blue-500 animate-pulse-glow live-dot text-blue-500' :
                                     item.status === 'paused' ? 'bg-yellow-400' :
                                     item.status === 'cancelled' ? 'bg-gray-500' :
                                         item.status === 'error' ? 'bg-red-500' : 'bg-green-500'

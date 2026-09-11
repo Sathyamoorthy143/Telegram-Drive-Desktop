@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { Upload } from 'lucide-react';
 
 interface EmptyStateProps {
@@ -6,10 +7,15 @@ interface EmptyStateProps {
 
 export function EmptyState({ onUpload }: EmptyStateProps) {
     return (
-        <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+        <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            className="flex flex-col items-center justify-center py-20 px-8 text-center"
+        >
             {/* Custom SVG Illustration */}
             <svg
-                className="w-48 h-48 mb-8"
+                className="w-48 h-48 mb-8 animate-float-slow"
                 viewBox="0 0 200 200"
                 fill="none"
             >
@@ -35,37 +41,39 @@ export function EmptyState({ onUpload }: EmptyStateProps) {
                 <path d="M100 100 L100 120 M90 110 L110 110" className="stroke-telegram-primary" strokeWidth="2" strokeLinecap="round" />
 
                 {/* Floating documents */}
-                <g className="animate-pulse">
+                <g className="animate-float-slow">
                     <rect x="130" y="50" width="25" height="30" rx="3" className="fill-blue-500" />
                     <rect x="135" y="56" width="15" height="2" rx="1" className="fill-white/80" />
                     <rect x="135" y="62" width="12" height="2" rx="1" className="fill-white/80" />
                 </g>
 
-                <g opacity="0.6">
+                <g opacity="0.6" className="float-delayed">
                     <rect x="45" y="40" width="20" height="25" rx="3" className="fill-gray-300 dark:fill-gray-500" />
                     <rect x="49" y="45" width="12" height="2" rx="1" className="fill-white/80" />
                     <rect x="49" y="50" width="8" height="2" rx="1" className="fill-white/80" />
                 </g>
             </svg>
 
-            <h3 className="text-xl font-semibold text-telegram-text mb-2">
-                This folder is empty
+            <h3 className="text-xl font-semibold mb-2">
+                <span className="text-gradient">This folder is empty</span>
             </h3>
             <p className="text-telegram-subtext text-sm mb-6 max-w-xs">
                 Drag and drop files here, or click the button below to upload from your computer.
             </p>
 
-            <button
+            <motion.button
                 onClick={onUpload}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-telegram-primary text-black font-medium rounded-xl hover:bg-telegram-primary/90 transition-all hover:scale-105 shadow-lg shadow-telegram-primary/20"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.96 }}
+                className="inline-flex items-center gap-2 px-6 py-3 btn-primary-glow text-black font-medium rounded-xl"
             >
                 <Upload className="w-5 h-5" />
                 Upload Files
-            </button>
+            </motion.button>
 
             <p className="text-xs text-telegram-subtext/50 mt-6">
                 Tip: Use <kbd className="px-1.5 py-0.5 bg-telegram-hover rounded text-telegram-subtext">Cmd + F</kbd> to search
             </p>
-        </div>
+        </motion.div>
     );
 }
