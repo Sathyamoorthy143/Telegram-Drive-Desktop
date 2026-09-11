@@ -231,9 +231,12 @@ export function FileExplorer({
 
     return (
         <div className="flex-1 flex overflow-hidden relative">
+            {/* Ambient color wash behind the grid */}
+            <div className="orb w-[26rem] h-[26rem] bg-telegram-secondary/25 -top-32 -right-24 animate-float-slow" />
+            <div className="orb w-[22rem] h-[22rem] bg-telegram-primary/15 bottom-[-8rem] left-1/4 float-delayed" />
             <div
                 ref={parentRef}
-                className={`flex-1 p-4 overflow-auto custom-scrollbar transition-all ${isOSDragging ? 'bg-telegram-primary/5 ring-2 ring-inset ring-telegram-primary' : ''}`}
+                className={`relative flex-1 p-4 overflow-auto custom-scrollbar transition-all ${isOSDragging ? 'bg-telegram-primary/5 ring-2 ring-inset ring-telegram-primary' : ''}`}
                 onClick={(e) => { if (e.target === e.currentTarget) onSelectionClear(); }}
                 onContextMenu={handleRootContextMenu}
                 onDragOver={(e) => { e.preventDefault(); setIsOSDragging(true); }}

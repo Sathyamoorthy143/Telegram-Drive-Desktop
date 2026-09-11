@@ -81,7 +81,7 @@ export function ContextMenu({
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ type: 'spring', stiffness: 500, damping: 32 }}
             style={isMobile ? { transformOrigin: 'bottom center' } : { left: adjustedPos.x, top: adjustedPos.y, transformOrigin: 'top left' }}
-            className={`fixed z-50 glass-strong p-1.5 flex flex-col gap-0.5 ${isMobile ? 'inset-x-2 bottom-20 rounded-2xl max-h-[60vh] overflow-y-auto' : 'min-w-[200px] rounded-xl'}`}
+            className={`ctx-menu fixed z-50 glass-strong p-1.5 flex flex-col gap-0.5 ${isMobile ? 'inset-x-2 bottom-20 rounded-2xl max-h-[60vh] overflow-y-auto' : 'min-w-[200px] rounded-xl'}`}
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
         >

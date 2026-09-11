@@ -292,13 +292,13 @@ export function TopBar({
 
                 <button
                     onClick={() => onUpdateViewSettings({ showPreviewPane: !viewSettings.showPreviewPane })}
-                    className={`p-2 rounded-md transition-colors ${viewSettings.showPreviewPane ? 'bg-telegram-primary/20 text-telegram-primary' : 'hover:bg-telegram-hover text-telegram-subtext'}`}
+                    className={`btn-interactive p-2 rounded-md transition-colors ${viewSettings.showPreviewPane ? 'bg-telegram-primary/20 text-telegram-primary' : 'hover:bg-telegram-hover text-telegram-subtext'}`}
                     title="Toggle Preview Pane"
                 >
                     {viewSettings.showPreviewPane ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
                 </button>
 
-                <button onClick={toggleTheme} className="p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition">
+                <button onClick={toggleTheme} className="btn-interactive p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition">
                     {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
 

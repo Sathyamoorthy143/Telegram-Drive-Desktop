@@ -4,6 +4,7 @@ import { Folder, Eye, Trash2 } from 'lucide-react';
 import * as api from '../../api';
 import { TelegramFile } from '../../types';
 import { FileTypeIcon } from '../FileTypeIcon';
+import { fileAccent } from '../../accents';
 
 interface FileCardProps {
     file: TelegramFile;
@@ -30,6 +31,7 @@ function isImageFile(filename: string): boolean {
 
 export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, onClick, onContextMenu, onDrop, onDragStart, onDragEnd, activeFolderId, height, onToggleSelection, onDoubleClick }: FileCardProps) {
     const isFolder = file.type === 'folder';
+    const accent = fileAccent(file.name, isFolder);
     const [isDragOver, setIsDragOver] = useState(false);
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [thumbnailLoading, setThumbnailLoading] = useState(false);
@@ -109,6 +111,8 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
                 ${isDragOver ? 'ring-2 ring-telegram-primary bg-telegram-primary/20 scale-105' : ''}`}
                 style={height ? { height: `${height}px` } : { aspectRatio: '4/3' }}
             >
+                {/* File-type accent glow bar */}
+                <div className={`absolute top-0 left-4 right-4 h-[3px] rounded-full ${accent.bar} ${accent.glow} z-10`} />
                 {/* Thumbnail or Icon */}
                 {thumbnail ? (
                     <div className="absolute inset-0">
