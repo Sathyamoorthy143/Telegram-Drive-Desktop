@@ -13,6 +13,8 @@ mod share;
 mod streaming;
 mod supabase;
 mod tier;
+mod storage;
+mod replicate;
 mod trash;
 mod upload;
 mod utils;
@@ -33,6 +35,7 @@ pub struct AppState {
     pub api_id: Arc<Mutex<Option<i32>>>,
     pub peer_cache: Arc<RwLock<HashMap<i64, grammers_client::peer::Peer>>>,
     pub settings: Arc<std::sync::Mutex<Settings>>,
+    pub replicate_tx: replicate::ReplicateSender,
 }
 
 #[actix_web::main]
@@ -56,6 +59,7 @@ async fn main() -> std::io::Result<()> {
     if let Some(id) = initial_api_id {
         log::info!("Loaded API ID from settings/env: {}", id);
     }
+    let (replicate_tx, replicate_rx) = replicate::channel();
     let state = web::Data::new(AppState {
         client: Arc::new(Mutex::new(None)),
         login_token: Arc::new(Mutex::new(None)),
@@ -63,7 +67,21 @@ async fn main() -> std::io::Result<()> {
         api_id: Arc::new(Mutex::new(initial_api_id)),
         peer_cache: Arc::new(RwLock::new(HashMap::new())),
         settings: Arc::new(std::sync::Mutex::new(initial_settings)),
+        replicate_tx: replicate_tx.clone(),
     });
+
+    // Background MAIN → BACKUP replication worker + MAIN channel watcher.
+    // Both are self-healing loops; they idle until storage is provisioned.
+    {
+        let worker_state = state.clone();
+        tokio::spawn(async move {
+            replicate::replication_worker(worker_state, replicate_rx).await;
+        });
+        let watch_state = state.clone();
+        tokio::spawn(async move {
+            replicate::watch_main_channel(watch_state).await;
+        });
+    }
 
     if let Ok(url) = std::env::var("RENDER_EXTERNAL_URL") {
         log::info!("Render detected, starting keep-alive for: {}", url);
@@ -101,6 +119,8 @@ async fn main() -> std::io::Result<()> {
                     .route("/auth/user-info", web::get().to(auth::get_user_info))
                     .route("/auth/logout", web::post().to(auth::logout))
                     .route("/account/tier", web::get().to(tier::account_tier))
+                    .route("/storage/provision", web::post().to(storage::provision_storage))
+                    .route("/storage/status", web::get().to(storage::storage_status))
                     .route("/files", web::get().to(files::get_files))
                     .route("/files/upload", web::post().to(upload::upload_file))
                     .route("/files/upload/status", web::get().to(upload::get_upload_status))

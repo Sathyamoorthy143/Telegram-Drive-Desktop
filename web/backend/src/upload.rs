@@ -3,7 +3,6 @@ use actix_web::{web, HttpResponse};
 use futures::StreamExt;
 use grammers_client::message::InputMessage;
 use grammers_client::media::Media;
-use grammers_client::peer::Peer;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -172,11 +171,13 @@ pub async fn deliver_to_telegram(
         Err(_) => return (HttpResponse::RequestTimeout().body("Telegram auth check timeout"), None),
     }
 
-    // Resolve the target peer (folder channel or Saved Messages)
-    log::info!("Upload stage: resolve_peer folder_id={:?}", folder_id);
+    // Resolve the target peer: folder channel, MAIN storage channel for
+    // unfiled uploads (once provisioned), else Saved Messages (legacy).
+    let target = folder_id.or(crate::storage::main_id(&state));
+    log::info!("Upload stage: resolve_peer folder_id={:?} target={:?}", folder_id, target);
     let peer = match tokio::time::timeout(
         std::time::Duration::from_secs(20),
-        resolve_peer_ref(&client, folder_id, &state.peer_cache),
+        resolve_peer_ref(&client, target, &state.peer_cache),
     )
     .await
     {
@@ -235,35 +236,15 @@ pub async fn deliver_to_telegram(
         msg_id
     );
 
-    // Trigger background backup copy to backup channel
-    let backup_channel_id = state
-        .settings
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .backup_channel_id
-        .filter(|id| *id != 0);
-
-    if let Some(backup_id) = backup_channel_id {
-        let client_clone = client.clone();
-        let peer_cache = state.peer_cache.clone();
-        let msg_id_clone = msg_id;
-
-        if let Some(main_channel_id) = folder_id {
-            tokio::spawn(async move {
-                match forward_to_backup(
-                    &client_clone,
-                    backup_id,
-                    main_channel_id,
-                    msg_id_clone,
-                    &peer_cache,
-                )
-                .await
-                {
-                    Ok(_) => log::info!("Backup copy completed for message {}", msg_id_clone),
-                    Err(e) => log::error!("Backup copy failed for message {}: {}", msg_id_clone, e),
-                }
-            });
-        }
+    // Backup-everything: enqueue a MAIN→BACKUP copy for every upload that
+    // landed in a channel (MAIN or folder), whenever backup is provisioned.
+    // The worker forwards server-side in the background; the ledger + watcher
+    // make this idempotent.
+    if let (Some(src_id), Some(_)) = (target, crate::storage::backup_id(&state)) {
+        crate::replicate::enqueue(
+            &state,
+            crate::replicate::ReplicateJob::new(src_id, msg_id),
+        );
     }
 
     // Extract file metadata from the sent message
@@ -295,25 +276,6 @@ pub async fn deliver_to_telegram(
         mime_type,
         folder_id,
     }), Some(msg_id as i64))
-}
-
-/// Forward a message from main channel to backup channel
-async fn forward_to_backup(
-    client: &grammers_client::Client,
-    backup_channel_id: i64,
-    main_channel_id: i64,
-    msg_id: i32,
-    peer_cache: &std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<i64, Peer>>>,
-) -> Result<(), String> {
-    let src_peer = resolve_peer_ref(client, Some(main_channel_id), peer_cache).await?;
-    let dst_peer = resolve_peer_ref(client, Some(backup_channel_id), peer_cache).await?;
-
-    client
-        .forward_messages(dst_peer, &[msg_id], src_peer)
-        .await
-        .map_err(|e| format!("Forward to backup failed: {}", e))?;
-
-    Ok(())
 }
 
 /// Get upload status / config info (live tier-aware cap)

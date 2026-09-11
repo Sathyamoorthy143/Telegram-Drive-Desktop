@@ -21,7 +21,7 @@ pub async fn upload_probe(state: web::Data<AppState>) -> impl Responder {
     let t = Instant::now();
     let peer = match tokio::time::timeout(
         Duration::from_secs(10),
-        crate::utils::resolve_peer_ref(&client, None, &state.peer_cache),
+        crate::utils::resolve_peer_ref(&client, crate::storage::main_id(&state), &state.peer_cache),
     )
     .await
     {

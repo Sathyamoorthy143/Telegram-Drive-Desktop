@@ -328,7 +328,7 @@ pub async fn restore_version(
     if req.version_message_id == req.current_message_id {
         return HttpResponse::Ok().json(true);
     }
-    let peer = match crate::utils::resolve_peer_ref(&client, req.folder_id, &state.peer_cache).await {
+    let peer = match crate::utils::resolve_peer_ref(&client, req.folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };

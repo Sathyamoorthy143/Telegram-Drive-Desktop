@@ -40,7 +40,7 @@ pub async fn soft_delete(state: web::Data<AppState>, req: web::Json<crate::model
         Ok(c) => c,
         Err(e) => return HttpResponse::Unauthorized().body(e),
     };
-    let peer = match crate::utils::resolve_peer_ref(&client, req.folder_id, &state.peer_cache).await {
+    let peer = match crate::utils::resolve_peer_ref(&client, req.folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
@@ -147,7 +147,7 @@ pub async fn empty_trash(state: web::Data<AppState>) -> impl Responder {
     for it in &items {
         if let (Some(mid), Some(fid)) = (it.get("message_id").and_then(|v| v.as_i64()), it.get("folder_id")) {
             let folder_id = fid.as_i64();
-            if let Ok(peer) = crate::utils::resolve_peer_ref(&client, folder_id, &state.peer_cache).await {
+            if let Ok(peer) = crate::utils::resolve_peer_ref(&client, folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
                 let _ = client.delete_messages(peer, &[mid as i32]).await;
             }
         }

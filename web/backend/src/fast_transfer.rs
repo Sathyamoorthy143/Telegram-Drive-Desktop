@@ -8,6 +8,7 @@
 //!
 //! * upload: N workers × `SaveFilePart`/`SaveBigFilePart` (512KB parts)
 //! * download: N workers × `GetFile` with ordered reassembly for streaming
+//!   (1MB parts — the `GetFile` max, halving request count vs uploads)
 //! * flood-aware: on `FLOOD_WAIT`, sleep the requested seconds (capped 120s),
 //!   halve the in-flight window, then recover transiently
 //!   (`min(original, cur + 1)` on next success) instead of permanent halving
@@ -24,20 +25,24 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-pub const PART_SIZE: usize = 512 * 1024;
+/// Upload part size: Telegram's `SaveFilePart`/`SaveBigFilePart` cap.
+pub const UPLOAD_PART_SIZE: usize = 512 * 1024;
+/// Download part size: Telegram's `GetFile` accepts up to 1MB per request,
+/// halving round-trips vs uploads.
+pub const DOWNLOAD_PART_SIZE: usize = 1024 * 1024;
 /// Telegram requires `saveBigFilePart` above this size.
 const BIG_FILE_THRESHOLD: usize = 10 * 1024 * 1024;
 const MAX_RETRIES: u32 = 4;
 
-/// Worker count from `TG_WORKERS` env (default 12, clamped 1..=16).
+/// Worker count from `TG_WORKERS` env (default 24, clamped 1..=32).
 /// Telegram throttles per-connection, so higher parallelism = higher
 /// throughput up to the flood-wait limit (handled with transient backoff).
 pub fn worker_count() -> usize {
     std::env::var("TG_WORKERS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(12)
-        .clamp(1, 16)
+        .unwrap_or(24)
+        .clamp(1, 32)
 }
 
 /// If this is a flood-wait error, return the requested wait seconds.
@@ -174,7 +179,7 @@ pub async fn upload_file_parallel(
 ) -> Result<Uploaded, String> {
     let file_id: i64 = rand::random();
     let name = if name.is_empty() { "a".to_string() } else { name };
-    let total_parts = ((size as usize + PART_SIZE - 1) / PART_SIZE) as i32;
+    let total_parts = ((size as usize + UPLOAD_PART_SIZE - 1) / UPLOAD_PART_SIZE) as i32;
     let workers = worker_count().min(total_parts.max(1) as usize);
     let window = Arc::new(AtomicUsize::new(workers));
     let max_window = workers;
@@ -184,7 +189,7 @@ pub async fn upload_file_parallel(
         let data = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
         let mut parts: Vec<(i32, Bytes)> = Vec::with_capacity(total_parts as usize);
         let mut md5 = md5::Context::new();
-        for (i, chunk) in data.chunks(PART_SIZE).enumerate() {
+        for (i, chunk) in data.chunks(UPLOAD_PART_SIZE).enumerate() {
             md5.consume(chunk);
             // One copy into a refcounted buffer; retries only bump the refcount.
             parts.push((i as i32, Bytes::copy_from_slice(chunk)));
@@ -239,14 +244,14 @@ pub async fn upload_file_parallel(
                     eof = true;
                     break;
                 }
-                let offset = part as u64 * PART_SIZE as u64;
-                let len = ((size - offset).min(PART_SIZE as u64)) as usize;
+                let offset = part as u64 * UPLOAD_PART_SIZE as u64;
+                let len = ((size - offset).min(UPLOAD_PART_SIZE as u64)) as usize;
                 // Acquire a pooled buffer (reuse allocation when available).
                 let mut buf: Vec<u8> = pool
                     .lock()
                     .map(|mut p| p.pop())
                     .unwrap_or(None)
-                    .unwrap_or_else(|| Vec::with_capacity(PART_SIZE));
+                    .unwrap_or_else(|| Vec::with_capacity(UPLOAD_PART_SIZE));
                 buf.resize(len, 0);
                 // Per-worker independent handle: open + positional read.
                 // No shared mutex — the OS handles concurrent opens.
@@ -271,7 +276,7 @@ pub async fn upload_file_parallel(
                     // read-ahead buffers stay bounded (amortizes alloc churn).
                     if let Ok(mut p) = pool_clone.lock() {
                         if p.len() < max_window * 2 {
-                            p.push(Vec::with_capacity(PART_SIZE));
+                            p.push(Vec::with_capacity(UPLOAD_PART_SIZE));
                         }
                     }
                     r
@@ -305,7 +310,7 @@ pub async fn upload_file_parallel(
 // Download (ordered stream)
 // ---------------------------------------------------------------------------
 
-/// Fetch one 512KB part, following DC migrations, with flood-aware retries.
+/// Fetch one 1MB part, following DC migrations, with flood-aware retries.
 async fn fetch_part(
     client: &Client,
     location: &tl::enums::InputFileLocation,
@@ -318,7 +323,7 @@ async fn fetch_part(
             cdn_supported: false,
             location: location.clone(),
             offset,
-            limit: PART_SIZE as i32,
+            limit: DOWNLOAD_PART_SIZE as i32,
         };
         let res = match dc {
             Some(d) => client.invoke_in_dc(d, &req).await,
@@ -480,11 +485,11 @@ pub fn download_range_stream(
             }
             None => (0, total as u64 - 1),
         };
-        let first_part = (start / PART_SIZE as u64) as i64;
-        let last_part = (end / PART_SIZE as u64) as i64;
+        let first_part = (start / DOWNLOAD_PART_SIZE as u64) as i64;
+        let last_part = (end / DOWNLOAD_PART_SIZE as u64) as i64;
         let total_parts = last_part - first_part + 1;
         // Small full-file reads keep the plain sequential iterator (less overhead).
-        if range.is_none() && total <= 2 * PART_SIZE {
+        if range.is_none() && total <= 2 * DOWNLOAD_PART_SIZE {
             let mut iter = client.iter_download(&media);
             loop {
                 match iter.next().await {
@@ -513,7 +518,7 @@ pub fn download_range_stream(
             while inflight.len() < window.load(Ordering::SeqCst) && next_fetch <= last_part {
                 let part = next_fetch;
                 next_fetch += 1;
-                let off = part * PART_SIZE as i64;
+                let off = part * DOWNLOAD_PART_SIZE as i64;
                 let c = client.clone();
                 let l = location.clone();
                 let w = window.clone();
@@ -565,16 +570,86 @@ pub fn download_range_stream(
     }
 }
 
-/// Slice a fetched 512KB part down to the requested `[start, end)` window
-/// (absolute byte offsets). Parts are fetched by absolute part index, so the
-/// intersection is computed directly — no caller-side bookkeeping needed.
+/// Slice a fetched 1MB download part down to the requested `[start, end)`
+/// window (absolute byte offsets). Parts are fetched by absolute part index,
+/// so the intersection is computed directly — no caller-side bookkeeping needed.
 fn slice_part(b: &[u8], part_idx: i64, start: u64, end_excl: u64) -> Vec<u8> {
-    let p = part_idx as u64 * PART_SIZE as u64;
+    let p = part_idx as u64 * DOWNLOAD_PART_SIZE as u64;
     let from = start.saturating_sub(p).min(b.len() as u64) as usize;
     let to = end_excl.saturating_sub(p).min(b.len() as u64) as usize;
     if to <= from {
         Vec::new()
     } else {
         b[from..to].to_vec()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_workers_env(value: Option<&str>) -> Option<String> {
+        let old = std::env::var("TG_WORKERS").ok();
+        match value {
+            Some(v) => std::env::set_var("TG_WORKERS", v),
+            None => std::env::remove_var("TG_WORKERS"),
+        }
+        old
+    }
+
+    fn restore_workers_env(old: Option<String>) {
+        match old {
+            Some(v) => std::env::set_var("TG_WORKERS", v),
+            None => std::env::remove_var("TG_WORKERS"),
+        }
+    }
+
+    #[test]
+    fn worker_count_defaults_high() {
+        let old = with_workers_env(None);
+        let got = worker_count();
+        restore_workers_env(old);
+        assert_eq!(got, 24);
+    }
+
+    #[test]
+    fn worker_count_clamps_to_range() {
+        let old = with_workers_env(Some("9999"));
+        let high = worker_count();
+        restore_workers_env(old);
+        assert_eq!(high, 32);
+
+        let old = with_workers_env(Some("0"));
+        let low = worker_count();
+        restore_workers_env(old);
+        assert_eq!(low, 1);
+
+        let old = with_workers_env(Some("not-a-number"));
+        let invalid = worker_count();
+        restore_workers_env(old);
+        assert_eq!(invalid, 24);
+    }
+
+    #[test]
+    fn upload_parts_stay_at_protocol_max() {
+        assert_eq!(UPLOAD_PART_SIZE, 512 * 1024);
+    }
+
+    #[test]
+    fn download_parts_use_1mb_requests() {
+        assert_eq!(DOWNLOAD_PART_SIZE, 1024 * 1024);
+    }
+
+    #[test]
+    fn slice_part_cuts_window_with_1mb_parts() {
+        // 1MB part 3 covers bytes [3MB, 4MB); request [3MB+100, 3MB+200).
+        let base = 3 * DOWNLOAD_PART_SIZE as u64;
+        let b = vec![7u8; DOWNLOAD_PART_SIZE];
+        let out = slice_part(&b, 3, base + 100, base + 200);
+        assert_eq!(out.len(), 100);
+        assert!(out.iter().all(|&x| x == 7));
+        // Window outside the part yields nothing.
+        let out = slice_part(&b, 3, base + DOWNLOAD_PART_SIZE as u64 + 10, base + DOWNLOAD_PART_SIZE as u64 + 20);
+        assert!(out.is_empty());
     }
 }

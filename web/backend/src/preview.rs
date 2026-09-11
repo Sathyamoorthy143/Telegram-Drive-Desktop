@@ -19,7 +19,7 @@ pub async fn get_preview(
         Ok(c) => c,
         Err(e) => return HttpResponse::ServiceUnavailable().body(e),
     };
-    let peer = match resolve_peer_ref(&client, fid, &state.peer_cache).await {
+    let peer = match resolve_peer_ref(&client, fid.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::BadRequest().body(e),
     };

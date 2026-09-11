@@ -16,7 +16,7 @@ pub async fn get_files(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    let peer = match resolve_peer_ref(&client, query.folder_id, &state.peer_cache).await {
+    let peer = match resolve_peer_ref(&client, query.folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
@@ -81,7 +81,7 @@ pub async fn delete_file(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    let peer = match resolve_peer_ref(&client, req.folder_id, &state.peer_cache).await {
+    let peer = match resolve_peer_ref(&client, req.folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
@@ -102,7 +102,7 @@ pub async fn download_file(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    let peer = match resolve_peer_ref(&client, fid_opt, &state.peer_cache).await {
+    let peer = match resolve_peer_ref(&client, fid_opt.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
@@ -185,11 +185,11 @@ pub async fn move_files(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     if !req.message_ids.is_empty() && req.source_folder_id != req.target_folder_id {
-        let src = match resolve_peer_ref(&client, req.source_folder_id, &state.peer_cache).await {
+        let src = match resolve_peer_ref(&client, req.source_folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
             Ok(p) => p,
             Err(e) => return HttpResponse::InternalServerError().body(e),
         };
-        let tgt = match resolve_peer_ref(&client, req.target_folder_id, &state.peer_cache).await {
+        let tgt = match resolve_peer_ref(&client, req.target_folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
             Ok(p) => p,
             Err(e) => return HttpResponse::InternalServerError().body(e),
         };
@@ -209,11 +209,11 @@ pub async fn copy_files(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     if !req.message_ids.is_empty() && req.source_folder_id != req.target_folder_id {
-        let src = match resolve_peer_ref(&client, req.source_folder_id, &state.peer_cache).await {
+        let src = match resolve_peer_ref(&client, req.source_folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
             Ok(p) => p,
             Err(e) => return HttpResponse::InternalServerError().body(e),
         };
-        let tgt = match resolve_peer_ref(&client, req.target_folder_id, &state.peer_cache).await {
+        let tgt = match resolve_peer_ref(&client, req.target_folder_id.or(crate::storage::main_id(&state)), &state.peer_cache).await {
             Ok(p) => p,
             Err(e) => return HttpResponse::InternalServerError().body(e),
         };

@@ -198,7 +198,7 @@ pub async fn public_share(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    let peer = match crate::utils::resolve_peer_ref(&client, fid, &state.peer_cache).await {
+    let peer = match crate::utils::resolve_peer_ref(&client, fid.or(crate::storage::main_id(&state)), &state.peer_cache).await {
         Ok(p) => p,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
