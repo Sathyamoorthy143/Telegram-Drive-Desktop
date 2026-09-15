@@ -206,6 +206,9 @@ body,
 }
 
 /* File card action buttons - more visible in light mode */
+.file-action-btn {
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
 :root.light .file-action-btn {
   background-color: rgba(0, 0, 0, 0.6) !important;
   color: white !important;
@@ -252,7 +255,7 @@ body,
 .bg-dynamic-mesh {
   background: linear-gradient(-45deg, #0e1621, #17212b, #2481cc, #17212b);
   background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
+  animation: gradientShift 20s ease infinite;
 }
 
 /* Glassmorphism for Modals */

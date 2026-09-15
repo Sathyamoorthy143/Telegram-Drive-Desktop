@@ -60,7 +60,7 @@ export function DownloadQueue({ items, onClearFinished, onCancelAll }: DownloadQ
                             <div className="w-full bg-telegram-border h-1 mt-1 rounded-full overflow-hidden">
                                 {item.progress !== undefined ? (
                                     <div
-                                        className="bg-telegram-secondary h-full rounded-full transition-all duration-300"
+                                        className="bg-telegram-secondary h-full rounded-full transition-all duration-300 upload-progress-shimmer"
                                         style={{ width: `${item.progress}%` }}
                                     />
                                 ) : (

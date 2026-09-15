@@ -10,3 +10,8 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## always-follow (user instruction, applies to every task)
+
+- After EVERY code change or update, immediately reflect it in graphify. Run `graphify update .` (incremental, AST-only, no API cost). The user phrases this as "graphify ."; that bare form is the full initial build — run `graphify .` once only when graphify-out/ does not exist yet, then use `graphify update .` for every subsequent change.
+- For any code or structural question/reference, consult graphify-out/ first (via `graphify query` / `path` / `explain`, graphify-out/wiki/, GRAPH_REPORT.md, graph.json) instead of raw file grep/browsing.

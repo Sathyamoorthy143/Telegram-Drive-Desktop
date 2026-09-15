@@ -420,7 +420,7 @@ export function Sidebar({
                                         .filter(([, count]) => count > 0)
                                         .sort((a, b) => b[1] - a[1])
                                         .map(([type, count], idx) => (
-                                            <span key={type} className="text-[10px] text-telegram-subtext sidebar-type-item-animate" style={{ animationDelay: `${idx * 40}ms` }}>
+                                            <span key={type} className="text-[10px] text-telegram-subtext sidebar-type-item-animate" style={{ animationDelay: `${idx * 52 + 30}ms` }}>
                                                 <span className="capitalize">{type}</span> - {count}
                                             </span>
                                         ))}

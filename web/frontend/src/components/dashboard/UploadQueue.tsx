@@ -11,6 +11,7 @@ interface UploadQueueProps {
     onPauseAll: () => void;
     onResumeAll: () => void;
     onRetryItem?: (id: string) => void;
+    onRetryAllFailed?: () => void;
     // Controllable staged + LIVE uploads
     onToggleSelect?: (id: string) => void;
     onSelectAll?: (select: boolean) => void;
@@ -23,8 +24,10 @@ interface UploadQueueProps {
     onMaxParallelChange?: (n: number) => void;
 }
 
-export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCancelItem, onPauseAll, onResumeAll, onRetryItem, onToggleSelect, onSelectAll, onStartSelected, onPauseItem, onResumeItem, onRemoveItem, maxParallel = 4, onMaxParallelChange }: UploadQueueProps) {
+export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCancelItem, onPauseAll, onResumeAll, onRetryItem, onRetryAllFailed, onToggleSelect, onSelectAll, onStartSelected, onPauseItem, onResumeItem, onRemoveItem, maxParallel = 4, onMaxParallelChange }: UploadQueueProps) {
     if (items.length === 0) return null;
+
+    const failedCount = items.filter(i => i.status === 'error').length;
 
     const isStaged = (i: QueueItem) => (i as any).status === 'staged';
     const isSelected = (i: QueueItem) => (i.selected !== false);
@@ -67,6 +70,11 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                             </>
                         )}
                         <button onClick={onClearFinished} className="text-xs text-telegram-primary hover:text-telegram-text transition-colors">Clear Finished</button>
+                        {failedCount > 1 && onRetryAllFailed && (
+                            <button onClick={onRetryAllFailed} className="flex items-center gap-1 text-xs text-telegram-primary hover:text-telegram-text transition-colors" title={`Retry all ${failedCount} failed uploads`}>
+                                <RotateCcw className="w-3.5 h-3.5" /> Retry all ({failedCount})
+                            </button>
+                        )}
                     </div>
                 </div>
                 {/* LIVE parallel manager bar — visible while uploads are happening */}

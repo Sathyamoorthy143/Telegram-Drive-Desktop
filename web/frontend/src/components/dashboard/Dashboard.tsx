@@ -691,6 +691,19 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         bumpQueue();
     }, [bumpQueue]);
 
+    const handleRetryAllFailed = useCallback(() => {
+        const failed = uploadQueueRef.current.filter(x => x.status === 'error');
+        if (failed.length === 0) return;
+        const retryable = failed.filter(x => uploadFilesRef.current.has(x.id));
+        const missing = failed.length - retryable.length;
+        if (retryable.length === 0) { toast.error('Original files unavailable — please re-select them'); return; }
+        const ids = new Set(retryable.map(x => x.id));
+        ids.forEach(id => { pausedFileIdsRef.current.delete(id); startingIdsRef.current.delete(id); });
+        setUploadQueue(q => q.map(x => ids.has(x.id) ? { ...x, status: 'pending' as const, progress: 0, error: undefined, selected: true } : x));
+        bumpQueue();
+        toast.info(`Retrying ${retryable.length} failed upload(s)${missing > 0 ? ` — ${missing} unavailable, re-select` : ''}`);
+    }, [bumpQueue]);
+
     // ---- Controllable staged uploads: checkbox select + per-file pause ----
     // Files are first STAGED (no network). User ticks checkboxes, then hits
     // "Upload selected". This gives full control over which files go when.
@@ -1213,7 +1226,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                 <SlideEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
             )}
 
-            <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error' && i.status !== 'cancelled'))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
+            <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error' && i.status !== 'cancelled'))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
             <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => setDownloadQueue([])} />
         </motion.div>
     );

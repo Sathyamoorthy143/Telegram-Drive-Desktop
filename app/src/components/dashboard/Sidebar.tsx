@@ -103,9 +103,9 @@ function RecursiveTree({
                                 folderId={node.id}
                             />
                         </div>
-                        <button 
+                        <button
                             onClick={() => setShowSubInput(node.id)}
-                            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded text-telegram-subtext hover:text-telegram-primary transition-all"
+                            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded text-telegram-subtext hover:text-telegram-primary transition-all btn-interactive"
                             title="Create subfolder"
                         >
                             <Plus className="w-3.5 h-3.5" />
@@ -150,8 +150,8 @@ function RecursiveTree({
             ))}
 
             {contextMenu && (
-                <div 
-                    className="fixed z-50 min-w-[160px] bg-telegram-surface/95 backdrop-blur-xl border border-telegram-border rounded-lg shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-0.5"
+                <div
+                    className="fixed z-50 min-w-[160px] bg-telegram-surface/95 backdrop-blur-xl border border-telegram-border rounded-lg shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-0.5 ctx-menu"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                     onClick={(e) => e.stopPropagation()}
                 >
@@ -255,8 +255,8 @@ export function Sidebar({
                 />
 
                 {rootContextMenu && (
-                    <div 
-                        className="fixed z-50 min-w-[160px] bg-telegram-surface/95 backdrop-blur-xl border border-telegram-border rounded-lg shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-0.5"
+                    <div
+                        className="fixed z-50 min-w-[160px] bg-telegram-surface/95 backdrop-blur-xl border border-telegram-border rounded-lg shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-0.5 ctx-menu"
                         style={{ left: rootContextMenu.x, top: rootContextMenu.y }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -324,7 +324,7 @@ export function Sidebar({
                     <button
                         onClick={onSync}
                         disabled={isSyncing}
-                        className={`flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-blue-500 hover:text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-blue-500 hover:text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors btn-interactive ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
                         title="Scan for existing folders"
                     >
                         <RefreshCw className={`w-3 h-3 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -332,7 +332,7 @@ export function Sidebar({
                     </button>
                     <button
                         onClick={onSettings}
-                        className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border"
+                        className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border btn-interactive"
                         title="App Settings"
                     >
                         <Settings className="w-3 h-3 flex-shrink-0 text-telegram-subtext" />
@@ -340,7 +340,7 @@ export function Sidebar({
                     </button>
                     <button
                         onClick={onLogout}
-                        className="col-span-2 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                        className="col-span-2 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors btn-interactive"
                         title="Sign Out"
                     >
                         <LogOut className="w-3 h-3 flex-shrink-0" />

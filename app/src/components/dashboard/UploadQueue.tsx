@@ -45,7 +45,7 @@ export function UploadQueue({ items, onClearFinished, onCancelAll }: UploadQueue
                             <>
                                 <div className="w-full bg-telegram-border h-1.5 mt-1 rounded-full overflow-hidden">
                                     <div
-                                        className="bg-blue-500 h-full rounded-full transition-all duration-300"
+                                        className="bg-blue-500 h-full rounded-full transition-all duration-300 upload-progress-shimmer"
                                         style={{ width: `${item.progress || 0}%` }}
                                     />
                                 </div>
