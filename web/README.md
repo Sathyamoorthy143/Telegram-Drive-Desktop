@@ -66,6 +66,19 @@ The dev server starts on `http://localhost:5173` with API proxy to `localhost:80
    VITE_API_URL=https://api.yourdomain.com
    ```
 
+### Frontend → Antideploy (frontend-only)
+
+Antideploy auto-detects the project — no Dockerfile or YAML needed.
+`web/frontend` is self-contained: `package.json` (`build` + `start`
+serving `dist` on `$PORT`), `engines` + `.nvmrc` pin Node 20.
+
+1. Connect this GitHub repo in Antideploy.
+2. When it lists detected projects, pick `web/frontend` (it is built
+   as though that directory were the whole repository).
+3. Set build env var `VITE_API_URL` to your backend URL
+   (baked into the build, e.g. `https://telegram-drive-web-1dvn.onrender.com`).
+4. Deploy — Antideploy runs `npm ci` → `npm run build` → `npm start`.
+
 ### Backend → VPS / Railway / Fly.io
 
 1. Build:
