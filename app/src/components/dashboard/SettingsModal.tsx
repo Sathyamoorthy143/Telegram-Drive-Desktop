@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Palette, ShieldCheck } from 'lucide-react';
+import { X, Save, Palette, Power } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 
