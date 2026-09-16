@@ -77,7 +77,7 @@ pub async fn create_folder(
     };
     let about = match req.parent_id {
         Some(pid) => format!("parent_id:{}\n[telegram-drive-folder]", pid),
-        None => "Telegram Drive Storage Folder\n[telegram-drive-folder]".into(),
+        None => "Cloudsphere Space Storage Folder\n[telegram-drive-folder]".into(),
     };
     let result = client
         .invoke(&tl::functions::channels::CreateChannel {

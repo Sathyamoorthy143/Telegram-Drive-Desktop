@@ -255,7 +255,7 @@ export function Sidebar({
                 </div>
                 <div className="flex flex-col min-w-0">
                     <span className="font-bold text-sm text-telegram-text truncate">
-                        {userInfo ? `${userInfo.first_name} ${userInfo.last_name || ''}` : 'Telegram Drive'}
+                        {userInfo ? `${userInfo.first_name} ${userInfo.last_name || ''}` : 'Cloudsphere Space'}
                     </span>
                     <span className="text-[10px] text-telegram-subtext truncate">
                         {userInfo?.username ? `@${userInfo.username}` : (isConnected ? 'Online' : 'Offline')}

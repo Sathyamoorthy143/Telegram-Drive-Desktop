@@ -252,7 +252,7 @@ async fn main() -> std::io::Result<()> {
                         .body(h),
                     Err(_) => HttpResponse::Ok()
                         .content_type("text/html")
-                        .body("<h1>Telegram Drive</h1><p>Frontend not built yet.</p>"),
+                        .body("<h1>Cloudsphere Space</h1><p>Frontend not built yet.</p>"),
                 }
             }))
     })

@@ -309,7 +309,7 @@ pub async fn org_create_folder(
             storage::org_folder_line(&org_id)
         ),
         None => format!(
-            "Telegram Drive Storage Folder\n[telegram-drive-folder]\n{}",
+            "Cloudsphere Space Storage Folder\n[telegram-drive-folder]\n{}",
             storage::org_folder_line(&org_id)
         ),
     };

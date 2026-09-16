@@ -123,7 +123,7 @@ pub async fn ensure_storage(state: &AppState) -> Result<(i64, i64), String> {
             create_storage_channel(
                 &client,
                 MAIN_TITLE,
-                &format!("Telegram Drive main storage\n{}", MAIN_MARKER),
+                &format!("Cloudsphere Space main storage\n{}", MAIN_MARKER),
             )
             .await?
         }
@@ -134,7 +134,7 @@ pub async fn ensure_storage(state: &AppState) -> Result<(i64, i64), String> {
             create_storage_channel(
                 &client,
                 BACKUP_TITLE,
-                &format!("Telegram Drive backup mirror\n{}", BACKUP_MARKER),
+                &format!("Cloudsphere Space backup mirror\n{}", BACKUP_MARKER),
             )
             .await?
         }
@@ -199,7 +199,7 @@ pub async fn ensure_storage_for_org(
             create_storage_channel(
                 &client,
                 &format!("{} — Drive [TD]", org_name),
-                &format!("Telegram Drive org storage ({})\n{}", org_id, main_marker),
+                &format!("Cloudsphere Space org storage ({})\n{}", org_id, main_marker),
             )
             .await?
         }
@@ -210,7 +210,7 @@ pub async fn ensure_storage_for_org(
             create_storage_channel(
                 &client,
                 &format!("{} — Backup [TD]", org_name),
-                &format!("Telegram Drive org backup ({})\n{}", org_id, backup_marker),
+                &format!("Cloudsphere Space org backup ({})\n{}", org_id, backup_marker),
             )
             .await?
         }

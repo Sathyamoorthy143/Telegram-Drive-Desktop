@@ -1,7 +1,7 @@
 {
-  "name": "Telegram Drive",
-  "short_name": "TG Drive",
-  "description": "Unlimited Telegram Cloud Storage - Self-hosted",
+  "name": "Cloudsphere Space",
+  "short_name": "Cloudsphere",
+  "description": "Cloudsphere Space - Self-hosted cloud storage",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0e1621",
