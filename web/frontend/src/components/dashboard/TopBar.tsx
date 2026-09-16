@@ -42,7 +42,8 @@ interface TopBarProps {
 export function TopBar({
     selectedIds, onShowMoveModal, onBulkDownload, onBulkDelete, onBulkStar, onBulkTag, onBulkRename,
     onManualUpload, onFolderUpload, onCameraUpload, onCreateFolder, onPaste, onCut, onCopy, canPaste,
-    viewSettings, onUpdateViewSettings, searchTerm, onSearchChange, searchFilters, onSearchFiltersChange
+    viewSettings, onUpdateViewSettings, searchTerm, onSearchChange, searchFilters, onSearchFiltersChange,
+    onToggleLock, isLocked, hasPin,
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();
     const [activeDropdown, setActiveDropdown] = useState<'new' | 'sort' | 'view' | null>(null);

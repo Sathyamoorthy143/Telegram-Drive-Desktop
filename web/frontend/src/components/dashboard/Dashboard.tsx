@@ -63,12 +63,20 @@ function useKeyboardShortcuts(handlers: {
     }, [handlers]);
 }
 
-export interface DashboardProps {
-  onLogout: () => void;
-  onToggleLock?: () => void;
-}
+export function Dashboard({ onLogout, onToggleLock }: { onLogout: () => void; onToggleLock?: () => void }) {
+    const queryClient = useQueryClient();
+    const { isLocked, hasPin, notificationMode, queueToast, setBusy, unlock, setPin } = useLock();
+    const [showLockScreen, setShowLockScreen] = useState(false);
+    const [uploadsPaused, setUploadsPaused] = useState(false);
 
-export function Dashboard({ onLogout, onToggleLock }: DashboardProps) {
+    // Initialize lock screen state
+    useEffect(() => {
+        if (isLocked && !showLockScreen) {
+            setShowLockScreen(true);
+        } else if (!isLocked && showLockScreen) {
+            setShowLockScreen(false);
+        }
+    }, [isLocked, showLockScreen]);
 
     const toggleLock = async () => {
         if (!hasPin) {
@@ -1161,6 +1169,8 @@ export function Dashboard({ onLogout, onToggleLock }: DashboardProps) {
                     onUpdateViewSettings={onUpdateViewSettings}
                     searchTerm={searchTerm} onSearchChange={setSearchTerm}
                     searchFilters={searchFilters} onSearchFiltersChange={setSearchFilters}
+                    onToggleLock={onToggleLock}
+                    isLocked={isLocked}
                 />
                 {isOffline && !isSpecial && (
                     <div className="px-4 pt-2">
