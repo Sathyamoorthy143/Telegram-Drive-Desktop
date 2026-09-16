@@ -65,8 +65,43 @@ function useKeyboardShortcuts(handlers: {
 
 export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const queryClient = useQueryClient();
-    const { isLocked, notificationMode, queueToast, setBusy } = useLock();
+    const { isLocked, hasPin, notificationMode, queueToast, setBusy, unlock, setPin } = useLock();
+    const [showLockScreen, setShowLockScreen] = useState(false);
     const [uploadsPaused, setUploadsPaused] = useState(false);
+
+    // Initialize lock screen state
+    useEffect(() => {
+        if (isLocked && !showLockScreen) {
+            setShowLockScreen(true);
+        } else if (!isLocked && showLockScreen) {
+            setShowLockScreen(false);
+        }
+    }, [isLocked, showLockScreen]);
+
+    const toggleLock = async () => {
+        if (!hasPin) {
+            // Lock function not enabled - show confirmation to set up PIN
+            if (confirm('Lock function is not enabled. Would you like to set up a PIN now? Click OK to go to Settings, or Cancel to skip.')) {
+                // Navigate to settings to set up PIN
+                // This is a simple implementation - in a real app, you might use a router or navigation system
+                toast.info('Please go to Settings to set up a PIN for dashboard locking');
+            }
+            return;
+        }
+
+        if (isLocked) {
+            // Unlock - show PIN input screen
+            setShowLockScreen(true);
+        } else {
+            // Lock - show PIN input screen
+            setShowLockScreen(true);
+        }
+    };
+
+    const handleUnlockComplete = async (pin: string) => {
+        setShowLockScreen(false);
+        // Unlock is handled by the LockScreen component
+    };
     const uploadsPausedRef = useRef(false);
     const uploadControllers = useRef<Map<string, AbortController>>(new Map());
     // per-file pause: qids the user paused individually (independent of global pause-all)

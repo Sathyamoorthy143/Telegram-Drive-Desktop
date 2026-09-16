@@ -1,12 +1,13 @@
-import {
-    HardDrive, Sun, Moon, ChevronDown,
+import { HardDrive, Sun, Moon, ChevronDown,
     FolderInput, PanelRightClose, PanelRightOpen, FilePlus,
     FolderPlus, ArrowUpDown, Check, List, Grid2X2, Search,
-    Clipboard, Scissors, Copy, Camera, Star, Tag, Pencil, ListTree
+    Clipboard, Scissors, Copy, Camera, Star, Tag, Pencil, ListTree,
+    Lock, Unlock
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../../context/ThemeContext';
+import { useLock } from '../../context/LockContext';
 import { TierBadge } from './TierBadge';
 import { ViewSettings, SortField, GroupBy } from '../../types';
 
@@ -33,6 +34,9 @@ interface TopBarProps {
     onSearchChange: (term: string) => void;
     searchFilters?: SearchFilters;
     onSearchFiltersChange?: (f: SearchFilters) => void;
+    onToggleLock?: () => void;
+    isLocked?: boolean;
+    hasPin?: boolean;
 }
 
 export function TopBar({
@@ -288,6 +292,38 @@ export function TopBar({
                     )}
                 </div>
 
+                <div className="relative group flex items-center">
+                    <Search className="w-4 h-4 absolute left-3 text-telegram-subtext group-focus-within:text-telegram-primary transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="Search (type:pdf size>10MB)..."
+                        className="bg-telegram-hover/50 border border-telegram-border rounded-full pl-9 pr-4 py-1.5 text-sm text-telegram-text placeholder:text-telegram-subtext focus:outline-none focus:border-telegram-primary/50 focus:bg-telegram-surface transition-all w-32 sm:w-48 sm:focus:w-64"
+                        value={searchTerm}
+                        onChange={(e) => onSearchChange(e.target.value)}
+                    />
+                    {onSearchFiltersChange && (
+                        <div className="absolute top-full right-0 mt-1 w-56 bg-telegram-surface border border-telegram-border rounded-xl shadow-2xl p-3 z-50 hidden group-focus-within:block hover:block">
+                            <p className="text-[10px] uppercase tracking-widest text-telegram-subtext font-bold mb-2">Filters</p>
+                            <label className="text-[10px] text-telegram-subtext">Type</label>
+                            <select value={searchFilters?.file_type || ''} onChange={e=>onSearchFiltersChange({...searchFilters!, file_type: e.target.value, min_size_mb: searchFilters?.min_size_mb||'', max_size_mb: searchFilters?.max_size_mb||''})} className="w-full mb-2 bg-black/20 border border-telegram-border rounded-lg px-2 py-1.5 text-xs text-telegram-text">
+                                <option value="">All</option>
+                                <option value="pdf">PDF</option>
+                                <option value="image">Images</option>
+                                <option value="video">Video</option>
+                                <option value="audio">Audio</option>
+                                <option value="doc">Docs</option>
+                                <option value="archive">Archives</option>
+                            </select>
+                            <div className="flex gap-2">
+                                <div className="flex-1"><label className="text-[10px] text-telegram-subtext">Min MB</label>
+                                <input value={searchFilters?.min_size_mb||''} onChange={e=>onSearchFiltersChange({...searchFilters!, file_type: searchFilters?.file_type||'', min_size_mb: e.target.value, max_size_mb: searchFilters?.max_size_mb||''})} placeholder="0" className="w-full bg-black/20 border border-telegram-border rounded-lg px-2 py-1.5 text-xs text-telegram-text" /></div>
+                                <div className="flex-1"><label className="text-[10px] text-telegram-subtext">Max MB</label>
+                                <input value={searchFilters?.max_size_mb||''} onChange={e=>onSearchFiltersChange({...searchFilters!, file_type: searchFilters?.file_type||'', min_size_mb: searchFilters?.min_size_mb||'', max_size_mb: e.target.value})} placeholder="500" className="w-full bg-black/20 border border-telegram-border rounded-lg px-2 py-1.5 text-xs text-telegram-text" /></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="w-px h-6 bg-telegram-border mx-1"></div>
 
                 <button
@@ -301,6 +337,17 @@ export function TopBar({
                 <button onClick={toggleTheme} className="btn-interactive p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition">
                     {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
+
+                {onToggleLock && (
+                <button
+                    onClick={onToggleLock}
+                    className={`btn-interactive p-2 rounded-md transition-colors ${isLocked ? 'bg-red-500/20 text-red-400' : hasPin ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-telegram-hover/50 text-telegram-subtext hover:bg-telegram-hover'} ${!hasPin ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    title={isLocked ? 'Unlock' : hasPin ? 'Lock Dashboard' : 'Lock not enabled - click to configure'}
+                    disabled={!hasPin}
+                >
+                    {isLocked ? <Lock className="w-5 h-5" /> : hasPin ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                </button>
+                )}
 
                 <TierBadge />
             </div>

@@ -14,10 +14,11 @@ import * as api from "./api";
 
 const queryClient = new QueryClient();
 
-function AppContent() {
+export function AppContent() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const { theme } = useTheme();
+  const [showLockScreen, setShowLockScreen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +66,10 @@ function AppContent() {
     <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative">
       <Toaster theme={theme} position="bottom-center" />
       {isAuthenticated ? (
-        <Dashboard onLogout={() => setIsAuthenticated(false)} />
+        <Dashboard 
+          onLogout={() => setIsAuthenticated(false)}
+          onToggleLock={() => setShowLockScreen(true)}
+        />
       ) : (
         <AuthWizard onLogin={() => setIsAuthenticated(true)} />
       )}

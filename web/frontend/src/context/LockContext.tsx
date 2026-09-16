@@ -22,6 +22,9 @@ interface LockContextValue {
 const LockContext = createContext<LockContextValue>(null as any);
 
 async function hashPin(pin: string): Promise<string> {
+  if (!pin) {
+    throw new Error('PIN cannot be empty');
+  }
   const data = new TextEncoder().encode(pin + 'telegram-drive-salt');
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
@@ -54,21 +57,22 @@ export function LockProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL || ''}/api/settings/lock`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.lock_pin_hash) {
-          pinHashRef.current = data.lock_pin_hash;
-          localStorage.setItem('lock_pin_hash', data.lock_pin_hash);
-          setHasPin(true);
-        }
-        if (data?.lock_interval_ms) {
-          setLockIntervalMsState(data.lock_interval_ms);
-          localStorage.setItem('lock_interval_ms', String(data.lock_interval_ms));
-        }
-        if (data?.notification_mode) {
-          setNotificationModeState(data.notification_mode);
-          localStorage.setItem('notification_mode', data.notification_mode);
-        }
-      }).catch(()=>{});
+        .then(data => {
+          if (!data) return;
+          if (data.lock_pin_hash) {
+            pinHashRef.current = data.lock_pin_hash;
+            localStorage.setItem('lock_pin_hash', data.lock_pin_hash);
+            setHasPin(true);
+          }
+          if (typeof data.lock_interval_ms === 'number') {
+            setLockIntervalMsState(data.lock_interval_ms);
+            localStorage.setItem('lock_interval_ms', String(data.lock_interval_ms));
+          }
+          if (['suppress', 'hide', 'allow'].includes(data.notification_mode)) {
+            setNotificationModeState(data.notification_mode);
+            localStorage.setItem('notification_mode', data.notification_mode);
+          }
+        }).catch(()=>{});
   }, []);
 
   const lock = useCallback(() => {
