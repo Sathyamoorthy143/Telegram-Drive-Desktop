@@ -1,0 +1,62 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "snapshot": false,
+  // Inherited from opencode:
+  // - Project .opencode/opencode.json plugin ".opencode/plugins/graphify.js"
+  //   is ported to .kilo/plugins/graphify.js (Kilo auto-loads
+  //   .kilo/{plugin,plugins}/*.{ts,js}; .opencode/ dirs are not loaded).
+  // - Remainder below mirrors ~/.config/opencode/opencode.jsonc so Kilo
+  //   here behaves like opencode (providers, MCP, instructions, plugin).
+  //   Global ~/.config/kilo/kilo.jsonc (permissions, indexing, experiential
+  //   provider) still deep-merges underneath; project wins on conflict.
+  // - Project AGENTS.md graphify section already loaded by Kilo
+  //   automatically and takes precedence over the global graphify rule.
+  "instructions": ["~/.config/opencode/instructions/graphify.md"],
+  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"],
+  "disabled_providers": ["fastRouter", "ollamcloud", "unorouter", "z.ai"],
+  "provider": {
+    "ollama-local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "qwen3:4b": {
+          "name": "Qwen3 4B (local)"
+        }
+      }
+    },
+    "omniroute": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OmniRoute",
+      "options": {
+        "baseURL": "http://localhost:20128/api/v1/vscode/oma_live_EwBc9kWh4wfsu7Zbo0_qyOcrgxyEF8GA8IraYizBmF4",
+        "apiKey": "not-needed"
+      },
+      "models": {
+        "default": {
+          "name": "test-combo"
+        }
+      }
+    }
+  },
+  "mcp": {
+    "resend": {
+      "type": "remote",
+      "url": "https://mcp.resend.com/mcp",
+      "enabled": true
+    },
+    "stitch": {
+      "type": "remote",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "{env:STITCH_API_KEY}"
+      },
+      "enabled": true
+    }
+  },
+  "skills": {
+    "paths": ["~/.config/opencode/skills"]
+  }
+}
