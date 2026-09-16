@@ -8,10 +8,10 @@ A self-hosted web application that turns your Telegram account into unlimited cl
 Frontend (Cloudflare Pages)  ←→  Backend (VPS / Railway / Fly.io)
          React + Vite                    Rust + Actix-web
          yourdomain.com                  :8080
-                                              ↕
-                                         Telegram MTProto
-                                              ↕
-                                         Telegram Servers
+                                           ↕
+                                      Telegram MTProto
+                                               ↕
+                                           Telegram Servers
 ```
 
 ## Prerequisites
@@ -46,7 +46,9 @@ The dev server starts on `http://localhost:5173` with API proxy to `localhost:80
 
 ## Deployment
 
-### Frontend → Cloudflare Pages
+### Frontend → Cloudflare Pages (Recommended)
+
+This deployment method avoids the 20-minute timeout issue experienced with Antideploy.
 
 1. Build the frontend:
    ```bash
@@ -66,18 +68,10 @@ The dev server starts on `http://localhost:5173` with API proxy to `localhost:80
    VITE_API_URL=https://api.yourdomain.com
    ```
 
-### Frontend → Antideploy (frontend-only)
+### Frontend → Antideploy (frontend-only) - ⚠️ Currently Broken
 
-Antideploy auto-detects the project — no Dockerfile or YAML needed.
-`web/frontend` is self-contained: `package.json` (`build` + `start`
-serving `dist` on `$PORT`), `engines` + `.nvmrc` pin Node 20.
-
-1. Connect this GitHub repo in Antideploy.
-2. When it lists detected projects, pick `web/frontend` (it is built
-   as though that directory were the whole repository).
-3. Set build env var `VITE_API_URL` to your backend URL
-   (baked into the build, e.g. `https://telegram-drive-web-1dvn.onrender.com`).
-4. Deploy — Antideploy runs `npm ci` → `npm run build` → `npm start`.
+Antideploy uses Docker buildpacks which can time out after 20 minutes.
+**Use Cloudflare Pages instead for production deployments.**
 
 ### Backend → VPS / Railway / Fly.io
 
@@ -152,3 +146,29 @@ serving `dist` on `$PORT`), `engines` + `.nvmrc` pin Node 20.
 | GET | `/api/thumbnail/:fid/:mid` | Thumbnail |
 | GET | `/api/settings` | Get settings |
 | PUT | `/api/settings` | Save settings |
+
+## Troubleshooting
+
+### Antideploy Build Timeout (20 minutes)
+
+The Antideploy deployment failed because Docker buildpacks timed out. Antideploy uses Docker container builds which are slow and have a 20-minute timeout limit.
+
+**Fix:** Use Cloudflare Pages deployment instead (see instructions above). Cloudflare Pages builds statically and serves the frontend directly without Docker timeouts.
+
+### Missing Environment Variables
+
+If using Cloudflare Pages, ensure you set `VITE_API_URL` to your backend URL. The deployment will bake this into the build.
+
+### Local Development
+
+For local testing, use:
+```bash
+cd web/frontend
+npm run dev  # Starts frontend on http://localhost:5173
+```
+
+Then start the backend:
+```bash
+cd web/backend
+cargo run --release
+```

@@ -7,10 +7,16 @@
   --color-telegram-surface: #17212b;
   --color-telegram-primary: #ffae00;
   --color-telegram-secondary: #2481cc;
+  --color-telegram-tertiary: #e83e8c;
+  --color-telegram-success: #10b981;
+  --color-telegram-warning: #f59e0b;
+  --color-telegram-error: #ef4444;
   --color-telegram-text: #ffffff;
   --color-telegram-subtext: #8e9fb3;
+  --color-telegram-muted: #4b5c6b;
   --color-telegram-border: rgba(255, 255, 255, 0.1);
   --color-telegram-hover: rgba(255, 255, 255, 0.05);
+  --color-telegram-active: rgba(255, 174, 0, 0.15);
 }
 
 /* Light Theme Overrides */
