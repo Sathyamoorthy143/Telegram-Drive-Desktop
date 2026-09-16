@@ -115,6 +115,25 @@ pub fn already_copied_at(path: &Path, main_id: i64) -> bool {
     })
 }
 
+/// Channel-scoped ledger check (multi-org: message ids repeat per channel).
+/// Legacy rows without `channel` match any channel (backward compatible).
+pub fn already_copied_channel_at(path: &Path, channel_id: i64, main_id: i64) -> bool {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    content.lines().any(|l| {
+        let v: serde_json::Value = match serde_json::from_str(l) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        if v.get("main").and_then(|m| m.as_i64()) != Some(main_id) {
+            return false;
+        }
+        match v.get("channel").and_then(|c| c.as_i64()) {
+            Some(ch) => ch == channel_id,
+            None => true, // legacy row: conservative match
+        }
+    })
+}
+
 pub fn already_copied(main_id: i64) -> bool {
     already_copied_at(&ledger_path(), main_id)
 }
@@ -122,6 +141,20 @@ pub fn already_copied(main_id: i64) -> bool {
 pub fn record_copy_at(path: &Path, main_id: i64, backup_id: i64) {
     use std::fmt::Write as _;
     let mut line = serde_json::json!({"main": main_id, "backup": backup_id}).to_string();
+    line.write_char('\n').ok();
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+pub fn record_copy_channel_at(path: &Path, channel_id: i64, main_id: i64, backup_id: i64) {
+    use std::fmt::Write as _;
+    let mut line = serde_json::json!({"channel": channel_id, "main": main_id, "backup": backup_id}).to_string();
     line.write_char('\n').ok();
     use std::io::Write as _;
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -167,7 +200,7 @@ pub const OUTBOX_CAPACITY: usize = 1024;
 
 /// Best-effort enqueue from upload paths and the watcher.
 pub fn enqueue(state: &AppState, job: ReplicateJob) {
-    if already_copied(job.message_id as i64) {
+    if already_copied_channel_at(&ledger_path(), job.channel_id, job.message_id as i64) {
         return;
     }
     match state.replicate_tx.try_send(job.clone()) {
@@ -194,13 +227,13 @@ pub async fn replication_worker(
         // Drain everything currently due.
         while let Some(mut job) = outbox.pop_due() {
             // Skip anything already copied (e.g. by an earlier attempt).
-            if already_copied(job.message_id as i64) {
+            if already_copied_channel_at(&ledger_path(), job.channel_id, job.message_id as i64) {
                 continue;
             }
-            let backup_id = match crate::storage::backup_id(&state) {
+            let backup_id = match resolve_backup_for_channel(&state, job.channel_id).await {
                 Some(id) => id,
                 None => {
-                    log::warn!("Replication skipped: backup channel not provisioned");
+                    log::warn!("Replication skipped: backup channel not provisioned (channel {})", job.channel_id);
                     break;
                 }
             };
@@ -227,7 +260,7 @@ pub async fn replication_worker(
             .await
             {
                 Ok(backup_msg) => {
-                    record_copy(job.message_id as i64, backup_msg);
+                    record_copy_channel_at(&ledger_path(), job.channel_id, job.message_id as i64, backup_msg);
                     log::info!(
                         "Replicated message {} -> backup {}",
                         job.message_id,
@@ -283,6 +316,34 @@ pub async fn replication_worker(
     }
 }
 
+/// Resolve the BACKUP channel for a job's MAIN channel id.
+/// Global MAIN → global backup; org MAIN → that org's backup (Supabase).
+async fn resolve_backup_for_channel(
+    state: &actix_web::web::Data<AppState>,
+    channel_id: i64,
+) -> Option<i64> {
+    if crate::storage::main_id(state).as_ref() == Some(&channel_id) {
+        if let Some(b) = crate::storage::backup_id(state) {
+            return Some(b);
+        }
+    }
+    if crate::supabase_org::is_configured() {
+        if let Ok(orgs) = crate::supabase_org::list_organizations().await {
+            for org in orgs {
+                if let Ok(Some(s)) = crate::supabase_org::get_org_settings(&org.id).await {
+                    if s.channel_id == Some(channel_id) {
+                        if let Some(b) = s.backup_channel_id.filter(|id| *id != 0) {
+                            return Some(b);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Fall back to global backup so legacy single-user jobs still replicate.
+    crate::storage::backup_id(state)
+}
+
 /// 24/7 watcher (Option #2): copies files dropped into MAIN from outside the
 /// app (e.g. phone). Our own sends are already enqueued at upload time and
 /// skipped here via the ledger. Polls MAIN's recent history on an interval —
@@ -335,6 +396,64 @@ pub async fn watch_main_channel(state: actix_web::web::Data<AppState>) {
     }
 }
 
+/// Per-org watcher: polls every provisioned org's MAIN channel for external
+/// files (phone uploads) and enqueues MAIN→BACKUP copies. Self-healing loop;
+/// idle when Supabase is unconfigured. Run once at startup via `tokio::spawn`.
+pub async fn watch_org_channels(state: actix_web::web::Data<AppState>) {
+    const POLL_SECS: u64 = 60;
+    let mut seen: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
+    loop {
+        if !crate::supabase_org::is_configured() {
+            tokio::time::sleep(Duration::from_secs(120)).await;
+            continue;
+        }
+        let orgs = match crate::supabase_org::list_organizations().await {
+            Ok(o) => o,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_secs(120)).await;
+                continue;
+            }
+        };
+        let client = match crate::auth::get_client(&state).await {
+            Ok(c) => c,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                continue;
+            }
+        };
+        for org in orgs {
+            if org.active == Some(false) {
+                continue;
+            }
+            let (main, _) = crate::storage::org_channel_ids(&org.id).await;
+            let Some(main) = main else { continue };
+            let Ok(peer) =
+                crate::utils::resolve_peer_ref(&client, Some(main), &state.peer_cache).await
+            else {
+                continue;
+            };
+            let seen_max = seen.get(&main).copied().unwrap_or(0);
+            let mut batch_max = seen_max;
+            let mut checked = 0;
+            let mut iter = client.iter_messages(peer);
+            while let Ok(Some(msg)) = iter.next().await {
+                checked += 1;
+                if checked > 10 {
+                    break;
+                }
+                batch_max = batch_max.max(msg.id());
+                if msg.id() <= seen_max || msg.outgoing() || msg.media().is_none() {
+                    continue;
+                }
+                log::info!("Org watcher ({}): new external file {} in MAIN", org.subdomain, msg.id());
+                enqueue(&state, ReplicateJob::new(main, msg.id()));
+            }
+            seen.insert(main, batch_max);
+        }
+        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+    }
+}
+
 /// In-memory outbox handle shared via [`AppState`].
 pub type ReplicateSender = mpsc::Sender<ReplicateJob>;
 
@@ -383,5 +502,18 @@ mod tests {
         record_copy_at(&path, 45, 77);
         assert!(already_copied_at(&path, 45));
         assert!(!already_copied_at(&path, 46));
+    }
+
+    #[test]
+    fn channel_scoped_ledger_isolates_orgs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ledger.jsonl");
+        record_copy_channel_at(&path, 111, 45, 77);
+        assert!(already_copied_channel_at(&path, 111, 45));
+        // Same message id in a different org channel is NOT copied yet.
+        assert!(!already_copied_channel_at(&path, 222, 45));
+        // Legacy rows (no channel) match conservatively.
+        record_copy_at(&path, 99, 100);
+        assert!(already_copied_channel_at(&path, 111, 99));
     }
 }

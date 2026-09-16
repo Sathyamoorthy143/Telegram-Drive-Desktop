@@ -21,6 +21,21 @@ pub const BACKUP_MARKER: &str = "[telegram-drive-backup]";
 pub const MAIN_TITLE: &str = "My Drive Storage [TD]";
 pub const BACKUP_TITLE: &str = "My Drive Backup [TD]";
 
+/// Per-org channel markers — unique per org so `ensure_storage` scans never
+/// collide across orgs sharing one Telegram account.
+pub fn org_main_marker(org_id: &str) -> String {
+    format!("[telegram-drive-org-{}-main]", org_id)
+}
+
+pub fn org_backup_marker(org_id: &str) -> String {
+    format!("[telegram-drive-org-{}-backup]", org_id)
+}
+
+/// Per-org folder marker line embedded in folder channel `about` text.
+pub fn org_folder_line(org_id: &str) -> String {
+    format!("org_id:{}", org_id)
+}
+
 /// Configured MAIN channel id (0/unset means not provisioned yet).
 pub fn main_id(state: &AppState) -> Option<i64> {
     state
@@ -45,8 +60,7 @@ pub fn backup_id(state: &AppState) -> Option<i64> {
 async fn find_marked_channel(
     client: &grammers_client::Client,
     marker: &str,
-) -> Option<i64> {
-    let mut dialogs = client.iter_dialogs();
+) -> Option<i64> {    let mut dialogs = client.iter_dialogs();
     while let Ok(Some(dialog)) = dialogs.next().await {
         if let Peer::Channel(c) = &dialog.peer {
             let raw = &c.raw;
@@ -159,6 +173,51 @@ pub async fn storage_status(state: web::Data<AppState>) -> impl Responder {
     }))
 }
 
+/// Org channel ids from Supabase `org_settings` (None when unprovisioned or
+/// Supabase unconfigured).
+pub async fn org_channel_ids(org_id: &str) -> (Option<i64>, Option<i64>) {
+    match crate::supabase_org::get_org_settings(org_id).await {
+        Ok(Some(s)) => (s.channel_id.filter(|id| *id != 0), s.backup_channel_id.filter(|id| *id != 0)),
+        _ => (None, None),
+    }
+}
+
+/// Find-or-create per-org MAIN + BACKUP channels. Idempotent: existing
+/// org-marked channels are reused, never duplicated. Does NOT touch the
+/// global settings file — ids belong in `org_settings`.
+pub async fn ensure_storage_for_org(
+    state: &AppState,
+    org_id: &str,
+    org_name: &str,
+) -> Result<(i64, i64), String> {
+    let client = get_client(state).await?;
+    let main_marker = org_main_marker(org_id);
+    let backup_marker = org_backup_marker(org_id);
+    let main = match find_marked_channel(&client, &main_marker).await {
+        Some(id) => id,
+        None => {
+            create_storage_channel(
+                &client,
+                &format!("{} — Drive [TD]", org_name),
+                &format!("Telegram Drive org storage ({})\n{}", org_id, main_marker),
+            )
+            .await?
+        }
+    };
+    let backup = match find_marked_channel(&client, &backup_marker).await {
+        Some(id) => id,
+        None => {
+            create_storage_channel(
+                &client,
+                &format!("{} — Backup [TD]", org_name),
+                &format!("Telegram Drive org backup ({})\n{}", org_id, backup_marker),
+            )
+            .await?
+        }
+    };
+    Ok((main, backup))
+}
+
 /// Ledger tracking one-shot Saved Messages → MAIN migration (reruns skip
 /// already-migrated messages instead of duplicating them).
 fn backfill_ledger_path() -> std::path::PathBuf {
@@ -259,5 +318,16 @@ mod tests {
         assert!("My Drive Storage\n[telegram-drive-main]".contains(MAIN_MARKER));
         assert!("My Drive Backup\n[telegram-drive-backup]".contains(BACKUP_MARKER));
         assert!(!"Work [TD]\n[telegram-drive-folder]".contains(MAIN_MARKER));
+    }
+
+    #[test]
+    fn org_markers_are_unique_per_org() {
+        let a_main = org_main_marker("org-a");
+        let b_main = org_main_marker("org-b");
+        let a_backup = org_backup_marker("org-a");
+        assert_ne!(a_main, b_main);
+        assert_ne!(a_main, a_backup);
+        assert!(a_main.contains("org-a"));
+        assert_eq!(org_folder_line("org-a"), "org_id:org-a");
     }
 }

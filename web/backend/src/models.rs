@@ -48,6 +48,116 @@ pub struct Settings {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Organization {
+    pub id: String,
+    pub name: String,
+    pub subdomain: String,
+    pub master_admin_id: Option<String>,
+    pub created_at: Option<String>,
+    pub active: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgMember {
+    pub id: String,
+    pub org_id: String,
+    pub username: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password_hash: Option<String>,
+    pub role: String,
+    pub created_by: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct OrgSettings {
+    pub org_id: String,
+    pub channel_id: Option<i64>,
+    pub backup_channel_id: Option<i64>,
+    pub lock_pin_hash: Option<String>,
+    pub lock_interval_ms: Option<i64>,
+    pub notification_mode: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgAuditLog {
+    pub id: Option<String>,
+    pub org_id: String,
+    pub user_id: Option<String>,
+    pub action: String,
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
+    pub details: Option<serde_json::Value>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgTrashItem {
+    pub id: Option<String>,
+    pub org_id: String,
+    pub message_id: i64,
+    pub folder_id: Option<i64>,
+    pub name: String,
+    pub size: i64,
+    pub deleted_at: Option<String>,
+    pub restored_at: Option<String>,
+}
+
+/// In-memory org session issued by username/password login.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgSession {
+    pub token: String,
+    pub org_id: String,
+    pub member_id: String,
+    pub username: String,
+    pub role: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateOrgRequest {
+    pub name: String,
+    pub subdomain: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateOrgRequest {
+    pub name: Option<String>,
+    pub active: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateMemberRequest {
+    pub username: String,
+    pub password: String,
+    pub role: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct OrgLoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateOrgSettingsRequest {
+    pub channel_id: Option<i64>,
+    pub backup_channel_id: Option<i64>,
+    pub lock_pin_hash: Option<String>,
+    pub lock_interval_ms: Option<i64>,
+    pub notification_mode: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct LogOrgActivityRequest {
+    pub action: String,
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
+    pub details: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StreamInfo {
     pub token: String,
     pub base_url: String,

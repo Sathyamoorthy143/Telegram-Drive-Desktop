@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { History } from 'lucide-react';
@@ -18,10 +18,12 @@ import { useLock } from '../../context/LockContext';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { PromptModal, PromptRequest } from './PromptModal';
 import { VersionsModal } from './VersionsModal';
-import { FrameViewer } from './FrameViewer';
-import { SheetEditor } from './SheetEditor';
-import { DocEditor } from './DocEditor';
-import { SlideEditor } from './SlideEditor';
+// Heavy editors/viewers (univer, tiptap, mammoth, pdfjs) are code-split so the
+// initial bundle stays lean; they load on first preview/edit.
+const FrameViewer = lazy(() => import('./FrameViewer').then((m) => ({ default: m.FrameViewer })));
+const SheetEditor = lazy(() => import('./SheetEditor').then((m) => ({ default: m.SheetEditor })));
+const DocEditor = lazy(() => import('./DocEditor').then((m) => ({ default: m.DocEditor })));
+const SlideEditor = lazy(() => import('./SlideEditor').then((m) => ({ default: m.SlideEditor })));
 import { getEditKind, getFileTypeCategory, EditKind } from '../../utils';
 import { DragDropOverlay } from './DragDropOverlay';
 import { SettingsModal } from './SettingsModal';
@@ -64,7 +66,7 @@ function useKeyboardShortcuts(handlers: {
     }, [handlers]);
 }
 
-export function Dashboard({ onLogout }: { onLogout: () => void }) {
+export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBanner?: React.ReactNode }) {
     const queryClient = useQueryClient();
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const [uploadsPaused, setUploadsPaused] = useState(false);
@@ -1079,6 +1081,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             className="flex h-screen w-full overflow-hidden bg-dynamic-mesh relative"
             onClick={() => setSelectedIds([])}
         >
+            {topBanner}
             <AnimatePresence>
                 {showMoveModal && <MoveToFolderModal folders={folders} onClose={() => setShowMoveModal(false)} onSelect={handleBulkMove} activeFolderId={activeFolderId} key="move-modal" />}
                 {promptState && (
@@ -1230,17 +1233,25 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             )}
 
             {previewFile && (
-                <FrameViewer file={previewFile} activeFolderId={activeFolderId} onClose={() => setPreviewFile(null)} onNext={handleNextPreview} onPrev={handlePrevPreview} onEdit={() => previewFile && handleEdit(previewFile)} currentIndex={previewContextIndex} totalItems={previewContextFiles.length} />
+                <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading preview…</div>}>
+                    <FrameViewer file={previewFile} activeFolderId={activeFolderId} onClose={() => setPreviewFile(null)} onNext={handleNextPreview} onPrev={handlePrevPreview} onEdit={() => previewFile && handleEdit(previewFile)} currentIndex={previewContextIndex} totalItems={previewContextFiles.length} />
+                </Suspense>
             )}
 
             {editFile?.kind === 'sheet' && (
-                <SheetEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
+                <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading editor…</div>}>
+                    <SheetEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
+                </Suspense>
             )}
             {(editFile?.kind === 'doc' || editFile?.kind === 'text') && (
-                <DocEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
+                <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading editor…</div>}>
+                    <DocEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
+                </Suspense>
             )}
             {editFile?.kind === 'slide' && (
-                <SlideEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
+                <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading editor…</div>}>
+                    <SlideEditor file={editFile.file} activeFolderId={activeFolderId} onClose={() => setEditFile(null)} onSaved={handleEditSaved} />
+                </Suspense>
             )}
 
             <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error' && i.status !== 'cancelled'))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />

@@ -1,0 +1,262 @@
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { ArrowLeft, Building2, Plus, Trash2, Power, Database, Users, Activity, FolderOpen } from 'lucide-react';
+import * as api from '../../api';
+import type { OrgOverviewEntry, OrgMember, AuditEntry } from '../../types';
+
+interface Props {
+  onOpenOrg: (org: { id: string; name: string; subdomain: string }) => void;
+  onBack: () => void;
+}
+
+type DetailTab = 'members' | 'activity';
+
+export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
+  const [orgs, setOrgs] = useState<OrgOverviewEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [subdomain, setSubdomain] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState<OrgOverviewEntry | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('members');
+  const [members, setMembers] = useState<OrgMember[]>([]);
+  const [activity, setActivity] = useState<AuditEntry[]>([]);
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'admin' });
+
+  const refresh = async () => {
+    try {
+      const res = await api.getAdminOverview();
+      setOrgs(res.orgs);
+    } catch (e: any) {
+      toast.error(`Failed to load organizations: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const loadDetail = async (org: OrgOverviewEntry, tab: DetailTab) => {
+    setSelected(org);
+    setDetailTab(tab);
+    try {
+      if (tab === 'members') setMembers(await api.getOrgMembers(org.id, true));
+      else setActivity(await api.getOrgActivity(org.id, true));
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const createOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !subdomain.trim()) {
+      toast.error('Name and subdomain are required');
+      return;
+    }
+    setCreating(true);
+    try {
+      await api.createOrganization(name.trim(), subdomain.trim().toLowerCase());
+      toast.success(`Organization "${name.trim()}" created`);
+      setName('');
+      setSubdomain('');
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const provision = async (org: OrgOverviewEntry) => {
+    try {
+      const res = await api.provisionOrgStorage(org.id);
+      toast.success(`Channels provisioned: ${res.main_channel_id} / ${res.backup_channel_id}`);
+      await refresh();
+    } catch (e: any) {
+      toast.error(`Provision failed: ${e.message}`);
+    }
+  };
+
+  const toggleActive = async (org: OrgOverviewEntry) => {
+    try {
+      await api.updateOrganization(org.id, { active: !org.active });
+      toast.success(org.active ? 'Organization deactivated' : 'Organization activated');
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const removeOrg = async (org: OrgOverviewEntry) => {
+    if (!window.confirm(`Deactivate "${org.name}"? Its files stay in Telegram but members lose access.`)) return;
+    try {
+      await api.deleteOrganization(org.id);
+      toast.success('Organization deactivated');
+      setSelected(null);
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const createMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    if (!newUser.username.trim() || newUser.password.length < 4) {
+      toast.error('Username required, password min 4 chars');
+      return;
+    }
+    try {
+      await api.createOrgMember(selected.id, newUser.username.trim(), newUser.password, newUser.role, true);
+      toast.success(`Member "${newUser.username}" created as ${newUser.role}`);
+      setNewUser({ username: '', password: '', role: 'admin' });
+      setMembers(await api.getOrgMembers(selected.id, true));
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const deleteMember = async (memberId: string, username: string) => {
+    if (!selected) return;
+    if (!window.confirm(`Remove member "${username}"?`)) return;
+    try {
+      await api.deleteOrgMember(selected.id, memberId, true);
+      toast.success('Member removed');
+      setMembers(await api.getOrgMembers(selected.id, true));
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  return (
+    <div className="h-full w-full overflow-y-auto p-6">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={onBack} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Back to My Drive">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <Building2 className="w-6 h-6 text-telegram-primary" />
+          <div>
+            <h1 className="text-xl font-semibold">Organizations</h1>
+            <p className="text-sm text-telegram-subtext">Master admin — create orgs, provision Telegram channels, manage admins.</p>
+          </div>
+        </div>
+
+        <form onSubmit={createOrg} className="flex flex-wrap gap-2 mb-6 p-4 bg-telegram-surface border border-telegram-border rounded-xl">
+          <input
+            value={name} onChange={(e) => setName(e.target.value)} placeholder="Org name (e.g. Acme Corp)"
+            className="flex-1 min-w-40 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+          />
+          <input
+            value={subdomain} onChange={(e) => setSubdomain(e.target.value)} placeholder="subdomain (e.g. acme)"
+            className="flex-1 min-w-40 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+          />
+          <button type="submit" disabled={creating} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-telegram-primary text-white font-medium disabled:opacity-50">
+            <Plus className="w-4 h-4" /> {creating ? 'Creating…' : 'Create org'}
+          </button>
+        </form>
+
+        {loading ? (
+          <p className="text-telegram-subtext">Loading organizations…</p>
+        ) : orgs.length === 0 ? (
+          <p className="text-telegram-subtext">No organizations yet. Create the first one above, then provision its Telegram channels.</p>
+        ) : (
+          <div className="grid gap-3">
+            {orgs.map((org) => (
+              <div key={org.id} className={`p-4 bg-telegram-surface border border-telegram-border rounded-xl ${org.active === false ? 'opacity-60' : ''}`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex-1 min-w-52">
+                    <div className="font-semibold flex items-center gap-2">
+                      {org.name}
+                      {org.active === false && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">inactive</span>}
+                      {!org.provisioned && <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600">not provisioned</span>}
+                    </div>
+                    <div className="text-xs text-telegram-subtext">
+                      {org.subdomain} · {org.member_count} members · {org.trash_count} trashed
+                      {org.channel_id ? ` · main ${org.channel_id}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {!org.provisioned && (
+                      <button onClick={() => provision(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-telegram-primary text-white" title="Create this org's Telegram channels">
+                        <Database className="w-3.5 h-3.5" /> Provision
+                      </button>
+                    )}
+                    <button onClick={() => onOpenOrg(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">
+                      <FolderOpen className="w-3.5 h-3.5" /> Open as admin
+                    </button>
+                    <button onClick={() => loadDetail(org, 'members')} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">
+                      <Users className="w-3.5 h-3.5" /> Members
+                    </button>
+                    <button onClick={() => loadDetail(org, 'activity')} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">
+                      <Activity className="w-3.5 h-3.5" /> Activity
+                    </button>
+                    <button onClick={() => toggleActive(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover" title={org.active === false ? 'Activate' : 'Deactivate'}>
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => removeOrg(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10" title="Deactivate org">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {selected?.id === org.id && (
+                  <div className="mt-4 pt-4 border-t border-telegram-border">
+                    {detailTab === 'members' ? (
+                      <div>
+                        <form onSubmit={createMember} className="flex flex-wrap gap-2 mb-3">
+                          <input value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} placeholder="username"
+                            className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" />
+                          <input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} placeholder="password (min 4)"
+                            className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" />
+                          <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                            className="px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border">
+                            <option value="admin">admin</option>
+                            <option value="editor">editor</option>
+                            <option value="viewer">viewer</option>
+                            <option value="owner">owner</option>
+                          </select>
+                          <button type="submit" className="text-xs px-3 py-1.5 rounded-lg bg-telegram-primary text-white">Add member</button>
+                        </form>
+                        {members.length === 0 ? (
+                          <p className="text-sm text-telegram-subtext">No members yet. Add the first org admin above.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {members.map((m) => (
+                              <li key={m.id} className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">{m.username}</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-telegram-primary/10 text-telegram-primary">{m.role}</span>
+                                <button onClick={() => deleteMember(m.id, m.username)} className="ml-auto text-xs text-red-500 hover:underline">remove</button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        {activity.length === 0 ? (
+                          <p className="text-sm text-telegram-subtext">No audit entries yet.</p>
+                        ) : (
+                          <ul className="space-y-1 max-h-64 overflow-y-auto">
+                            {activity.map((a, i) => (
+                              <li key={a.id || i} className="text-xs text-telegram-subtext">
+                                <span className="text-telegram-text font-medium">{a.action}</span>
+                                {a.target_type ? ` · ${a.target_type}:${a.target_id}` : ''} · {a.created_at || ''}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

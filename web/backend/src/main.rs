@@ -1,4 +1,6 @@
 mod auth;
+mod auth_org;
+mod admin;
 mod chunked;
 mod debug;
 mod fast_transfer;
@@ -7,11 +9,14 @@ mod folders;
 mod keep_alive;
 mod meta;
 mod models;
+mod org_files;
+mod orgs;
 mod preview;
 mod settings;
 mod share;
 mod streaming;
 mod supabase;
+mod supabase_org;
 mod tier;
 mod storage;
 mod replicate;
@@ -39,6 +44,8 @@ pub struct AppState {
     pub replicate_tx: replicate::ReplicateSender,
     /// Cached (premium, at) verdict, refreshed at most every TIER_CACHE_TTL.
     pub premium_cache: Arc<Mutex<(Option<bool>, Option<std::time::Instant>)>>,
+    /// In-memory org member sessions (token → session).
+    pub org_sessions: auth_org::OrgTokenStore,
 }
 
 #[actix_web::main]
@@ -72,6 +79,7 @@ async fn main() -> std::io::Result<()> {
         settings: Arc::new(std::sync::Mutex::new(initial_settings)),
         replicate_tx: replicate_tx.clone(),
         premium_cache: Arc::new(Mutex::new((None, None))),
+        org_sessions: auth_org::new_token_store(),
     });
 
     // Background MAIN → BACKUP replication worker + MAIN channel watcher.
@@ -84,6 +92,10 @@ async fn main() -> std::io::Result<()> {
         let watch_state = state.clone();
         tokio::spawn(async move {
             replicate::watch_main_channel(watch_state).await;
+        });
+        let org_watch_state = state.clone();
+        tokio::spawn(async move {
+            replicate::watch_org_channels(org_watch_state).await;
         });
     }
 
@@ -174,6 +186,40 @@ async fn main() -> std::io::Result<()> {
                     .route("/settings", web::put().to(settings::save_settings_handler))
                     .route("/settings/lock", web::get().to(settings::get_lock_settings))
                     .route("/settings/lock", web::put().to(settings::save_lock_settings))
+                    // ---- Multi-org platform ----
+                    .route("/current-org", web::get().to(orgs::current_org))
+                    .route("/admin/overview", web::get().to(admin::overview))
+                    .route("/admin/organizations", web::get().to(orgs::list_organizations))
+                    .route("/admin/organizations", web::post().to(orgs::create_organization))
+                    .route("/admin/organizations/{id}", web::get().to(orgs::get_organization))
+                    .route("/admin/organizations/{id}", web::put().to(orgs::update_organization))
+                    .route("/admin/organizations/{id}", web::delete().to(orgs::delete_organization))
+                    .route("/admin/organizations/{id}/settings", web::get().to(orgs::get_org_settings_hdl))
+                    .route("/admin/organizations/{id}/settings", web::put().to(orgs::put_org_settings_hdl))
+                    .route("/admin/organizations/{id}/members", web::get().to(orgs::list_members_hdl))
+                    .route("/admin/organizations/{id}/members", web::post().to(orgs::create_member_hdl))
+                    .route("/admin/organizations/{id}/members/{member_id}", web::delete().to(orgs::delete_member_hdl))
+                    .route("/admin/organizations/{id}/activity", web::get().to(orgs::list_activity_hdl))
+                    .route("/admin/organizations/{id}/activity", web::post().to(orgs::post_activity_hdl))
+                    .route("/admin/organizations/{id}/provision", web::post().to(orgs::provision_org_storage))
+                    .route("/org/{id}/login", web::post().to(auth_org::org_login))
+                    .route("/org/{id}/logout", web::post().to(auth_org::org_logout))
+                    .route("/org/{id}/me", web::get().to(auth_org::org_me))
+                    .route("/org/{id}/settings", web::get().to(orgs::get_org_settings_hdl))
+                    .route("/org/{id}/settings", web::put().to(orgs::put_org_settings_hdl))
+                    .route("/org/{id}/members", web::get().to(orgs::list_members_hdl))
+                    .route("/org/{id}/members", web::post().to(orgs::create_member_hdl))
+                    .route("/org/{id}/members/{member_id}", web::delete().to(orgs::delete_member_hdl))
+                    .route("/org/{id}/activity", web::get().to(orgs::list_activity_hdl))
+                    .route("/org/{id}/activity", web::post().to(orgs::post_activity_hdl))
+                    .route("/org/{id}/trash", web::get().to(orgs::list_trash_hdl))
+                    .route("/org/{id}/trash/restore", web::post().to(orgs::restore_trash_hdl))
+                    .route("/org/{id}/trash/purge", web::post().to(orgs::purge_trash_hdl))
+                    .route("/org/{id}/files", web::get().to(org_files::org_get_files))
+                    .route("/org/{id}/files/delete", web::post().to(org_files::org_soft_delete))
+                    .route("/org/{id}/folders/scan", web::get().to(org_files::org_scan_folders))
+                    .route("/org/{id}/folders/create", web::post().to(org_files::org_create_folder))
+                    .route("/org/{id}/storage/status", web::get().to(org_files::org_storage_status))
             )
             .service(
                 actix_files::Files::new("/", &dist).index_file("index.html"),

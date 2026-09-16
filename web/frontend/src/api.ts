@@ -1,5 +1,27 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+export function getOrgToken(): string | null {
+  try { return localStorage.getItem('td_org_token'); } catch { return null; }
+}
+
+export function setOrgToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem('td_org_token', token);
+    else localStorage.removeItem('td_org_token');
+  } catch {}
+}
+
+export function getOrgId(): string | null {
+  try { return localStorage.getItem('td_org_id'); } catch { return null; }
+}
+
+export function setOrgId(orgId: string | null) {
+  try {
+    if (orgId) localStorage.setItem('td_org_id', orgId);
+    else localStorage.removeItem('td_org_id');
+  } catch {}
+}
+
 export async function api<T>(method: string, path: string, body?: any): Promise<T> {
   const isFormData = body instanceof FormData;
 
@@ -7,6 +29,10 @@ export async function api<T>(method: string, path: string, body?: any): Promise<
   if (!isFormData && body) {
     headers['Content-Type'] = 'application/json';
   }
+  // Org member auth travels on a separate header so it never clashes with
+  // the (cookieless) master Telegram session.
+  const orgToken = getOrgToken();
+  if (orgToken) headers['X-Org-Token'] = orgToken;
 
   const res = await fetch(`${API_BASE}${path}`, {
     method,
@@ -364,3 +390,87 @@ export const uploadFileWithProgress = (file: File, folder_id?: number, options?:
     xhr.send(formData);
   });
 };
+
+// ---- Multi-org platform ----
+
+export const getCurrentOrg = (subdomain?: string) =>
+  api<{ org: { id: string; name: string; subdomain: string; active?: boolean } | null; subdomain: string | null }>(
+    'GET', `/api/current-org${subdomain ? `?subdomain=${encodeURIComponent(subdomain)}` : ''}`);
+
+export const getAdminOverview = () =>
+  api<{ org_count: number; orgs: any[] }>('GET', '/api/admin/overview');
+
+export const getOrganizations = () =>
+  api<any[]>('GET', '/api/admin/organizations');
+
+export const createOrganization = (name: string, subdomain: string) =>
+  api<any>('POST', '/api/admin/organizations', { name, subdomain });
+
+export const updateOrganization = (id: string, patch: { name?: string; active?: boolean }) =>
+  api<boolean>('PUT', `/api/admin/organizations/${id}`, patch);
+
+export const deleteOrganization = (id: string, hard = false) =>
+  api<boolean>('DELETE', `/api/admin/organizations/${id}${hard ? '?hard=true' : ''}`);
+
+export const getOrgSettings = (orgId: string, admin = false) =>
+  api<any>('GET', admin ? `/api/admin/organizations/${orgId}/settings` : `/api/org/${orgId}/settings`);
+
+export const updateOrgSettings = (orgId: string, patch: any, admin = false) =>
+  api<any>('PUT', admin ? `/api/admin/organizations/${orgId}/settings` : `/api/org/${orgId}/settings`, patch);
+
+export const getOrgMembers = (orgId: string, admin = false) =>
+  api<any[]>('GET', admin ? `/api/admin/organizations/${orgId}/members` : `/api/org/${orgId}/members`);
+
+export const createOrgMember = (orgId: string, username: string, password: string, role: string, admin = false) =>
+  api<any>('POST', admin ? `/api/admin/organizations/${orgId}/members` : `/api/org/${orgId}/members`, { username, password, role });
+
+export const deleteOrgMember = (orgId: string, memberId: string, admin = false) =>
+  api<boolean>('DELETE', admin
+    ? `/api/admin/organizations/${orgId}/members/${memberId}`
+    : `/api/org/${orgId}/members/${memberId}`);
+
+export const getOrgActivity = (orgId: string, admin = false) =>
+  api<any[]>('GET', admin ? `/api/admin/organizations/${orgId}/activity` : `/api/org/${orgId}/activity`);
+
+export const logOrgActivity = (orgId: string, action: string, target_type?: string, target_id?: string, details?: any) =>
+  api<boolean>('POST', `/api/org/${orgId}/activity`, { action, target_type, target_id, details });
+
+export const getOrgTrash = (orgId: string) =>
+  api<any[]>('GET', `/api/org/${orgId}/trash`);
+
+export const restoreOrgTrash = (orgId: string, message_id: number, folder_id?: number) =>
+  api<boolean>('POST', `/api/org/${orgId}/trash/restore`, { message_id, folder_id });
+
+export const purgeOrgTrash = (orgId: string, message_id: number, folder_id?: number) =>
+  api<boolean>('POST', `/api/org/${orgId}/trash/purge`, { message_id, folder_id });
+
+export const orgLogin = (orgId: string, username: string, password: string) =>
+  api<{ token: string; org_id: string; member_id: string; username: string; role: string }>(
+    'POST', `/api/org/${orgId}/login`, { username, password });
+
+export const orgLogout = (orgId: string) =>
+  api<boolean>('POST', `/api/org/${orgId}/logout`);
+
+export const orgMe = (orgId: string) =>
+  api<{ org_id: string; member_id: string; username: string; role: string }>(
+    'GET', `/api/org/${orgId}/me`);
+
+export const getOrgFiles = (orgId: string, folder_id?: number) =>
+  api<any[]>('GET', `/api/org/${orgId}/files${folder_id !== undefined ? `?folder_id=${folder_id}` : ''}`);
+
+export const deleteOrgFile = (orgId: string, message_id: number, folder_id?: number) =>
+  api<boolean>('POST', `/api/org/${orgId}/files/delete`, { message_id, folder_id });
+
+export const scanOrgFolders = (orgId: string) =>
+  api<any[]>('GET', `/api/org/${orgId}/folders/scan`);
+
+export const createOrgFolder = (orgId: string, name: string, parent_id?: number) =>
+  api<any>('POST', `/api/org/${orgId}/folders/create`, { name, parent_id });
+
+export const getOrgStorageStatus = (orgId: string) =>
+  api<{ provisioned: boolean; main_channel_id?: number; backup_channel_id?: number }>(
+    'GET', `/api/org/${orgId}/storage/status`);
+
+export const provisionOrgStorage = (orgId: string) =>
+  api<{ main_channel_id: number; backup_channel_id: number }>(
+    'POST', `/api/admin/organizations/${orgId}/provision`);

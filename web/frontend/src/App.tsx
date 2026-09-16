@@ -10,46 +10,134 @@ import { ConfirmProvider } from "./context/ConfirmContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { DropZoneProvider } from "./contexts/DropZoneContext";
 import { LockProvider } from "./context/LockContext";
+import { OrgLogin } from "./components/org/OrgLogin";
+import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
+import { OrgAdminDashboard } from "./components/org/OrgAdminDashboard";
 import * as api from "./api";
 
 const queryClient = new QueryClient();
 
+interface OrgInfo {
+  id: string;
+  name: string;
+  subdomain: string;
+  active?: boolean;
+}
+
+interface OrgSessionInfo {
+  username: string;
+  role: string;
+  member_id: string;
+}
+
+function subdomainFromHostname(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const override = params.get("org")?.trim().toLowerCase();
+    if (override) return override;
+  } catch {}
+  const host = window.location.hostname.toLowerCase();
+  if (!host || host === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
+  const parts = host.split(".");
+  if (parts.length >= 3 && parts[0] && parts[0] !== "www") return parts[0];
+  return null;
+}
+
+type BootState =
+  | { kind: "checking" }
+  | { kind: "master-auth" }
+  | { kind: "master-drive" }
+  | { kind: "master-orgs" }
+  | { kind: "master-open-org"; org: OrgInfo }
+  | { kind: "org-login"; org: OrgInfo }
+  | { kind: "org-dashboard"; org: OrgInfo; session: OrgSessionInfo | null };
+
 export function AppContent() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [checking, setChecking] = useState(true);
+  const [boot, setBoot] = useState<BootState>({ kind: "checking" });
   const { theme } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
-    const tryAutoLogin = async () => {
-      try {
-        const connected = await api.checkConnection();
+    const bootApp = async () => {
+      // 1. Org context from subdomain (org1.example.com) or ?org= override.
+      const sub = subdomainFromHostname();
+      let org: OrgInfo | null = null;
+      if (sub) {
+        try {
+          const res = await api.getCurrentOrg(sub);
+          if (cancelled) return;
+          org = res.org;
+        } catch {
+          // 404 unknown subdomain → fall through to master flow.
+          org = null;
+        }
         if (cancelled) return;
-        if (connected) {
-          setIsAuthenticated(true);
+        if (org && org.active === false) {
+          // Inactive org: stay on a dead-end message via org-login with error.
+          setBoot({ kind: "org-login", org });
           return;
         }
+      }
+      if (cancelled) return;
+
+      const masterConnected = await api.checkConnection().catch(() => false);
+      if (cancelled) return;
+
+      if (org) {
+        // 2. Org mode: prefer stored member token, else master bypass, else login.
+        const storedToken = api.getOrgToken();
+        const storedOrg = api.getOrgId();
+        if (storedToken && storedOrg === org.id) {
+          try {
+            const me = await api.orgMe(org.id);
+            if (cancelled) return;
+            setBoot({ kind: "org-dashboard", org, session: { username: me.username, role: me.role, member_id: me.member_id } });
+            return;
+          } catch {
+            api.setOrgToken(null);
+          }
+        }
+        if (cancelled) return;
+        if (masterConnected) {
+          setBoot({ kind: "org-dashboard", org, session: null });
+          return;
+        }
+        setBoot({ kind: "org-login", org });
+        return;
+      }
+
+      // 3. No org context: legacy single-user / master flow.
+      if (masterConnected) {
+        // Auto-login attempt for legacy settings (unchanged behavior).
+        setBoot({ kind: "master-drive" });
+        return;
+      }
+      try {
         const settings = await api.getSettings().catch(() => ({ auto_login: false } as any));
         if (cancelled) return;
         if (settings.auto_login) {
           const store = await api.getStore();
-          const id = settings.telegram_api_id || (await store.get<string>('api_id').catch(() => ''));
+          const id = settings.telegram_api_id || (await store.get<string>("api_id").catch(() => ""));
           if (id) {
             const ok = await api.connect(Number(id)).catch(() => false);
-            if (ok) setIsAuthenticated(true);
+            if (cancelled) return;
+            if (ok) {
+              const connected = await api.checkConnection().catch(() => false);
+              setBoot({ kind: connected ? "master-drive" : "master-auth" });
+              return;
+            }
           }
         }
       } catch {
         // stay on auth screen
-      } finally {
-        if (!cancelled) setChecking(false);
       }
+      if (!cancelled) setBoot({ kind: "master-auth" });
     };
-    tryAutoLogin();
+    bootApp();
     return () => { cancelled = true; };
   }, []);
 
-  if (checking) {
+  if (boot.kind === "checking") {
     return (
       <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative flex items-center justify-center">
         <Toaster theme={theme} position="bottom-center" />
@@ -64,12 +152,62 @@ export function AppContent() {
   return (
     <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative">
       <Toaster theme={theme} position="bottom-center" />
-      {isAuthenticated ? (
-        <Dashboard 
-          onLogout={() => setIsAuthenticated(false)}
+      {boot.kind === "master-auth" && (
+        <AuthWizard onLogin={() => setBoot({ kind: "master-drive" })} />
+      )}
+      {boot.kind === "master-drive" && (
+        <Dashboard
+          onLogout={() => setBoot({ kind: "master-auth" })}
+          topBanner={
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
+              <button
+                onClick={() => setBoot({ kind: "master-orgs" })}
+                className="text-xs px-3 py-1.5 rounded-full bg-telegram-surface/90 backdrop-blur border border-telegram-border shadow hover:border-telegram-primary"
+                title="Manage organizations"
+              >
+                Master admin · Organizations →
+              </button>
+            </div>
+          }
         />
-      ) : (
-        <AuthWizard onLogin={() => setIsAuthenticated(true)} />
+      )}
+      {boot.kind === "master-orgs" && (
+        <MasterAdminDashboard
+          onBack={() => setBoot({ kind: "master-drive" })}
+          onOpenOrg={(org) => setBoot({ kind: "master-open-org", org })}
+        />
+      )}
+      {boot.kind === "master-open-org" && (
+        <OrgAdminDashboard
+          org={boot.org}
+          session={null}
+          onBack={() => setBoot({ kind: "master-orgs" })}
+          onLogout={() => setBoot({ kind: "master-orgs" })}
+        />
+      )}
+      {boot.kind === "org-login" && (
+        <OrgLogin
+          orgId={boot.org.id}
+          orgName={boot.org.active === false ? `${boot.org.name} (inactive — contact admin)` : boot.org.name}
+          onLogin={(session) => setBoot({ kind: "org-dashboard", org: boot.org, session })}
+        />
+      )}
+      {boot.kind === "org-dashboard" && (
+        <OrgAdminDashboard
+          org={boot.org}
+          session={boot.session}
+          onLogout={() => {
+            api.setOrgToken(null);
+            api.checkConnection().then((connected) => {
+              // Master bypass stays in dashboard via re-boot; members go to login.
+              if (boot.session === null && connected) {
+                setBoot({ kind: "org-dashboard", org: boot.org, session: null });
+              } else {
+                setBoot({ kind: "org-login", org: boot.org });
+              }
+            }).catch(() => setBoot({ kind: "org-login", org: boot.org }));
+          }}
+        />
       )}
     </main>
   );
