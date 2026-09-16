@@ -393,6 +393,9 @@ export const uploadFileWithProgress = (file: File, folder_id?: number, options?:
 
 // ---- Multi-org platform ----
 
+export const getBackendCaps = () =>
+  api<{ version: string; commit: string; org_platform?: boolean }>('GET', '/api/version');
+
 export const getCurrentOrg = (subdomain?: string) =>
   api<{ org: { id: string; name: string; subdomain: string; active?: boolean } | null; subdomain: string | null }>(
     'GET', `/api/current-org${subdomain ? `?subdomain=${encodeURIComponent(subdomain)}` : ''}`);

@@ -48,6 +48,16 @@ pub struct AppState {
     pub org_sessions: auth_org::OrgTokenStore,
 }
 
+/// `GET /api/version` — lets frontends detect backend capabilities.
+/// `org_platform: true` means all `/api/admin/*` + `/api/org/*` routes exist.
+async fn version() -> HttpResponse {
+    HttpResponse::Ok().json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "commit": std::env::var("BUILD_COMMIT").unwrap_or_else(|_| "dev".into()),
+        "org_platform": true,
+    }))
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -127,6 +137,8 @@ async fn main() -> std::io::Result<()> {
             .route("/s/{token}", web::get().to(share::public_share))
             .service(
                 web::scope("/api")
+                    .route("/health", web::get().to(keep_alive::health_check))
+                    .route("/version", web::get().to(version))
                     .route("/connect", web::post().to(auth::connect))
                     .route("/check-connection", web::get().to(auth::check_connection))
                     .route("/auth/request-code", web::post().to(auth::request_code))
@@ -220,6 +232,13 @@ async fn main() -> std::io::Result<()> {
                     .route("/org/{id}/folders/scan", web::get().to(org_files::org_scan_folders))
                     .route("/org/{id}/folders/create", web::post().to(org_files::org_create_folder))
                     .route("/org/{id}/storage/status", web::get().to(org_files::org_storage_status))
+                    // Unknown /api/* paths return JSON 404 (never index.html) so
+                    // outdated-backend skew surfaces as a readable error.
+                    .default_service(web::route().to(|| async {
+                        HttpResponse::NotFound().json(serde_json::json!({
+                            "error": "unknown api endpoint (backend may be outdated)",
+                        }))
+                    }))
             )
             .service(
                 actix_files::Files::new("/", &dist).index_file("index.html"),

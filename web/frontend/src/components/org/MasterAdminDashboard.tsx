@@ -22,9 +22,19 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [activity, setActivity] = useState<AuditEntry[]>([]);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'admin' });
+  const [provisioningId, setProvisioningId] = useState<string | null>(null);
+  const [backendStale, setBackendStale] = useState(false);
 
   const refresh = async () => {
     try {
+      // Capability probe: an outdated backend has no /api/version or no
+      // org_platform flag — provisioning cannot work until it redeploys.
+      try {
+        const caps = await api.getBackendCaps();
+        setBackendStale(!caps || caps.org_platform !== true);
+      } catch {
+        setBackendStale(true);
+      }
       const res = await api.getAdminOverview();
       setOrgs(res.orgs);
     } catch (e: any) {
@@ -68,12 +78,16 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   };
 
   const provision = async (org: OrgOverviewEntry) => {
+    setProvisioningId(org.id);
     try {
+      toast.info('Provisioning Telegram channels — this can take up to a minute…');
       const res = await api.provisionOrgStorage(org.id);
       toast.success(`Channels provisioned: ${res.main_channel_id} / ${res.backup_channel_id}`);
       await refresh();
     } catch (e: any) {
-      toast.error(`Provision failed: ${e.message}`);
+      toast.error(`Provision failed: ${e.message}`, { duration: 8000 });
+    } finally {
+      setProvisioningId(null);
     }
   };
 
@@ -144,6 +158,13 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
           </div>
         </div>
 
+        {backendStale && (
+          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/40 text-sm text-red-500">
+            Backend is outdated (no org-platform support). Redeploy the backend from the latest <span className="font-mono">main</span> and refresh —
+            creating orgs and provisioning will not work until then.
+          </div>
+        )}
+
         <form onSubmit={createOrg} className="flex flex-wrap gap-2 mb-6 p-4 bg-telegram-surface border border-telegram-border rounded-xl">
           <input
             value={name} onChange={(e) => setName(e.target.value)} placeholder="Org name (e.g. Acme Corp)"
@@ -180,8 +201,14 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {!org.provisioned && (
-                      <button onClick={() => provision(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-telegram-primary text-white" title="Create this org's Telegram channels">
-                        <Database className="w-3.5 h-3.5" /> Provision
+                      <button
+                        onClick={() => provision(org)}
+                        disabled={provisioningId === org.id}
+                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-telegram-primary text-white disabled:opacity-50"
+                        title="Create this org's Telegram channels"
+                      >
+                        <Database className="w-3.5 h-3.5" />
+                        {provisioningId === org.id ? 'Provisioning…' : 'Provision'}
                       </button>
                     )}
                     <button onClick={() => onOpenOrg(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">
