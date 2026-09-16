@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard, Star, Clock, History } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
+import { ResizeHandle } from './ResizeHandle';
+import { usePanelSize } from '../../hooks/usePanelSize';
 import { FolderMetadata, BandwidthStats, UserInfo } from '../../types';
 import { buildFolderTree, FolderNode } from '../../utils/treeUtils';
 import { getFileTypeCategory } from '../../utils';
@@ -200,6 +202,9 @@ export function Sidebar({
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
     const [rootContextMenu, setRootContextMenu] = useState<{ x: number; y: number } | null>(null);
+    // Resizable navigation width (drag right edge, double-click resets).
+    const panel = usePanelSize('td_sidebar_w', 256, 200, 480);
+    const dragStart = useRef(panel.size);
 
     const folderTree = buildFolderTree(folders);
 
@@ -229,7 +234,14 @@ export function Sidebar({
     }, [rootContextMenu]);
 
     return (
-        <aside className="w-64 bg-telegram-surface border-r border-telegram-border flex flex-col overflow-x-hidden" onClick={e => e.stopPropagation()}>
+        <aside style={{ width: panel.size }} className="relative h-full shrink-0 bg-telegram-surface border-r border-telegram-border flex flex-col overflow-x-hidden" onClick={e => e.stopPropagation()}>
+            <ResizeHandle
+                axis="x"
+                label="Sidebar width"
+                onDragStart={() => { dragStart.current = panel.size; }}
+                onDelta={(dx) => panel.setSize(dragStart.current + dx)}
+                onReset={panel.reset}
+            />
             <div className="p-4 flex items-center gap-3">
                 <div className="relative">
                     {userInfo ? (

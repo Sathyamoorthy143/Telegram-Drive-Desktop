@@ -4,11 +4,13 @@ import { HardDrive, Sun, Moon, ChevronDown,
     Clipboard, Scissors, Copy, Camera, Star, Tag, Pencil, ListTree,
     Lock, Unlock
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useLock } from '../../context/LockContext';
 import { TierBadge } from './TierBadge';
+import { ResizeHandle } from './ResizeHandle';
+import { usePanelSize } from '../../hooks/usePanelSize';
 import { ViewSettings, SortField, GroupBy } from '../../types';
 
 export interface SearchFilters { file_type: string; min_size_mb: string; max_size_mb: string; }
@@ -47,6 +49,12 @@ export function TopBar({
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();
     const [activeDropdown, setActiveDropdown] = useState<'new' | 'sort' | 'view' | null>(null);
+    // Resizable top bar height (drag bottom edge, double-click resets).
+    // Expanded mode wraps the toolbar so hidden buttons show instead of
+    // being clipped in the horizontal scroll.
+    const panel = usePanelSize('td_topbar_h', 48, 48, 132);
+    const dragStart = useRef(panel.size);
+    const expanded = panel.size > 56;
     // Anchor rect of the button that opened the menu. Menus are portalled to
     // document.body with fixed positioning because the topbar's horizontal
     // scroll container (overflow-x-auto) clips absolutely-positioned children,
@@ -94,8 +102,17 @@ export function TopBar({
     const showActions = canPaste || selectedIds.length > 0;
 
     return (
-        <header className="h-12 border-b border-telegram-border flex items-center px-4 justify-between glass-strong sticky top-0 z-30 select-none" onClick={closeMenus}>
-            <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0">
+        <header style={{ height: panel.size }} className={`relative border-b border-telegram-border flex items-center px-4 justify-between gap-2 glass-strong sticky top-0 z-30 select-none${expanded ? ' flex-wrap content-center overflow-y-auto py-1' : ''}`} onClick={closeMenus}>
+            <ResizeHandle
+                axis="y"
+                label="Top bar height"
+                onDragStart={() => { dragStart.current = panel.size; }}
+                onDelta={(_dx, dy) => panel.setSize(dragStart.current + dy)}
+                onReset={panel.reset}
+            />
+            <div className={expanded
+                ? "flex items-center gap-1 flex-wrap overflow-y-auto min-w-0 max-h-full py-1"
+                : "flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0"}>
                 {/* New Menu */}
                 <div className="shrink-0">
                     <button
