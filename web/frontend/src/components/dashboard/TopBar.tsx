@@ -342,9 +342,8 @@ export function TopBar({
                 {onToggleLock && (
                 <button
                     onClick={onToggleLock}
-                    className={`btn-interactive p-2 rounded-md transition-colors ${isLocked ? 'bg-red-500/20 text-red-400' : hasPin ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-telegram-hover/50 text-telegram-subtext hover:bg-telegram-hover'} ${!hasPin ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    className={`btn-interactive p-2 rounded-md transition-colors ${isLocked ? 'bg-red-500/20 text-red-400' : hasPin ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-telegram-hover/50 text-telegram-subtext hover:bg-telegram-hover'}`}
                     title={isLocked ? 'Unlock' : hasPin ? 'Lock Dashboard' : 'Lock not enabled - click to configure'}
-                    disabled={!hasPin}
                 >
                     {isLocked ? <Lock className="w-5 h-5" /> : hasPin ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
                 </button>

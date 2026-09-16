@@ -28,6 +28,7 @@ import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
 import { PropertiesModal } from './PropertiesModal';
 import { AllVersionsModal } from './AllVersionsModal';
+import { LockScreen } from '../LockScreen';
 
 // Simple keyboard shortcuts hook
 function useKeyboardShortcuts(handlers: {
@@ -63,44 +64,22 @@ function useKeyboardShortcuts(handlers: {
     }, [handlers]);
 }
 
-export function Dashboard({ onLogout, onToggleLock }: { onLogout: () => void; onToggleLock?: () => void }) {
+export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const queryClient = useQueryClient();
-    const { isLocked, hasPin, notificationMode, queueToast, setBusy, unlock, setPin } = useLock();
-    const [showLockScreen, setShowLockScreen] = useState(false);
+    const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const [uploadsPaused, setUploadsPaused] = useState(false);
 
-    // Initialize lock screen state
-    useEffect(() => {
-        if (isLocked && !showLockScreen) {
-            setShowLockScreen(true);
-        } else if (!isLocked && showLockScreen) {
-            setShowLockScreen(false);
-        }
-    }, [isLocked, showLockScreen]);
-
-    const toggleLock = async () => {
+    const toggleLock = () => {
         if (!hasPin) {
-            // Lock function not enabled - show confirmation to set up PIN
-            if (confirm('Lock function is not enabled. Would you like to set up a PIN now? Click OK to go to Settings, or Cancel to skip.')) {
-                // Navigate to settings to set up PIN
-                // This is a simple implementation - in a real app, you might use a router or navigation system
-                toast.info('Please go to Settings to set up a PIN for dashboard locking');
-            }
+            // No PIN yet — open Settings so the user can set one.
+            setShowSettingsModal(true);
+            toast.info('Set a 4-digit PIN in Settings to enable dashboard locking');
             return;
         }
-
-        if (isLocked) {
-            // Unlock - show PIN input screen
-            setShowLockScreen(true);
-        } else {
-            // Lock - show PIN input screen
-            setShowLockScreen(true);
+        if (!isLocked) {
+            lock();
         }
-    };
-
-    const handleUnlockComplete = async (pin: string) => {
-        setShowLockScreen(false);
-        // Unlock is handled by the LockScreen component
+        // When locked, the LockScreen overlay (rendered below) handles unlock.
     };
     const uploadsPausedRef = useRef(false);
     const uploadControllers = useRef<Map<string, AbortController>>(new Map());
@@ -1169,8 +1148,9 @@ export function Dashboard({ onLogout, onToggleLock }: { onLogout: () => void; on
                     onUpdateViewSettings={onUpdateViewSettings}
                     searchTerm={searchTerm} onSearchChange={setSearchTerm}
                     searchFilters={searchFilters} onSearchFiltersChange={setSearchFilters}
-                    onToggleLock={onToggleLock}
+                    onToggleLock={toggleLock}
                     isLocked={isLocked}
+                    hasPin={hasPin}
                 />
                 {isOffline && !isSpecial && (
                     <div className="px-4 pt-2">
@@ -1265,6 +1245,7 @@ export function Dashboard({ onLogout, onToggleLock }: { onLogout: () => void; on
 
             <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error' && i.status !== 'cancelled'))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
             <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => setDownloadQueue([])} />
+            {isLocked && <LockScreen />}
         </motion.div>
     );
 }

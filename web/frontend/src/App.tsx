@@ -18,7 +18,6 @@ export function AppContent() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const { theme } = useTheme();
-  const [showLockScreen, setShowLockScreen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +67,6 @@ export function AppContent() {
       {isAuthenticated ? (
         <Dashboard 
           onLogout={() => setIsAuthenticated(false)}
-          onToggleLock={() => setShowLockScreen(true)}
         />
       ) : (
         <AuthWizard onLogin={() => setIsAuthenticated(true)} />
