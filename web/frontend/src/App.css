@@ -3,20 +3,47 @@
 /* stylelint-disable at-rule-no-unknown */
 /* Dark Theme (Default) - Using Tailwind v4 @theme directive */
 @theme {
-  --color-telegram-bg: #0e1621;
-  --color-telegram-surface: #17212b;
-  --color-telegram-primary: #ffae00;
-  --color-telegram-secondary: #2481cc;
+  /* Core Telegram Brand Colors - Enhanced Vibrancy */
+  --color-telegram-bg: #0a1020;
+  --color-telegram-surface: #151b2a;
+  --color-telegram-surface-dark: #0f172a;
+  --color-telegram-primary: #ffbb00;
+  --color-telegram-primary-bright: #ffd700;
+  --color-telegram-secondary: #00a3ff;
+  --color-telegram-secondary-bright: #40cfff;
   --color-telegram-tertiary: #e83e8c;
   --color-telegram-success: #10b981;
+  --color-telegram-success-bright: #34d399;
   --color-telegram-warning: #f59e0b;
+  --color-telegram-warning-bright: #fbbf24;
   --color-telegram-error: #ef4444;
-  --color-telegram-text: #ffffff;
-  --color-telegram-subtext: #8e9fb3;
-  --color-telegram-muted: #4b5c6b;
-  --color-telegram-border: rgba(255, 255, 255, 0.1);
-  --color-telegram-hover: rgba(255, 255, 255, 0.05);
-  --color-telegram-active: rgba(255, 174, 0, 0.15);
+  --color-telegram-error-bright: #f87171;
+  
+  /* Text Colors */
+  --color-telegram-text: #e2e8f0;
+  --color-telegram-subtext: #94a3b8;
+  --color-telegram-muted: #64748b;
+  --color-telegram-contrast: #ffffff;
+  
+  /* Border and Interaction */
+  --color-telegram-border: rgba(255, 255, 255, 0.12);
+  --color-telegram-border-light: rgba(255, 255, 255, 0.06);
+  --color-telegram-hover: rgba(255, 255, 255, 0.08);
+  --color-telegram-active: rgba(255, 174, 0, 0.25);
+  --color-telegram-selected: rgba(59, 130, 246, 0.3);
+  
+  /* Semantic Color Mapping */
+  --color-info: #3b82f6;
+  --color-info-bright: #60a5fa;
+  --color-warning: #f59e0b;
+  --color-warning-bright: #fbbf24;
+  --color-danger: #ef4444;
+  --color-danger-bright: #f87171;
+  --color-success: #10b981;
+  --color-success-bright: #34d399;
+  --color-highlight: #ff6b6b;
+  --color-telegram-brand: #ffbb00;
+  --color-telegram-brand-secondary: #00a3ff;
 }
 
 /* Light Theme Overrides */
