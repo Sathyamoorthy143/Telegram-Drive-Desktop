@@ -58,6 +58,17 @@ pub async fn session_from_token(state: &AppState, token: &str) -> Option<OrgSess
     state.org_sessions.lock().await.get(token).cloned()
 }
 
+/// Member id safe for uuid columns: master-bypass sessions carry an empty
+/// member_id, which Postgres rejects (`22P02 invalid input syntax for type
+/// uuid: ""`) — normalize it to None so inserts store NULL instead.
+pub fn db_user_id(sess: &OrgSession) -> Option<String> {
+    if sess.member_id.trim().is_empty() {
+        None
+    } else {
+        Some(sess.member_id.clone())
+    }
+}
+
 pub async fn org_session_from_req(
     state: &web::Data<AppState>,
     req: &HttpRequest,
@@ -270,5 +281,21 @@ mod tests {
             .insert_header(("X-Org-Token", "abc123"))
             .to_http_request();
         assert_eq!(extract_org_token(&req), Some("abc123".into()));
+    }
+
+    #[test]
+    fn db_user_id_rejects_empty_master_bypass_id() {
+        // Master-bypass sessions carry member_id "" — must become None or
+        // Postgres fails with 22P02 (invalid input syntax for type uuid).
+        let master = OrgSession {
+            token: String::new(),
+            org_id: "org".into(),
+            member_id: String::new(),
+            username: "master".into(),
+            role: "owner".into(),
+        };
+        assert_eq!(db_user_id(&master), None);
+        let member = OrgSession { member_id: "some-uuid".into(), ..master };
+        assert_eq!(db_user_id(&member), Some("some-uuid".to_string()));
     }
 }

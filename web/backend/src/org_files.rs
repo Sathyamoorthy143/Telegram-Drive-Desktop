@@ -185,7 +185,7 @@ pub async fn org_soft_delete(
             Err(e) => return HttpResponse::InternalServerError().body(format!("Delete failed: {}", e)),
         }
     }
-    let uid = if sess.member_id.is_empty() { None } else { Some(sess.member_id.clone()) };
+    let uid = crate::auth_org::db_user_id(&sess);
     supabase_org::audit_best_effort(
         &org_id, uid, "file.delete", "file", &body.message_id.to_string(),
         serde_json::json!({ "name": name, "folder_id": body.folder_id }),
@@ -329,7 +329,7 @@ pub async fn org_create_folder(
     match result {
         Ok(grammers_tl_types::enums::Updates::Updates(u)) => match u.chats.into_iter().next() {
             Some(grammers_tl_types::enums::Chat::Channel(c)) => {
-                let uid = if sess.member_id.is_empty() { None } else { Some(sess.member_id.clone()) };
+                let uid = crate::auth_org::db_user_id(&sess);
                 supabase_org::audit_best_effort(
                     &org_id, uid, "folder.create", "folder", &c.id.to_string(),
                     serde_json::json!({ "name": clean }), None, None,

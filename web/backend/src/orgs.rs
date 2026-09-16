@@ -258,7 +258,7 @@ pub async fn put_org_settings_hdl(
         actor = None;
     } else {
         match require_org_role(&state, &req, &org_id, "admin").await {
-            Ok(s) => actor = Some(s.member_id.clone()),
+            Ok(s) => actor = crate::auth_org::db_user_id(&s),
             Err(e) => return e,
         }
     }
@@ -347,7 +347,7 @@ pub async fn create_member_hdl(
         actor = None;
     } else {
         match require_org_role(&state, &req, &org_id, "admin").await {
-            Ok(s) => actor = Some(s.member_id.clone()),
+            Ok(s) => actor = crate::auth_org::db_user_id(&s),
             Err(e) => return e,
         }
     }
@@ -415,10 +415,10 @@ pub async fn delete_member_hdl(
     } else {
         match require_org_role(&state, &req, &org_id, "admin").await {
             Ok(s) => {
-                if s.member_id == member_id {
+                if !s.member_id.is_empty() && s.member_id == member_id {
                     return HttpResponse::BadRequest().body("Cannot delete your own account");
                 }
-                actor = Some(s.member_id.clone());
+                actor = crate::auth_org::db_user_id(&s);
             }
             Err(e) => return e,
         }
@@ -484,7 +484,7 @@ pub async fn post_activity_hdl(
         .get(actix_web::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let user_id = if sess.member_id.is_empty() { None } else { Some(sess.member_id.clone()) };
+    let user_id = crate::auth_org::db_user_id(&sess);
     supabase_org::audit_best_effort(
         &org_id, user_id, &body.action,
         body.target_type.as_deref().unwrap_or(""),
@@ -540,7 +540,7 @@ pub async fn restore_trash_hdl(
     }
     match supabase_org::delete_org_trash_item(&org_id, body.message_id, body.folder_id).await {
         Ok(_) => {
-            let uid = if sess.member_id.is_empty() { None } else { Some(sess.member_id.clone()) };
+            let uid = crate::auth_org::db_user_id(&sess);
             supabase_org::audit_best_effort(
                 &org_id, uid, "file.restore", "file", &body.message_id.to_string(),
                 serde_json::json!({ "folder_id": body.folder_id }), None, None,
@@ -581,7 +581,7 @@ pub async fn purge_trash_hdl(
     if supabase_org::is_configured() {
         let _ = supabase_org::delete_org_trash_item(&org_id, body.message_id, body.folder_id).await;
     }
-    let uid = if sess.member_id.is_empty() { None } else { Some(sess.member_id.clone()) };
+    let uid = crate::auth_org::db_user_id(&sess);
     supabase_org::audit_best_effort(
         &org_id, uid, "file.purge", "file", &body.message_id.to_string(),
         serde_json::json!({ "folder_id": body.folder_id }), None, None,
