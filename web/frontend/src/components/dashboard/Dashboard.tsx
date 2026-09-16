@@ -63,20 +63,12 @@ function useKeyboardShortcuts(handlers: {
     }, [handlers]);
 }
 
-export function Dashboard({ onLogout }: { onLogout: () => void }) {
-    const queryClient = useQueryClient();
-    const { isLocked, hasPin, notificationMode, queueToast, setBusy, unlock, setPin } = useLock();
-    const [showLockScreen, setShowLockScreen] = useState(false);
-    const [uploadsPaused, setUploadsPaused] = useState(false);
+export interface DashboardProps {
+  onLogout: () => void;
+  onToggleLock?: () => void;
+}
 
-    // Initialize lock screen state
-    useEffect(() => {
-        if (isLocked && !showLockScreen) {
-            setShowLockScreen(true);
-        } else if (!isLocked && showLockScreen) {
-            setShowLockScreen(false);
-        }
-    }, [isLocked, showLockScreen]);
+export function Dashboard({ onLogout, onToggleLock }: DashboardProps) {
 
     const toggleLock = async () => {
         if (!hasPin) {
