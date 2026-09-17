@@ -4,7 +4,6 @@ import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw,
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
-import { withStatus, withProgress, withError, removeEntry, clearTerminal, runParallelPool } from '../../uploadQueue';
 
 function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; folderId?: number; messageId: number; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -66,7 +65,10 @@ function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; fo
   if (!url) return <span ref={boxRef} className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover animate-pulse" />;
   return <img src={url} alt={name} loading="lazy" className="w-10 h-10 shrink-0 rounded-lg object-cover border border-telegram-border" />;
 }
-import type { OrgUploadItem as UploadItem } from '../../orgUpload';
+import type { OrgUploadItem } from '../../orgUpload';
+import { useUploadEngine, type EngineStatus } from '../../hooks/useUploadEngine';
+
+type UploadItem = Omit<OrgUploadItem, 'file' | 'status'> & { status: EngineStatus };
 
 interface Props {
   org: { id: string; name: string; subdomain: string };
@@ -100,20 +102,30 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const [filesError, setFilesError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const uploadControllersRef = useRef<Map<string, AbortController>>(new Map());
-  const uploadingRef = useRef(false);
-
-  // Abort any in-flight org uploads on unmount so chunked XHR doesn't leak.
-  useEffect(() => {
-    const controllers = uploadControllersRef.current;
-    return () => {
-      controllers.forEach((c) => { try { c.abort(); } catch {} });
-      controllers.clear();
-      uploadingRef.current = false;
-    };
-  }, []);
+  const folderByItemRef = useRef<Map<string, number | undefined>>(new Map());
+  const engine = useUploadEngine<UploadItem>(
+    {
+      uploadOne: async (item, file, ctx) => {
+        const folderId = folderByItemRef.current.get(item.id);
+        if (needsChunkedUpload(file.size, api.CHUNKED_UPLOAD_THRESHOLD)) {
+          await api.uploadOrgFileChunked(org.id, file, folderId, {
+            signal: ctx.signal,
+            onProgress: (done, total) => ctx.onProgress(done, total),
+          });
+        } else {
+          await api.uploadOrgFile(org.id, file, folderId, { signal: ctx.signal });
+        }
+      },
+      notifySuccess: (name) => toast.success(`Uploaded "${name}"`),
+      notifyError: (name, message) => toast.error(`Upload failed: ${name || message}`),
+      notifyInfo: (msg) => toast.info(msg),
+    },
+    { maxParallel: 3, autoClearSuccessMs: 0 },
+  );
+  const uploadQueue = engine.queue;
+  const uploading = uploadQueue.some((x) =>
+    x.status === 'staged' || x.status === 'pending' || x.status === 'uploading' || x.status === 'paused',
+  );
 
   const loadFiles = async (folderId?: number) => {
     setFilesLoading(true);
@@ -277,55 +289,58 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList) return;
-    const newItems: UploadItem[] = Array.from(fileList).map(f => ({
-      id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      file: f,
-      name: f.name,
-      dirs: [],
-      size: f.size,
-      progress: 0,
-      status: 'staged',
-    }));
-    setUploadQueue(prev => [...prev, ...newItems]);
+    engine.stage(
+      Array.from(fileList).map((f) => ({
+        file: f,
+        meta: { name: f.name, dirs: [] as string[], size: f.size },
+      })),
+    );
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList) return;
-    const newItems: UploadItem[] = Array.from(fileList).map(f => {
-      const rel = (f as any).webkitRelativePath || f.name;
-      return {
-        id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        file: f,
-        name: rel,
-        dirs: splitRelativePath(rel).dirs,
-        size: f.size,
-        progress: 0,
-        status: 'staged',
-      };
-    });
-    setUploadQueue(prev => [...prev, ...newItems]);
+    engine.stage(
+      Array.from(fileList).map((f) => {
+        const rel = (f as any).webkitRelativePath || f.name;
+        return {
+          file: f,
+          meta: { name: rel, dirs: splitRelativePath(rel).dirs, size: f.size },
+        };
+      }),
+    );
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   const removeUploadItem = (id: string) => {
-    const ctrl = uploadControllersRef.current.get(id);
-    if (ctrl) ctrl.abort();
-    uploadControllersRef.current.delete(id);
-    setUploadQueue(prev => removeEntry(prev, id));
+    engine.removeItem(id);
   };
 
   const clearFinishedUploads = () => {
-    setUploadQueue(prev => clearTerminal(prev, ['success']));
+    engine.clearFinished();
   };
 
+  // Refresh the file list once a run fully settles (engine is fire-and-forget).
+  const settledRef = useRef(false);
+  useEffect(() => {
+    const busy = uploadQueue.some(
+      (x) => x.status === 'staged' || x.status === 'pending' || x.status === 'uploading' || x.status === 'paused',
+    );
+    if (uploadQueue.length > 0 && !busy) {
+      if (!settledRef.current) {
+        settledRef.current = true;
+        loadFiles(activeFolderId);
+      }
+    } else {
+      settledRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadQueue]);
+
   const runUploads = async () => {
-    if (uploadingRef.current) return;
     const pending = stagedUploads(uploadQueue);
     if (pending.length === 0) return;
-    uploadingRef.current = true;
-    setUploading(true);
     // Folder lookup for recreating folder-upload structure server-side.
     const folderIndex = new Map<string, number>();
     try {
@@ -334,8 +349,6 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     } catch {}
     const createdDirs = new Map<string, number>();
     const dirBase = activeFolderId ?? 0;
-    // Max simultaneous file uploads; chunked transfers already parallelize internally.
-    const UPLOAD_CONCURRENCY = 3;
     const resolveUploadFolder = async (dirs: string[]): Promise<number | undefined> => {
       if (dirs.length === 0) return activeFolderId;
       let parent: number | undefined = activeFolderId;
@@ -370,45 +383,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
       return parent;
     };
     // Resolve target folders sequentially first so parallel workers never
-    // race creating the same directory twice.
-    const folderByItem = new Map<string, number | undefined>();
+    // race creating the same directory twice. The engine reads them back
+    // per item inside its upload adapter.
+    folderByItemRef.current = new Map<string, number | undefined>();
     for (const item of pending) {
-      folderByItem.set(item.id, await resolveUploadFolder(item.dirs));
+      folderByItemRef.current.set(item.id, await resolveUploadFolder(item.dirs));
     }
-    // Bounded worker pool over the shared runner: each worker pulls the
-    // next pending item until drained.
-    await runParallelPool(pending, UPLOAD_CONCURRENCY, async (item) => {
-      const ctrl = new AbortController();
-      uploadControllersRef.current.set(item.id, ctrl);
-      try {
-        setUploadQueue(prev => withStatus(prev, item.id, 'uploading'));
-        if (needsChunkedUpload(item.file.size, api.CHUNKED_UPLOAD_THRESHOLD)) {
-          await api.uploadOrgFileChunked(org.id, item.file, folderByItem.get(item.id), {
-            signal: ctrl.signal,
-            onProgress: (done, total) => {
-              setUploadQueue(prev => withProgress(prev, item.id, Math.round((done / total) * 100)));
-            },
-          });
-        } else {
-          await api.uploadOrgFile(org.id, item.file, folderByItem.get(item.id), { signal: ctrl.signal });
-        }
-        setUploadQueue(prev => withStatus(prev, item.id, 'success', { progress: 100 }));
-        toast.success(`Uploaded "${item.name}"`);
-      } catch (e: any) {
-        if (e?.name === 'AbortError') {
-          setUploadQueue(prev => withStatus(prev, item.id, 'cancelled'));
-        } else {
-          setUploadQueue(prev => withError(prev, item.id, e.message));
-          toast.error(`Upload failed: ${item.name}`);
-        }
-      } finally {
-        uploadControllersRef.current.delete(item.id);
-      }
-    });
-    try { await loadFiles(activeFolderId); } finally {
-      uploadingRef.current = false;
-      setUploading(false);
-    }
+    engine.start();
   };
 
   const restoreItem = async (message_id: number, folder_id?: number) => {

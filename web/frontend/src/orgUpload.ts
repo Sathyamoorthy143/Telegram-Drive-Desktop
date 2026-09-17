@@ -23,7 +23,7 @@ export function splitRelativePath(relativePath: string): { dirs: string[]; fileN
 }
 
 /** Items still waiting to be uploaded (the re-entrancy guard relies on this being empty). */
-export function stagedUploads(queue: OrgUploadItem[]): OrgUploadItem[] {
+export function stagedUploads<T extends { id: string; status: string; progress: number }>(queue: T[]): T[] {
   return waitingEntries(queue, ['staged']);
 }
 

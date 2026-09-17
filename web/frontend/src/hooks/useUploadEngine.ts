@@ -52,7 +52,9 @@ export interface EngineApi<T extends EngineItem> {
   pausedAll: boolean;
   maxParallel: number;
   setMaxParallel: (n: number) => void;
-  stage: (entries: Array<{ file: File; meta: Omit<T, 'id' | 'file'> & { name: string } }>) => string[];
+  stage: (
+    entries: Array<{ file: File; meta: Omit<T, 'id' | 'file' | 'status' | 'progress' | 'error'> & { name: string } }>,
+  ) => string[];
   start: (onlyIds?: string[]) => void;
   pauseAll: () => void;
   resumeAll: () => void;
@@ -245,7 +247,9 @@ export function useUploadEngine<T extends EngineItem>(
       runOne(file, item.id).finally(() => {
         startingIds.current.delete(item.id);
         adaptersRef.current.onItemDone?.();
-        setTimeout(() => setQueue((q) => clearTerminal(q, ['success'])), autoClearMs);
+        if (autoClearMs > 0) {
+          setTimeout(() => setQueue((q) => clearTerminal(q, ['success'])), autoClearMs);
+        }
         bump();
       });
     });
@@ -263,7 +267,13 @@ export function useUploadEngine<T extends EngineItem>(
     };
   }, []);
 
-  const stage = useCallback((entries: Array<{ file: File; meta: Omit<T, 'id' | 'file'> & { name: string } }>) => {
+  const stage = useCallback(
+    (
+      entries: Array<{
+        file: File;
+        meta: Omit<T, 'id' | 'file' | 'status' | 'progress' | 'error'> & { name: string };
+      }>,
+    ) => {
     if (entries.length === 0) return [] as string[];
     const ids = entries.map(() => newQid());
     entries.forEach((e, i) => filesRef.current.set(ids[i], e.file));
@@ -274,7 +284,9 @@ export function useUploadEngine<T extends EngineItem>(
       ),
     ]);
     return ids;
-  }, []);
+  },
+  [],
+  );
 
   const start = useCallback(
     (onlyIds?: string[]) => {
