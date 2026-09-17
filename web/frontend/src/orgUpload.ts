@@ -1,4 +1,5 @@
 // Pure org upload-queue helpers (no React/DOM — unit-tested in orgUpload.test.ts).
+import { waitingEntries } from './uploadQueue';
 
 export type OrgUploadStatus = 'staged' | 'uploading' | 'success' | 'error' | 'cancelled';
 
@@ -23,7 +24,7 @@ export function splitRelativePath(relativePath: string): { dirs: string[]; fileN
 
 /** Items still waiting to be uploaded (the re-entrancy guard relies on this being empty). */
 export function stagedUploads(queue: OrgUploadItem[]): OrgUploadItem[] {
-  return queue.filter((x) => x.status === 'staged');
+  return waitingEntries(queue, ['staged']);
 }
 
 /** Large files go through the resumable chunked endpoint; small ones via single POST. */

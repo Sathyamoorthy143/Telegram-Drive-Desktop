@@ -4,7 +4,7 @@ import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw,
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
-import { withStatus, withProgress, withError, removeEntry, clearTerminal } from '../../uploadQueue';
+import { withStatus, withProgress, withError, removeEntry, clearTerminal, runParallelPool } from '../../uploadQueue';
 
 function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; folderId?: number; messageId: number; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -375,16 +375,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     for (const item of pending) {
       folderByItem.set(item.id, await resolveUploadFolder(item.dirs));
     }
-    // Bounded worker pool: each worker pulls the next pending item until drained.
-    let next = 0;
-    const worker = async () => {
-      while (next < pending.length) {
-        const item = pending[next++];
-        if (!item) return;
-        const ctrl = new AbortController();
-        uploadControllersRef.current.set(item.id, ctrl);
-        try {
-          setUploadQueue(prev => withStatus(prev, item.id, 'uploading'));
+    // Bounded worker pool over the shared runner: each worker pulls the
+    // next pending item until drained.
+    await runParallelPool(pending, UPLOAD_CONCURRENCY, async (item) => {
+      const ctrl = new AbortController();
+      uploadControllersRef.current.set(item.id, ctrl);
+      try {
+        setUploadQueue(prev => withStatus(prev, item.id, 'uploading'));
         if (needsChunkedUpload(item.file.size, api.CHUNKED_UPLOAD_THRESHOLD)) {
           await api.uploadOrgFileChunked(org.id, item.file, folderByItem.get(item.id), {
             signal: ctrl.signal,
@@ -395,22 +392,19 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
         } else {
           await api.uploadOrgFile(org.id, item.file, folderByItem.get(item.id), { signal: ctrl.signal });
         }
-          setUploadQueue(prev => withStatus(prev, item.id, 'success', { progress: 100 }));
-          toast.success(`Uploaded "${item.name}"`);
-        } catch (e: any) {
-          if (e?.name === 'AbortError') {
-            setUploadQueue(prev => withStatus(prev, item.id, 'cancelled'));
-          } else {
-            setUploadQueue(prev => withError(prev, item.id, e.message));
-            toast.error(`Upload failed: ${item.name}`);
-          }
+        setUploadQueue(prev => withStatus(prev, item.id, 'success', { progress: 100 }));
+        toast.success(`Uploaded "${item.name}"`);
+      } catch (e: any) {
+        if (e?.name === 'AbortError') {
+          setUploadQueue(prev => withStatus(prev, item.id, 'cancelled'));
+        } else {
+          setUploadQueue(prev => withError(prev, item.id, e.message));
+          toast.error(`Upload failed: ${item.name}`);
         }
+      } finally {
         uploadControllersRef.current.delete(item.id);
       }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(UPLOAD_CONCURRENCY, pending.length) }, () => worker()),
-    );
+    });
     try { await loadFiles(activeFolderId); } finally {
       uploadingRef.current = false;
       setUploading(false);

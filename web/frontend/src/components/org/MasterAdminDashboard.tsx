@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowLeft, Building2, Plus, Trash2, Power, Database, Users, Activity, FolderOpen, Bell } from 'lucide-react';
 import * as api from '../../api';
+import { runParallelPool } from '../../uploadQueue';
 import type { OrgOverviewEntry, OrgMember, AuditEntry } from '../../types';
 
 interface OrgAlertRow extends AuditEntry {
@@ -70,19 +71,23 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
     setShowAlerts(true);
     setAlertsLoading(true);
     try {
-      const settled = await Promise.allSettled(
-        orgs.map(async (org) => ({
-          orgName: org.name,
-          entries: await api.getOrgAlerts(org.id, true),
-        })),
-      );
+      // Bounded fan-out over the shared pool runner: per-org failures are
+      // skipped individually, and large fleets can't stampede the backend.
       const merged: OrgAlertRow[] = [];
-      for (const r of settled) {
-        if (r.status !== 'fulfilled') continue;
-        for (const a of r.value.entries) merged.push({ ...a, orgName: r.value.orgName });
-      }
+      let failedOrgs = 0;
+      await runParallelPool(orgs, 4, async (org) => {
+        try {
+          const entries = await api.getOrgAlerts(org.id, true);
+          for (const a of entries) merged.push({ ...a, orgName: org.name });
+        } catch {
+          failedOrgs += 1;
+        }
+      });
       merged.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
       setAlerts(merged.slice(0, 30));
+      if (failedOrgs > 0) {
+        toast.warning(`Skipped alerts for ${failedOrgs} org${failedOrgs > 1 ? 's' : ''} (request failed)`);
+      }
     } catch (e: any) {
       toast.error(`Failed to load alerts: ${e.message}`);
     } finally {

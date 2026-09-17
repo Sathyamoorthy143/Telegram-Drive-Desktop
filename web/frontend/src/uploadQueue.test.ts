@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   withStatus, withProgress, withError, removeEntry, clearTerminal, waitingEntries,
-  type QueueEntry,
+  runParallelPool, type QueueEntry,
 } from './uploadQueue';
 
 const entry = (id: string, status = 'staged', progress = 0): QueueEntry => ({ id, status, progress });
@@ -20,6 +20,22 @@ describe('upload queue primitives', () => {
     expect(withProgress(q, 'a', 42)[0].progress).toBe(42);
     const failed = withError(q, 'a', 'boom');
     expect(failed[0]).toMatchObject({ status: 'error', error: 'boom' });
+  });
+
+  it('drains every item exactly once across workers', async () => {
+    const seen: number[] = [];
+    await runParallelPool([1, 2, 3, 4, 5], 2, async (n) => {
+      await new Promise((r) => setTimeout(r, 5));
+      seen.push(n);
+    });
+    expect([...seen].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('tolerates an empty list and oversized concurrency', async () => {
+    let calls = 0;
+    await runParallelPool([], 4, async () => { calls += 1; });
+    await runParallelPool([1], 8, async () => { calls += 1; });
+    expect(calls).toBe(1);
   });
 
   it('removes and clears by status', () => {

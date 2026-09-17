@@ -46,3 +46,26 @@ export function clearTerminal<T extends QueueEntry>(
 export function waitingEntries<T extends QueueEntry>(queue: T[], waiting: ReadonlyArray<T['status']>): T[] {
   return queue.filter((x) => waiting.includes(x.status));
 }
+
+/**
+ * Bounded worker pool: `concurrency` workers pull items until drained.
+ * Shared by the org upload runner and the master alerts fan-out so neither
+ * stamps N parallel requests at once. Workers run sequentially in tests.
+ */
+export async function runParallelPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  const limit = Math.max(1, Math.min(concurrency, items.length || 1));
+  let next = 0;
+  const runOne = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      const item = items[index];
+      if (item === undefined) return;
+      await worker(item, index);
+    }
+  };
+  await Promise.all(Array.from({ length: limit }, () => runOne()));
+}
