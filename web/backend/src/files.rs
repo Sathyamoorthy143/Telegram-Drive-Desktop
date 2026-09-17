@@ -98,72 +98,18 @@ pub async fn download_file(
 ) -> impl Responder {
     let (fid, mid) = path.into_inner();
     let fid_opt = if fid == 0 { None } else { Some(fid) };
-    let client = match get_client(&state).await {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().body(e),
-    };
-    let peer = match resolve_peer_ref(&client, fid_opt.or(crate::storage::main_id(&state)), &state.peer_cache).await {
-        Ok(p) => p,
-        Err(e) => return HttpResponse::InternalServerError().body(e),
-    };
-    let msgs = match client.get_messages_by_id(peer, &[mid]).await {
-        Ok(m) => m,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    let msg = match msgs.into_iter().flatten().next() {
-        Some(m) => m,
-        None => return HttpResponse::NotFound().body("Not found"),
-    };
-    let media = match msg.media() {
-        Some(m) => m,
-        None => return HttpResponse::NotFound().body("No media"),
-    };
-    let size = match &media {
-        Media::Document(d) => d.size().unwrap_or(0) as u64,
-        _ => 0,
-    };
-    let mime = match &media {
-        Media::Document(d) => d
-            .mime_type()
-            .unwrap_or("application/octet-stream")
-            .to_string(),
-        _ => "application/octet-stream".to_string(),
-    };
-    let etag = format!("\"{}-{}\"", fid, mid);
-    let permit = match state.download_slots.clone().acquire_owned().await {
-        Ok(s) => s,
-        Err(_) => return HttpResponse::InternalServerError().body("download limiter shut down"),
-    };
     let workers = crate::fast_transfer::worker_count_for(crate::tier::premium_cached(&state).await);
-    match crate::fast_transfer::range_decision(&req, &etag, size) {
-        crate::fast_transfer::RangeDecision::NotModified => HttpResponse::NotModified().finish(),
-        crate::fast_transfer::RangeDecision::Unsatisfiable => HttpResponse::build(actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE)
-            .insert_header(("Content-Range", format!("bytes */{}", size)))
-            .finish(),
-        crate::fast_transfer::RangeDecision::Full => {
-            let stream = crate::fast_transfer::download_stream(&client, media, workers);
-            let stream = crate::fast_transfer::hold_permit(stream, permit);
-            HttpResponse::Ok()
-                .content_type(mime)
-                .insert_header(("Content-Length", size.to_string()))
-                .insert_header(("Accept-Ranges", "bytes"))
-                .insert_header(("ETag", etag))
-                .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-                .streaming(stream)
-        }
-        crate::fast_transfer::RangeDecision::Partial(s, e) => {
-            let stream = crate::fast_transfer::download_range_stream(&client, media, Some((s, e)), workers);
-            let stream = crate::fast_transfer::hold_permit(stream, permit);
-            HttpResponse::PartialContent()
-                .content_type(mime)
-                .insert_header(("Content-Length", (e - s + 1).to_string()))
-                .insert_header(("Content-Range", format!("bytes {}-{}/{}", s, e, size)))
-                .insert_header(("Accept-Ranges", "bytes"))
-                .insert_header(("ETag", etag))
-                .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-                .streaming(stream)
-        }
-    }
+    crate::serve_media::serve_media(
+        &state,
+        &req,
+        fid_opt,
+        crate::storage::main_id(&state),
+        mid,
+        workers,
+        None,
+        "public, max-age=31536000, immutable",
+    )
+    .await
 }
 
 async fn forward_and_delete(
@@ -172,10 +118,20 @@ async fn forward_and_delete(
     tgt: grammers_session::types::PeerRef,
     message_ids: &[i32],
 ) -> Result<(), String> {
-    client
+    // Verify-then-delete: only remove the source messages once every
+    // requested message has verifiably landed in the target. A partial
+    // forward must never delete, or files end up in neither folder.
+    let forwarded = client
         .forward_messages(tgt, message_ids, src)
         .await
         .map_err(|e| format!("Forward failed: {}", e))?;
+    if forwarded.len() != message_ids.len() {
+        return Err(format!(
+            "Partial forward: {} of {} messages landed — source untouched",
+            forwarded.len(),
+            message_ids.len()
+        ));
+    }
     client
         .delete_messages(src, message_ids)
         .await

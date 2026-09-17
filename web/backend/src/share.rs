@@ -178,21 +178,28 @@ pub async fn public_share(
             let mid = row.get("message_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let fid = row.get("folder_id").and_then(|v| v.as_i64());
             let name = row.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
-            // increment views async (best effort)
-            let token_clone = token.clone();
-            let url_clone = std::env::var("SUPABASE_URL").ok();
-            let key_clone = std::env::var("SUPABASE_SERVICE_KEY").ok().or_else(|| std::env::var("SUPABASE_ANON_KEY").ok());
-            if let (Some(u), Some(k)) = (url_clone, key_clone) {
-                tokio::spawn(async move {
-                    let c = reqwest::Client::new();
-                    let _ = c.post(format!("{}/rest/v1/rpc/increment_share_views", u))
-                        .header("apikey", &k).header("Authorization", format!("Bearer {}", k))
-                        .json(&serde_json::json!({"p_token": token_clone})).send().await;
-                });
-            }
             (mid, fid, name)
         }
     };
+    // View counting applies to both token flavors (best effort): the row is
+    // created at share time in both cases, so the RPC is a harmless no-op
+    // when the table or row is missing.
+    {
+        let token_clone = token.clone();
+        if let (Some(u), Some(k)) = (
+            std::env::var("SUPABASE_URL").ok(),
+            std::env::var("SUPABASE_SERVICE_KEY")
+                .ok()
+                .or_else(|| std::env::var("SUPABASE_ANON_KEY").ok()),
+        ) {
+            tokio::spawn(async move {
+                let c = reqwest::Client::new();
+                let _ = c.post(format!("{}/rest/v1/rpc/increment_share_views", u))
+                    .header("apikey", &k).header("Authorization", format!("Bearer {}", k))
+                    .json(&serde_json::json!({"p_token": token_clone})).send().await;
+            });
+        }
+    }
     // stream file via Telegram
     let client = match crate::auth::get_client(&state).await {
         Ok(c) => c,
@@ -214,44 +221,35 @@ pub async fn public_share(
         Some(m) => m,
         None => return HttpResponse::NotFound().body("No media"),
     };
-    let mime = match &media {
-        grammers_client::media::Media::Document(d) => d.mime_type().unwrap_or("application/octet-stream").to_string(),
-        _ => "application/octet-stream".to_string(),
+    // Prefer the stored link name, else the Telegram document name (keeps the
+    // real extension for inline preview), else "file". Sanitize for the header.
+    let doc_name = match &media {
+        grammers_client::media::Media::Document(d) => d.name(),
+        _ => None,
     };
-    let size = match &media {
-        grammers_client::media::Media::Document(d) => d.size().unwrap_or(0) as u64,
-        _ => 0,
+    let raw = name.as_deref().or(doc_name).unwrap_or("file");
+    let safe: String = raw
+        .chars()
+        .filter(|c| !c.is_control() && *c != '"' && *c != '\\')
+        .collect();
+    let safe = if safe.trim().is_empty() {
+        "file".to_string()
+    } else {
+        safe
     };
-    let disp = format!("inline; filename=\"{}\"", name.as_deref().unwrap_or("file"));
-    let etag = format!("\"share-{}-{}\"", token, mid);
+    let disp = format!("inline; filename=\"{}\"", safe);
     let workers = crate::fast_transfer::worker_count_for(crate::tier::premium_cached(&state).await);
-    match crate::fast_transfer::range_decision(&req, &etag, size) {
-        crate::fast_transfer::RangeDecision::NotModified => HttpResponse::NotModified().finish(),
-        crate::fast_transfer::RangeDecision::Unsatisfiable => HttpResponse::build(actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE)
-            .insert_header(("Content-Range", format!("bytes */{}", size)))
-            .finish(),
-        crate::fast_transfer::RangeDecision::Full => {
-            let stream = crate::fast_transfer::download_stream(&client, media, workers);
-            HttpResponse::Ok().content_type(mime)
-                .insert_header(("Content-Disposition", disp))
-                .insert_header(("Content-Length", size.to_string()))
-                .insert_header(("Accept-Ranges", "bytes"))
-                .insert_header(("ETag", etag))
-                .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-                .streaming(stream)
-        }
-        crate::fast_transfer::RangeDecision::Partial(s, e) => {
-            let stream = crate::fast_transfer::download_range_stream(&client, media, Some((s, e)), workers);
-            HttpResponse::PartialContent().content_type(mime)
-                .insert_header(("Content-Disposition", disp))
-                .insert_header(("Content-Length", (e - s + 1).to_string()))
-                .insert_header(("Content-Range", format!("bytes {}-{}/{}", s, e, size)))
-                .insert_header(("Accept-Ranges", "bytes"))
-                .insert_header(("ETag", etag))
-                .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-                .streaming(stream)
-        }
-    }
+    crate::serve_media::serve_media(
+        &state,
+        &req,
+        fid,
+        crate::storage::main_id(&state),
+        mid,
+        workers,
+        Some(disp),
+        "public, max-age=31536000, immutable",
+    )
+    .await
 }
 
 

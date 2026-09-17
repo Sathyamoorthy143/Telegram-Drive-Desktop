@@ -127,10 +127,16 @@ function requireNoOrgContext(feature: string): void {
   }
 }
 
-export const downloadFile = async (folder_id: number, message_id: number): Promise<Blob> => {
+export const downloadFile = async (
+  folder_id: number,
+  message_id: number,
+  options?: { signal?: AbortSignal },
+): Promise<Blob> => {
   const orgId = getOrgContext();
-  if (orgId) return downloadOrgFileBlob(orgId, folder_id, message_id);
-  const res = await fetch(`${API_BASE}/api/files/${folder_id}/${message_id}/download`);
+  if (orgId) return downloadOrgFileBlob(orgId, folder_id, message_id, options);
+  const res = await fetch(`${API_BASE}/api/files/${folder_id}/${message_id}/download`, {
+    signal: options?.signal,
+  });
   if (!res.ok) throw new Error('Download failed');
   return res.blob();
 };
@@ -692,11 +698,17 @@ export const getOrgStorageStatus = (orgId: string) =>
   api<{ provisioned: boolean; main_channel_id?: number; backup_channel_id?: number }>(
     'GET', `/api/org/${orgId}/storage/status`);
 
-export const downloadOrgFileBlob = async (orgId: string, folder_id: number | undefined, message_id: number): Promise<Blob> => {
+export const downloadOrgFileBlob = async (
+  orgId: string,
+  folder_id: number | undefined,
+  message_id: number,
+  options?: { signal?: AbortSignal },
+): Promise<Blob> => {
   const fid = folder_id ?? 0;
   const orgToken = getOrgToken();
   const res = await fetch(`${API_BASE}/api/org/${orgId}/files/${fid}/${message_id}/download`, {
     headers: orgToken ? { 'X-Org-Token': orgToken } : {},
+    signal: options?.signal,
   });
   if (!res.ok) throw new Error(`Preview failed: ${res.status}`);
   return res.blob();

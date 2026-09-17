@@ -12,6 +12,7 @@ mod models;
 mod org_files;
 mod orgs;
 mod preview;
+mod serve_media;
 mod settings;
 mod share;
 mod streaming;

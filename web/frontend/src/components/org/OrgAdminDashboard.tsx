@@ -33,16 +33,21 @@ function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; fo
   }, []);
   useEffect(() => {
     if (!visible) return;
+    const ctrl = new AbortController();
     let cancelled = false;
     let objectUrl: string | null = null;
     setFailed(false);
-    api.downloadOrgFileBlob(orgId, folderId, messageId).then((blob) => {
+    api.downloadOrgFileBlob(orgId, folderId, messageId, { signal: ctrl.signal }).then((blob) => {
       if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
       setUrl(objectUrl);
-    }).catch(() => { if (!cancelled) setFailed(true); });
+    }).catch((e: any) => {
+      if (cancelled || e?.name === 'AbortError') return;
+      setFailed(true);
+    });
     return () => {
       cancelled = true;
+      ctrl.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [orgId, folderId, messageId, visible, attempt]);

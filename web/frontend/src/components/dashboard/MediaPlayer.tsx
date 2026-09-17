@@ -16,12 +16,17 @@ interface MediaPlayerProps {
 
 export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, totalItems, activeFolderId }: MediaPlayerProps) {
     const [streamToken, setStreamToken] = useState<string | null>(null);
+    const [streamError, setStreamError] = useState(false);
 
     useEffect(() => {
         api.getStreamInfo().then(r => setStreamToken(r.token)).catch(() => {});
     }, []);
 
-    const streamUrl = api.getStreamUrl(activeFolderId ?? 'home', file.id);
+    useEffect(() => {
+        setStreamError(false);
+    }, [file.id]);
+
+    const streamUrl = api.getStreamUrl(activeFolderId ?? 'home', file.id, streamToken ?? undefined);
 
     const isVideo = isVideoFile(file.name);
     const isAudio = isAudioFile(file.name);
@@ -89,11 +94,18 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
                             <div className="w-10 h-10 border-4 border-telegram-primary border-t-transparent rounded-full animate-spin"></div>
                             <p>Preparing stream...</p>
                         </div>
+                    ) : streamError ? (
+                        <div className="flex flex-col items-center gap-2 text-white px-6 text-center">
+                            <p className="font-medium">Could not play this file</p>
+                            <p className="text-sm text-white/50">The stream failed to load. Try downloading it instead.</p>
+                        </div>
                     ) : isVideo ? (
                         <video
+                            key={file.id}
                             src={streamUrl}
                             controls
                             autoPlay
+                            onError={() => setStreamError(true)}
                             className="w-full h-full object-contain"
                         />
                     ) : isAudio ? (
@@ -101,7 +113,7 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
                             <div className="w-32 h-32 rounded-full bg-telegram-surface flex items-center justify-center mb-8 shadow-xl animate-pulse-slow">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 text-telegram-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                             </div>
-                            <audio src={streamUrl} controls autoPlay className="w-full max-w-md" />
+                            <audio key={file.id} src={streamUrl} controls autoPlay onError={() => setStreamError(true)} className="w-full max-w-md" />
                         </div>
                     ) : (
                         <div className="text-white">Unsupported media type</div>

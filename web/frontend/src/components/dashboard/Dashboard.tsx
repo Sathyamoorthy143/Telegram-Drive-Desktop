@@ -361,21 +361,54 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         toast.success(`Deleted ${selectedIds.length} items`);
     }, [selectedIds, activeFolderId, displayedFiles, queryClient]);
 
+    const downloadControllers = useRef<Map<number, AbortController>>(new Map());
+
+    const handleCancelAllDownloads = useCallback(() => {
+        downloadControllers.current.forEach(c => { try { c.abort(); } catch {} });
+        downloadControllers.current.clear();
+    }, []);
+
     const handleBulkDownload = useCallback(async () => {
         for (const id of selectedIds) {
             const file = displayedFiles.find(f => f.id === id);
             if (!file) continue;
+            const ctrl = new AbortController();
+            downloadControllers.current.set(id, ctrl);
+            setDownloadQueue(q => [...q.filter(x => x.id !== id), { id, name: file.name, status: 'downloading' as const }]);
             try {
-                const blob = await api.downloadFile(activeFolderId ?? 0, id);
+                const blob = await api.downloadFile(activeFolderId ?? 0, id, { signal: ctrl.signal });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url; a.download = file.name; a.click();
-                URL.revokeObjectURL(url);
+                a.href = url; a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                // Deferred revoke: revoking synchronously can truncate the
+                // save in some browsers.
+                window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+                setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'success' as const, progress: 100 } : x));
                 api.touchRecent(file.id, file.folder_id ?? activeFolderId ?? undefined, file.name, file.size).catch(()=>{});
                 api.logActivity('download', `folder:${file.folder_id ?? activeFolderId ?? 'root'}`, file.name).catch(()=>{});
-            } catch { toast.error(`Failed: ${file.name}`); }
+            } catch (e: any) {
+                if (ctrl.signal.aborted || e?.name === 'AbortError') {
+                    setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'cancelled' as const } : x));
+                } else {
+                    setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'error' as const, error: e?.message || 'Download failed' } : x));
+                    toast.error(`Failed: ${file.name}`);
+                }
+            } finally {
+                downloadControllers.current.delete(id);
+            }
         }
     }, [selectedIds, displayedFiles, activeFolderId]);
+
+    useEffect(() => {
+        const controllers = downloadControllers.current;
+        return () => {
+            controllers.forEach(c => { try { c.abort(); } catch {} });
+            controllers.clear();
+        };
+    }, []);
 
     const [tagFile, setTagFile] = useState<any | null>(null);
     const [versionsFile, setVersionsFile] = useState<any | null>(null);
@@ -1285,7 +1318,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
             )}
 
             <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error' && i.status !== 'cancelled'))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
-            <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => setDownloadQueue([])} />
+            <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => { handleCancelAllDownloads(); setDownloadQueue(q => q.map((i: any) => (i.status === 'downloading' || i.status === 'pending') ? { ...i, status: 'cancelled' as const } : i)); }} />
             {isLocked && <LockScreen />}
         </motion.div>
     );

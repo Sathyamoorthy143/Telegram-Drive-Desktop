@@ -148,74 +148,20 @@ pub async fn org_download_file(
         Err(e) => return e,
     };
     let fid_opt = if fid == 0 { None } else { Some(fid) };
-    let client = match get_client(&state).await {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().body(e),
-    };
-    let peer = match resolve_peer_ref(&client, fid_opt.or(Some(org_main)), &state.peer_cache).await {
-        Ok(p) => p,
-        Err(e) => return HttpResponse::InternalServerError().body(e),
-    };
-    let msgs = match client.get_messages_by_id(peer, &[mid]).await {
-        Ok(m) => m,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    let msg = match msgs.into_iter().flatten().next() {
-        Some(m) => m,
-        None => return HttpResponse::NotFound().body("Not found"),
-    };
-    let media = match msg.media() {
-        Some(m) => m,
-        None => return HttpResponse::NotFound().body("No media"),
-    };
-    let size = match &media {
-        Media::Document(d) => d.size().unwrap_or(0) as u64,
-        _ => 0,
-    };
-    let mime = match &media {
-        Media::Document(d) => d
-            .mime_type()
-            .unwrap_or("application/octet-stream")
-            .to_string(),
-        _ => "application/octet-stream".to_string(),
-    };
-    let etag = format!("\"{}-{}-{}\"", org_id, fid, mid);
     // Previews/thumbnails don't need bulk throughput: a small fixed worker
     // count plus the global download semaphore keeps a page of thumbnails
     // from stampeding the shared connection (flood → `dropped (cancelled)`).
-    let permit = match state.download_slots.clone().acquire_owned().await {
-        Ok(s) => s,
-        Err(_) => return HttpResponse::InternalServerError().body("download limiter shut down"),
-    };
-    let workers = 4usize;
-    match crate::fast_transfer::range_decision(&req, &etag, size) {
-        crate::fast_transfer::RangeDecision::NotModified => HttpResponse::NotModified().finish(),
-        crate::fast_transfer::RangeDecision::Unsatisfiable => HttpResponse::build(actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE)
-            .insert_header(("Content-Range", format!("bytes */{}", size)))
-            .finish(),
-        crate::fast_transfer::RangeDecision::Full => {
-            let stream = crate::fast_transfer::download_stream(&client, media, workers);
-            let stream = crate::fast_transfer::hold_permit(stream, permit);
-            HttpResponse::Ok()
-                .content_type(mime)
-                .insert_header(("Content-Length", size.to_string()))
-                .insert_header(("Accept-Ranges", "bytes"))
-                .insert_header(("ETag", etag))
-                .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-                .streaming(stream)
-        }
-        crate::fast_transfer::RangeDecision::Partial(s, e) => {
-            let stream = crate::fast_transfer::download_range_stream(&client, media, Some((s, e)), workers);
-            let stream = crate::fast_transfer::hold_permit(stream, permit);
-            HttpResponse::PartialContent()
-                .content_type(mime)
-                .insert_header(("Content-Length", (e - s + 1).to_string()))
-                .insert_header(("Content-Range", format!("bytes {}-{}/{}", s, e, size)))
-                .insert_header(("Accept-Ranges", "bytes"))
-                .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-                .streaming(stream)
-        }
-    }
+    crate::serve_media::serve_media(
+        &state,
+        &req,
+        fid_opt,
+        Some(org_main),
+        mid,
+        4usize,
+        None,
+        "public, max-age=31536000, immutable",
+    )
+    .await
 }
 
 #[derive(serde::Deserialize)]

@@ -13,7 +13,6 @@ type PreviewCacheValue = {
 };
 
 const previewCache = new Map<string, PreviewCacheValue>();
-const pendingPrefetch = new Set<string>();
 
 const getPreviewCacheKey = (fileId: number, folderId: number | null) => `${folderId ?? 'home'}:${fileId}`;
 
@@ -96,8 +95,13 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
             try {
                 const previewUrl = api.getPreviewUrl(activeFolderId ?? 'home', file.id);
                 if (previewUrl) {
-                    setSrc(previewUrl);
-                    rememberPreview(key, previewUrl);
+                    // Cache-bust on manual retry so the <img> actually refetches
+                    // instead of React no-opping on an identical src.
+                    const src = shouldBypassCache
+                        ? `${previewUrl}${previewUrl.includes('?') ? '&' : '?'}t=${reloadNonce}`
+                        : previewUrl;
+                    setSrc(src);
+                    rememberPreview(key, src);
                 } else {
                     setError("Preview not available");
                 }
@@ -117,11 +121,10 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
 
         candidates.forEach((candidate) => {
             const key = getPreviewCacheKey(candidate.id, activeFolderId);
-            if (getCachedPreview(key) || pendingPrefetch.has(key)) return;
+            if (getCachedPreview(key)) return;
 
-            pendingPrefetch.add(key);
             const prefetchUrl = api.getPreviewUrl(activeFolderId ?? 'home', candidate.id);
-                rememberPreview(key, prefetchUrl);
+            rememberPreview(key, prefetchUrl);
         });
     }, [nextFile, prevFile, activeFolderId]);
 
