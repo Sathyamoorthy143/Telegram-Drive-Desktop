@@ -288,6 +288,78 @@ pub async fn audit_best_effort(
     }
 }
 
+// ---- Folder grants ----
+
+pub async fn list_org_grants(org_id: &str) -> Result<Vec<crate::models::OrgFolderGrant>, String> {
+    let v = sb_get_json(&format!(
+        "org_folder_grants?org_id=eq.{}&select=*&order=folder_id.asc",
+        org_id
+    ))
+    .await?;
+    serde_json::from_value(v).map_err(|e| e.to_string())
+}
+
+pub async fn get_org_grant(
+    org_id: &str,
+    folder_id: i64,
+    member_id: &str,
+) -> Result<Option<crate::models::OrgFolderGrant>, String> {
+    let v = sb_get_json(&format!(
+        "org_folder_grants?org_id=eq.{}&folder_id=eq.{}&member_id=eq.{}&select=*&limit=1",
+        org_id, folder_id, member_id
+    ))
+    .await?;
+    let rows: Vec<crate::models::OrgFolderGrant> =
+        serde_json::from_value(v).map_err(|e| e.to_string())?;
+    Ok(rows.into_iter().next())
+}
+
+pub async fn upsert_org_grant(
+    org_id: &str,
+    folder_id: i64,
+    member_id: &str,
+    level: &str,
+    created_by: Option<&str>,
+) -> Result<crate::models::OrgFolderGrant, String> {
+    let row = serde_json::json!({
+        "org_id": org_id,
+        "folder_id": folder_id,
+        "member_id": member_id,
+        "level": level,
+        "created_by": created_by,
+    });
+    let resp = sb_req(
+        "POST",
+        "org_folder_grants?on_conflict=org_id,folder_id,member_id",
+        Some(row),
+    )
+    .await?;
+    if !resp.status().is_success() {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!("upsert grant failed: {}", txt));
+    }
+    let rows: Vec<crate::models::OrgFolderGrant> =
+        resp.json().await.map_err(|e| e.to_string())?;
+    rows.into_iter().next().ok_or_else(|| "upsert returned no row".into())
+}
+
+pub async fn delete_org_grant(org_id: &str, folder_id: i64, member_id: &str) -> Result<(), String> {
+    let resp = sb_req(
+        "DELETE",
+        &format!(
+            "org_folder_grants?org_id=eq.{}&folder_id=eq.{}&member_id=eq.{}",
+            org_id, folder_id, member_id
+        ),
+        None,
+    )
+    .await?;
+    if !resp.status().is_success() {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!("delete grant failed: {}", txt));
+    }
+    Ok(())
+}
+
 // ---- Password hashing (SHA-256 + static salt; matches supabase::hash_pin style) ----
 
 pub fn hash_org_password(password: &str, username: &str) -> String {

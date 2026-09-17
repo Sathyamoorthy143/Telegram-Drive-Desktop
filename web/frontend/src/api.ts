@@ -704,6 +704,23 @@ export const logOrgActivity = (orgId: string, action: string, target_type?: stri
 export const getOrgTrash = (orgId: string) =>
   api<any[]>('GET', `/api/org/${orgId}/trash`);
 
+export interface OrgFolderGrant {
+  id: string;
+  org_id: string;
+  folder_id: number;
+  member_id: string;
+  level: 'view' | 'read' | 'write' | 'full';
+}
+
+export const getOrgGrants = (orgId: string) =>
+  api<OrgFolderGrant[]>('GET', `/api/org/${orgId}/grants`);
+
+export const setOrgGrant = (orgId: string, folder_id: number, member_id: string, level: string) =>
+  api<OrgFolderGrant>('POST', `/api/org/${orgId}/grants`, { folder_id, member_id, level });
+
+export const deleteOrgGrant = (orgId: string, folder_id: number, member_id: string) =>
+  api<boolean>('POST', `/api/org/${orgId}/grants/delete`, { folder_id, member_id });
+
 export const restoreOrgTrash = (orgId: string, message_id: number, folder_id?: number) =>
   api<boolean>('POST', `/api/org/${orgId}/trash/restore`, { message_id, folder_id });
 

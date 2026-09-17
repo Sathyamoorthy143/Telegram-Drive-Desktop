@@ -617,6 +617,16 @@ pub async fn record_single_upload(
     .await;
 }
 
+/// Read a session's target folder without consuming anything.
+/// Used for folder-grant checks before init/complete.
+pub fn session_folder_id(upload_id: &str) -> Option<Option<i64>> {
+    let dir = session_dir(upload_id).ok()?;
+    let meta: SessionMeta = std::fs::read_to_string(dir.join("meta.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())?;
+    Some(meta.folder_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -658,7 +668,11 @@ pub async fn org_init_upload(
     body: web::Json<InitRequest>,
 ) -> HttpResponse {
     let org_id = path.into_inner();
-    if let Err(e) = require_org_role(&state, &req, &org_id, "editor").await {
+    let sess = match require_org_role(&state, &req, &org_id, "editor").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, body.folder_id, "write").await {
         return e;
     }
     init_upload(state, body).await
@@ -698,7 +712,14 @@ pub async fn org_complete_upload(
 ) -> HttpResponse {
     let org_id = path.into_inner();
     match require_org_role(&state, &req, &org_id, "editor").await {
-        Ok(_sess) => {
+        Ok(sess) => {
+            // Folder may have changed grants between init and complete:
+            // re-check against the session's recorded target.
+            if let Some(folder_id) = session_folder_id(&body.upload_id) {
+                if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, folder_id, "write").await {
+                    return e;
+                }
+            }
             let (org_main, org_backup) = crate::storage::org_channel_ids(&org_id).await;
             complete_upload(state, body, org_main, org_backup).await
         }

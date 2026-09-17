@@ -46,7 +46,7 @@ async fn org_trashed_set(org_id: &str, folder_id: Option<i64>) -> std::collectio
     }
 }
 
-/// `GET /api/org/{id}/files?folder_id=` — viewer+.
+/// `GET /api/org/{id}/files?folder_id=` — viewer+ (+ folder grant `view`).
 pub async fn org_get_files(
     state: web::Data<AppState>,
     req: HttpRequest,
@@ -54,7 +54,11 @@ pub async fn org_get_files(
     query: web::Query<crate::models::GetFilesRequest>,
 ) -> impl Responder {
     let org_id = path.into_inner();
-    if let Err(e) = require_org_role(&state, &req, &org_id, "viewer").await {
+    let sess = match require_org_role(&state, &req, &org_id, "viewer").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, query.folder_id, "view").await {
         return e;
     }
     let org_main = match org_main_or_400(&state, &org_id).await {
@@ -130,6 +134,17 @@ pub async fn org_download_file(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = crate::auth_org::check_folder_access(
+        &state,
+        &org_id,
+        &sess,
+        if fid == 0 { None } else { Some(fid) },
+        "read",
+    )
+    .await
+    {
+        return e;
+    }
     let uid = crate::auth_org::db_user_id(&sess);
     let ip = req.peer_addr().map(|a| a.ip().to_string());
     let ua = req
@@ -182,6 +197,9 @@ pub async fn org_soft_delete(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, body.folder_id, "write").await {
+        return e;
+    }
     let org_main = match org_main_or_400(&state, &org_id).await {
         Ok(id) => id,
         Err(e) => return e,
@@ -338,6 +356,9 @@ pub async fn org_create_folder(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, body.parent_id, "write").await {
+        return e;
+    }
     let clean = body.name.trim();
     if clean.is_empty() {
         return HttpResponse::BadRequest().body("Folder name cannot be empty");
@@ -425,9 +446,10 @@ pub async fn org_upload_file(
     payload: Multipart,
 ) -> impl Responder {
     let org_id = path.into_inner();
-    if let Err(e) = require_org_role(&state, &req, &org_id, "editor").await {
-        return e;
-    }
+    let sess = match require_org_role(&state, &req, &org_id, "editor").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
     let (org_main, org_backup) = storage::org_channel_ids(&org_id).await;
     let main_id = match org_main {
         Some(id) => id,
@@ -442,6 +464,9 @@ pub async fn org_upload_file(
         Ok(u) => u,
         Err(e) => return e,
     };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, up.folder_id, "write").await {
+        return e;
+    }
     log::info!(
         "Org upload received {} bytes for '{}', uploading to Telegram...",
         up.total_size,

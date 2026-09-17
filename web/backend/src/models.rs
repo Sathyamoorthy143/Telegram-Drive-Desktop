@@ -127,6 +127,18 @@ pub struct CreateOrgRequest {
     pub subdomain: String,
 }
 
+/// Folder-scoped permission grant (see 002_folder_grants.sql).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgFolderGrant {
+    pub id: String,
+    pub org_id: String,
+    pub folder_id: i64,
+    pub member_id: String,
+    pub level: String,
+    pub created_by: Option<String>,
+    pub created_at: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub struct UpdateOrgRequest {
     pub name: Option<String>,

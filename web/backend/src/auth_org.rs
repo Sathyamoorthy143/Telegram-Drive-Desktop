@@ -261,6 +261,60 @@ fn synthetic_master_session(org_id: &str) -> OrgSession {
     }
 }
 
+/// Folder-grant level hierarchy: view < read < write < full.
+pub fn grant_rank(level: &str) -> u8 {
+    match level {
+        "view" => 1,
+        "read" => 2,
+        "write" => 3,
+        "full" => 4,
+        _ => 0,
+    }
+}
+
+pub fn grant_satisfies(have: &str, need: &str) -> bool {
+    grant_rank(have) >= grant_rank(need)
+}
+
+/// Folder-scoped access check, called AFTER `require_org_role`.
+///
+/// Rules (cloudsphere-style, adapted to channel folders):
+/// - owner/admin/master-bypass: full access everywhere.
+/// - drive root (`None`/`0`): the org-wide role (already checked) governs.
+/// - editor/viewer on a subfolder: an explicit grant for (member, folder),
+///   when present, REPLACES the org role; no row → org role governs.
+/// - Supabase lookup failures fail OPEN with a warning (same philosophy as
+///   the role re-check): availability over lockout on a blip.
+pub async fn check_folder_access(
+    state: &AppState,
+    org_id: &str,
+    sess: &OrgSession,
+    folder_id: Option<i64>,
+    need: &str,
+) -> Result<(), HttpResponse> {
+    if sess.member_id.trim().is_empty() {
+        return Ok(());
+    }
+    if supabase_org::role_satisfies(&sess.role, "admin") {
+        return Ok(());
+    }
+    let fid = folder_id.unwrap_or(0);
+    if fid == 0 {
+        return Ok(());
+    }
+    match supabase_org::get_org_grant(org_id, fid, &sess.member_id).await {
+        Ok(Some(g)) if !grant_satisfies(&g.level, need) => Err(HttpResponse::Forbidden().body(format!(
+            "Folder access denied. Required level: {}",
+            need
+        ))),
+        Ok(_) => Ok(()),
+        Err(e) => {
+            log::warn!("folder grant lookup failed (fail-open): {}", e);
+            Ok(())
+        }
+    }
+}
+
 /// Require `min_role` in `org_id`. Master admin bypasses as owner.
 /// Returns the resolved session (synthetic owner session for master).
 /// The master probe runs at most once per request (cached), and applies
@@ -477,6 +531,17 @@ mod tests {
         assert_eq!(db_user_id(&master), None);
         let member = OrgSession { member_id: "some-uuid".into(), ..master };
         assert_eq!(db_user_id(&member), Some("some-uuid".to_string()));
+    }
+
+    #[test]
+    fn grant_levels_order_correctly() {
+        assert!(grant_satisfies("read", "view"));
+        assert!(grant_satisfies("write", "read"));
+        assert!(grant_satisfies("full", "write"));
+        assert!(grant_satisfies("view", "view"));
+        assert!(!grant_satisfies("view", "read"));
+        assert!(!grant_satisfies("read", "write"));
+        assert!(!grant_satisfies("bogus", "view"));
     }
 
     #[test]

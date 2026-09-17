@@ -311,6 +311,102 @@ pub async fn put_org_settings_hdl(
     }
 }
 
+// ---- Folder grants (admin+) ----
+
+#[derive(serde::Deserialize)]
+pub struct OrgGrantRequest {
+    pub folder_id: i64,
+    pub member_id: String,
+    pub level: Option<String>,
+}
+
+fn valid_grant_level(level: &str) -> bool {
+    matches!(level, "view" | "read" | "write" | "full")
+}
+
+/// `GET /api/org/{id}/grants` — admin+. List folder grants.
+pub async fn list_grants_hdl(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(e) = require_org_role(&state, &req, &org_id, "admin").await {
+        return e;
+    }
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    match supabase_org::list_org_grants(&org_id).await {
+        Ok(rows) => HttpResponse::Ok().json(rows),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+/// `POST /api/org/{id}/grants` — admin+. Create/update a member's level on a folder.
+pub async fn upsert_grant_hdl(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<OrgGrantRequest>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    let sess = match require_org_role(&state, &req, &org_id, "admin").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let level = body.level.as_deref().unwrap_or("view");
+    if !valid_grant_level(level) {
+        return HttpResponse::BadRequest().body("level must be view|read|write|full");
+    }
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    let actor = crate::auth_org::db_user_id(&sess);
+    match supabase_org::upsert_org_grant(&org_id, body.folder_id, &body.member_id, level, actor.as_deref()).await {
+        Ok(g) => {
+            supabase_org::audit_best_effort(
+                &org_id, actor, "grant.upsert", "org_folder_grant", &g.id,
+                serde_json::json!({ "folder_id": body.folder_id, "member_id": body.member_id, "level": level }),
+                None, None,
+            )
+            .await;
+            HttpResponse::Ok().json(g)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+/// `POST /api/org/{id}/grants/delete` — admin+. Remove a grant (falls back to org role).
+pub async fn delete_grant_hdl(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<OrgGrantRequest>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    let sess = match require_org_role(&state, &req, &org_id, "admin").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    let actor = crate::auth_org::db_user_id(&sess);
+    match supabase_org::delete_org_grant(&org_id, body.folder_id, &body.member_id).await {
+        Ok(()) => {
+            supabase_org::audit_best_effort(
+                &org_id, actor, "grant.delete", "org_folder_grant", &body.member_id,
+                serde_json::json!({ "folder_id": body.folder_id }),
+                None, None,
+            )
+            .await;
+            HttpResponse::Ok().json(true)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
 // ---- Org members ----
 
 pub async fn list_members_hdl(
@@ -592,6 +688,9 @@ pub async fn restore_trash_hdl(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, body.folder_id, "write").await {
+        return e;
+    }
     if !supabase_org::is_configured() {
         return supabase_unavailable();
     }
@@ -621,6 +720,9 @@ pub async fn purge_trash_hdl(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = crate::auth_org::check_folder_access(&state, &org_id, &sess, body.folder_id, "write").await {
+        return e;
+    }
     // Best-effort Telegram delete from the org's channel.
     if let Ok(client) = crate::auth::get_client(&state).await {
         let channel = supabase_org::get_org_settings(&org_id)
