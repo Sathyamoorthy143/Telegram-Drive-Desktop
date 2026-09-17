@@ -252,6 +252,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/org/{id}/folders/create", web::post().to(org_files::org_create_folder))
                     .route("/org/{id}/storage/status", web::get().to(org_files::org_storage_status))
                     .route("/org/{id}/alerts", web::get().to(orgs::list_alerts))
+                    .route("/admin/organizations/{id}/alerts", web::get().to(orgs::list_alerts_admin_hdl))
                     // Unknown /api/* paths return JSON 404 (never index.html) so
                     // outdated-backend skew surfaces as a readable error.
                     .default_service(web::route().to(|| async {
