@@ -78,8 +78,18 @@ pub async fn org_session_from_req(
 }
 
 /// True when the caller holds a live Telegram session (master admin).
+/// A failed `get_me` may just be a dead pool behind the cached client
+/// (dropped connection after flood/idle/restart) rather than a signed-out
+/// user — so rebuild once from the persisted session and retry before
+/// denying. A genuinely signed-out session still fails fast afterwards.
 pub async fn is_master_admin(state: &web::Data<AppState>) -> bool {
     if let Some(c) = state.client.lock().await.clone() {
+        if c.get_me().await.is_ok() {
+            return true;
+        }
+        crate::auth::reset_client(state).await;
+    }
+    if let Ok(c) = crate::auth::get_client(state).await {
         return c.get_me().await.is_ok();
     }
     false
