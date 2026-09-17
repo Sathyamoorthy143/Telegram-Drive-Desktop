@@ -637,8 +637,13 @@ mod tests {
         }
     }
 
+    // Tests share one process env: mutating TG_WORKERS races parallel
+    // tests (e.g. "9999" leaking into the defaults test). Serialize them.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn worker_count_defaults_high() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let old = with_workers_env(None);
         let got = worker_count();
         restore_workers_env(old);
@@ -647,6 +652,7 @@ mod tests {
 
     #[test]
     fn worker_count_clamps_to_range() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let old = with_workers_env(Some("9999"));
         let high = worker_count();
         restore_workers_env(old);
@@ -665,6 +671,7 @@ mod tests {
 
     #[test]
     fn premium_workers_run_hotter() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let old = with_workers_env(None);
         let premium = worker_count_for(true);
         let free = worker_count_for(false);
@@ -676,6 +683,7 @@ mod tests {
 
     #[test]
     fn premium_workers_clamp_higher() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let old = with_workers_env(Some("9999"));
         let got = worker_count_for(true);
         restore_workers_env(old);

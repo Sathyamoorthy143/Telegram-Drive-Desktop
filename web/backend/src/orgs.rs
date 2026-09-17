@@ -63,7 +63,9 @@ pub async fn current_org(state: web::Data<AppState>, req: HttpRequest, q: web::Q
     }
     match supabase_org::get_org_by_subdomain(&sub).await {
         Ok(Some(org)) => HttpResponse::Ok().json(serde_json::json!({ "org": strip_org(&org), "subdomain": sub })),
-        Ok(None) => HttpResponse::NotFound().body(format!("Organization not found: {}", sub)),
+        // Unknown slug (e.g. the apex domain label) is a normal outcome for
+        // this speculative resolver — 200/null, not 404 noise in consoles.
+        Ok(None) => HttpResponse::Ok().json(serde_json::json!({ "org": null, "subdomain": sub })),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
