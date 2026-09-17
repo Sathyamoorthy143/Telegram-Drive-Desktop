@@ -49,6 +49,7 @@ type BootState =
   | { kind: "master-auth" }
   | { kind: "master-drive" }
   | { kind: "master-orgs" }
+  | { kind: "org-not-found"; slug: string }
   | { kind: "org-login"; org: OrgInfo }
   | { kind: "org-dashboard"; org: OrgInfo; session: OrgSessionInfo | null };
 
@@ -59,10 +60,22 @@ export function AppContent() {
   useEffect(() => {
     let cancelled = false;
     const bootApp = async () => {
+      // One-time ?org= override: consume then strip so later navigations
+      // and refreshes can't get stuck in org context.
+      let orgOverride: string | null = null;
+      try {
+        const params = new URLSearchParams(window.location.search);
+        orgOverride = params.get("org")?.trim().toLowerCase() || null;
+        if (orgOverride) {
+          params.delete("org");
+          const q = params.toString();
+          window.history.replaceState(null, "", window.location.pathname + (q ? `?${q}` : ""));
+        }
+      } catch {}
       // 1. Org context from URL path (path-based routing, canonical).
       const pathSlug = orgSlugFromPath(window.location.pathname);
       // 2. Org context from subdomain (backward compat).
-      const sub = subdomainFromHostname();
+      const sub = orgOverride || subdomainFromHostname();
       let org: OrgInfo | null = null;
       let orgSource: 'path' | 'subdomain' | null = null;
       if (pathSlug) {
@@ -75,6 +88,12 @@ export function AppContent() {
           }
         } catch {
           org = null;
+        }
+        if (!org) {
+          // Explicit path slug that resolves to nothing: show not-found
+          // instead of silently falling back to subdomain/master.
+          setBoot({ kind: "org-not-found", slug: pathSlug });
+          return;
         }
       }
       if (!org && sub) {
@@ -110,6 +129,10 @@ export function AppContent() {
         // 2. Org mode: prefer stored member token, else master bypass, else login.
         const storedToken = api.getOrgToken();
         const storedOrg = api.getOrgId();
+        if (storedToken && storedOrg !== org.id) {
+          // Never send another org's token to this org's endpoints.
+          api.setOrgToken(null);
+        }
         if (storedToken && storedOrg === org.id) {
           try {
             const me = await api.orgMe(org.id);
@@ -200,10 +223,35 @@ export function AppContent() {
           onOpenOrg={(org) => { window.location.href = `/${org.subdomain}`; }}
         />
       )}
+      {boot.kind === "org-not-found" && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center max-w-sm px-6">
+            <p className="text-lg font-semibold mb-1">Organization not found</p>
+            <p className="text-sm text-telegram-subtext mb-4">
+              No organization matches “{boot.slug}”. Check the URL or ask your admin for the right link.
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="text-sm px-4 py-2 rounded-lg border border-telegram-border hover:bg-telegram-hover"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => { api.setOrgContext(null); window.location.href = '/'; }}
+                className="text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white"
+              >
+                Back to master
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {boot.kind === "org-login" && (
         <OrgLogin
           orgId={boot.org.id}
-          orgName={boot.org.active === false ? `${boot.org.name} (inactive — contact admin)` : boot.org.name}
+          orgName={boot.org.name}
+          inactive={boot.org.active === false}
           onLogin={(session) => setBoot({ kind: "org-dashboard", org: boot.org, session })}
         />
       )}

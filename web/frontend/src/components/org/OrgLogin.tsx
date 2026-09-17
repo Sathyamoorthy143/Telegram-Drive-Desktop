@@ -5,10 +5,11 @@ import * as api from '../../api';
 interface Props {
   orgId: string;
   orgName: string;
+  inactive?: boolean;
   onLogin: (session: { username: string; role: string; member_id: string }) => void;
 }
 
-export function OrgLogin({ orgId, orgName, onLogin }: Props) {
+export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +17,10 @@ export function OrgLogin({ orgId, orgName, onLogin }: Props) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (inactive) {
+      setError('This organization is inactive — contact your admin.');
+      return;
+    }
     if (!username.trim() || !password) {
       setError('Enter your username and password.');
       return;
@@ -44,6 +49,11 @@ export function OrgLogin({ orgId, orgName, onLogin }: Props) {
           <h1 className="text-lg font-semibold">{orgName}</h1>
         </div>
         <p className="text-sm text-telegram-subtext mb-5">Sign in with your organization account.</p>
+        {inactive && (
+          <p className="text-sm text-yellow-600 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
+            This organization is deactivated. Contact your admin to reactivate it.
+          </p>
+        )}
         <label className="block text-xs font-medium text-telegram-subtext mb-1">Username</label>
         <input
           value={username}
@@ -64,7 +74,7 @@ export function OrgLogin({ orgId, orgName, onLogin }: Props) {
         {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || inactive}
           className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-telegram-primary text-white font-medium disabled:opacity-50 hover:opacity-90"
         >
           <LogIn className="w-4 h-4" />

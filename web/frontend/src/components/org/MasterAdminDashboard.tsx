@@ -270,7 +270,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                         {provisioningId === org.id ? 'Provisioning…' : 'Provision'}
                       </button>
                     )}
-<button onClick={() => { window.location.href = `/${org.subdomain}`; }} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">
+<button onClick={() => onOpenOrg(org)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">
                        <FolderOpen className="w-3.5 h-3.5" /> Open as admin
                     </button>
                     <button onClick={() => loadDetail(org, 'members')} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">

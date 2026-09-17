@@ -83,8 +83,15 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [activity, setActivity] = useState<AuditEntry[]>([]);
   const [storage, setStorage] = useState<{ provisioned: boolean; main_channel_id?: number; backup_channel_id?: number } | null>(null);
+  const [orgSettings, setOrgSettings] = useState<any | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState({ notification_mode: '', lock_interval_ms: '' });
+  const [savingSettings, setSavingSettings] = useState(false);
   const [newFolder, setNewFolder] = useState('');
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' });
+  const [activeFolderId, setActiveFolderId] = useState<number | undefined>(undefined);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
@@ -102,41 +109,130 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     };
   }, []);
 
-  const loadFiles = async () => {
+  const loadFiles = async (folderId?: number) => {
+    setFilesLoading(true);
+    setFilesError(null);
     try {
-      const [f, fl] = await Promise.all([api.getOrgFiles(org.id), api.scanOrgFolders(org.id)]);
+      const [f, fl] = await Promise.all([api.getOrgFiles(org.id, folderId), api.scanOrgFolders(org.id)]);
       setFiles(f);
       setFolders(fl);
     } catch (e: any) {
-      toast.error(`Files: ${e.message}`);
+      setFilesError(e.message || 'Failed to load files');
+    } finally {
+      setFilesLoading(false);
     }
   };
 
+  const visibleFolders = folders.filter((f: any) => (f.parent_id ?? undefined) === activeFolderId);
+
+  const folderTrail = (() => {
+    const byId = new Map<number, any>(folders.map((f: any) => [f.id, f]));
+    const trail: any[] = [];
+    let cur = activeFolderId;
+    let guard = 0;
+    while (cur !== undefined && guard++ < 32) {
+      const f = byId.get(cur);
+      if (!f) break;
+      trail.unshift(f);
+      cur = f.parent_id ?? undefined;
+    }
+    return trail;
+  })();
+
+  const downloadFile = async (message_id: number, folder_id: number | undefined, name: string) => {
+    setDownloadingId(message_id);
+    try {
+      const blob = await api.downloadOrgFileBlob(org.id, folder_id, message_id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (e: any) {
+      toast.error(`Download failed: ${e.message}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const [trashLoading, setTrashLoading] = useState(false);
+  const [trashError, setTrashError] = useState<string | null>(null);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+
   const loadTrash = async () => {
+    setTrashLoading(true);
+    setTrashError(null);
     try { setTrash(await api.getOrgTrash(org.id)); }
-    catch (e: any) { toast.error(`Trash: ${e.message}`); }
+    catch (e: any) { setTrashError(e.message || 'Failed to load trash'); }
+    finally { setTrashLoading(false); }
   };
 
   const loadMembers = async () => {
+    setMembersLoading(true);
+    setMembersError(null);
     try { setMembers(await api.getOrgMembers(org.id)); }
-    catch (e: any) { toast.error(`Members: ${e.message}`); }
+    catch (e: any) { setMembersError(e.message || 'Failed to load members'); }
+    finally { setMembersLoading(false); }
   };
 
   const loadActivity = async () => {
+    setActivityLoading(true);
+    setActivityError(null);
     try { setActivity(await api.getOrgActivity(org.id)); }
-    catch (e: any) { toast.error(`Activity: ${e.message}`); }
+    catch (e: any) { setActivityError(e.message || 'Failed to load activity'); }
+    finally { setActivityLoading(false); }
   };
 
   const loadStorage = async () => {
     try { setStorage(await api.getOrgStorageStatus(org.id)); }
     catch { setStorage(null); }
+    try {
+      const s = await api.getOrgSettings(org.id);
+      setOrgSettings(s);
+      setSettingsDraft({
+        notification_mode: s?.notification_mode ?? '',
+        lock_interval_ms: s?.lock_interval_ms != null ? String(s.lock_interval_ms) : '',
+      });
+    } catch { setOrgSettings(null); }
+  };
+
+  const saveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    try {
+      const patch: any = {};
+      if (settingsDraft.notification_mode) patch.notification_mode = settingsDraft.notification_mode;
+      patch.lock_interval_ms = settingsDraft.lock_interval_ms === '' ? null : Number(settingsDraft.lock_interval_ms);
+      if (patch.lock_interval_ms !== null && (!Number.isFinite(patch.lock_interval_ms) || patch.lock_interval_ms < 0)) {
+        toast.error('Lock interval must be a non-negative number of ms');
+        return;
+      }
+      const s = await api.updateOrgSettings(org.id, patch);
+      setOrgSettings(s);
+      toast.success('Settings saved');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   useEffect(() => {
-    loadFiles();
+    setActiveFolderId(undefined);
     loadStorage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org.id]);
+
+  useEffect(() => {
+    loadFiles(activeFolderId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org.id, activeFolderId]);
 
   useEffect(() => {
     if (tab === 'trash') loadTrash();
@@ -157,7 +253,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     try {
       await api.deleteOrgFile(org.id, message_id, folder_id);
       toast.success('Moved to org trash');
-      loadFiles();
+      loadFiles(activeFolderId);
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -165,10 +261,10 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     e.preventDefault();
     if (!newFolder.trim()) return;
     try {
-      await api.createOrgFolder(org.id, newFolder.trim());
+      await api.createOrgFolder(org.id, newFolder.trim(), activeFolderId);
       toast.success(`Folder "${newFolder.trim()}" created`);
       setNewFolder('');
-      loadFiles();
+      loadFiles(activeFolderId);
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -231,14 +327,15 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
       for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
     } catch {}
     const createdDirs = new Map<string, number>();
+    const dirBase = activeFolderId ?? 0;
     // Max simultaneous file uploads; chunked transfers already parallelize internally.
     const UPLOAD_CONCURRENCY = 3;
     const resolveUploadFolder = async (dirs: string[]): Promise<number | undefined> => {
-      if (dirs.length === 0) return undefined;
-      let parent: number | undefined = undefined;
-      let path = '';
+      if (dirs.length === 0) return activeFolderId;
+      let parent: number | undefined = activeFolderId;
+      let path = `${dirBase}`;
       for (const dir of dirs) {
-        path = path ? `${path}/${dir}` : dir;
+        path = `${path}/${dir}`;
         const cached = createdDirs.get(path);
         if (cached !== undefined) { parent = cached; continue; }
         const key = childFolderKey(parent, dir);
@@ -308,7 +405,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     await Promise.all(
       Array.from({ length: Math.min(UPLOAD_CONCURRENCY, pending.length) }, () => worker()),
     );
-    try { await loadFiles(); } finally {
+    try { await loadFiles(activeFolderId); } finally {
       uploadingRef.current = false;
       setUploading(false);
     }
@@ -357,9 +454,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'files', label: 'Files', icon: Files },
     { id: 'trash', label: 'Trash', icon: Trash2 },
-    { id: 'members', label: 'Members', icon: Users },
+    ...(canAdmin(role)
+      ? [
+          { id: 'members' as Tab, label: 'Members', icon: Users },
+          { id: 'settings' as Tab, label: 'Settings', icon: Settings },
+        ]
+      : []),
     { id: 'activity', label: 'Activity', icon: Activity },
-    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -474,18 +575,51 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                   ))}
                 </div>
               )}
-              {folders.length > 0 && (
+              <nav className="flex items-center gap-1 text-sm mb-3 flex-wrap" aria-label="Folder breadcrumb">
+                <button
+                  onClick={() => setActiveFolderId(undefined)}
+                  className={`px-2 py-1 rounded-md ${activeFolderId === undefined ? 'font-semibold text-telegram-text' : 'text-telegram-primary hover:underline'}`}
+                >
+                  Root
+                </button>
+                {folderTrail.map((f: any) => (
+                  <span key={f.id} className="flex items-center gap-1">
+                    <span className="text-telegram-subtext">/</span>
+                    <button
+                      onClick={() => setActiveFolderId(f.id)}
+                      className={`px-2 py-1 rounded-md ${f.id === activeFolderId ? 'font-semibold text-telegram-text' : 'text-telegram-primary hover:underline'}`}
+                    >
+                      {f.name}
+                    </button>
+                  </span>
+                ))}
+              </nav>
+              {visibleFolders.length > 0 && (
                 <>
                   <h2 className="text-sm font-medium text-telegram-subtext mb-2">Folders</h2>
                   <ul className="grid gap-1 mb-4">
-                    {folders.map((f: any) => (
-                      <li key={f.id} className="text-sm px-3 py-2 rounded-lg bg-telegram-surface border border-telegram-border">📁 {f.name}</li>
+                    {visibleFolders.map((f: any) => (
+                      <li key={f.id}>
+                        <button
+                          onClick={() => setActiveFolderId(f.id)}
+                          className="w-full text-left text-sm px-3 py-2 rounded-lg bg-telegram-surface border border-telegram-border hover:border-telegram-primary"
+                        >
+                          📁 {f.name}
+                        </button>
+                      </li>
                     ))}
                   </ul>
                 </>
               )}
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Files</h2>
-              {files.length === 0 ? (
+              {filesLoading ? (
+                <p className="text-sm text-telegram-subtext">Loading files…</p>
+              ) : filesError ? (
+                <div className="text-sm">
+                  <p className="text-red-500 mb-2">Failed to load files: {filesError}</p>
+                  <button onClick={() => loadFiles(activeFolderId)} className="px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">Retry</button>
+                </div>
+              ) : files.length === 0 ? (
                 <p className="text-sm text-telegram-subtext">No files yet.</p>
               ) : (
                 <ul className="grid gap-1">
@@ -495,6 +629,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                         <OrgImageThumb orgId={org.id} folderId={f.folder_id} messageId={f.id} name={f.name} />
                       )}
                       <span className="flex-1 truncate">{f.name}</span>
+                      <button
+                        onClick={() => downloadFile(f.id, f.folder_id, f.name)}
+                        disabled={downloadingId === f.id}
+                        className="text-xs text-telegram-primary hover:underline disabled:opacity-50"
+                      >
+                        {downloadingId === f.id ? 'downloading…' : 'download'}
+                      </button>
                       {canEdit(role) && (
                         <button onClick={() => deleteFile(f.id, f.folder_id)} className="text-xs text-red-500 hover:underline">trash</button>
                       )}
@@ -508,7 +649,14 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
           {tab === 'trash' && (
             <div>
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Org trash (separate from Telegram recycle bin)</h2>
-              {trash.length === 0 ? (
+              {trashLoading ? (
+                <p className="text-sm text-telegram-subtext">Loading trash…</p>
+              ) : trashError ? (
+                <div className="text-sm">
+                  <p className="text-red-500 mb-2">Failed to load trash: {trashError}</p>
+                  <button onClick={loadTrash} className="px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">Retry</button>
+                </div>
+              ) : trash.length === 0 ? (
                 <p className="text-sm text-telegram-subtext">Trash is empty.</p>
               ) : (
                 <ul className="grid gap-1">
@@ -550,6 +698,14 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                   <button type="submit" className="text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white">Add</button>
                 </form>
               )}
+              {membersLoading ? (
+                <p className="text-sm text-telegram-subtext">Loading members…</p>
+              ) : membersError ? (
+                <div className="text-sm">
+                  <p className="text-red-500 mb-2">Failed to load members: {membersError}</p>
+                  <button onClick={loadMembers} className="px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">Retry</button>
+                </div>
+              ) : (
               <ul className="grid gap-1">
                 {members.map((m) => (
                   <li key={m.id} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-telegram-surface border border-telegram-border">
@@ -561,7 +717,8 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                   </li>
                 ))}
               </ul>
-              {members.length === 0 && <p className="text-sm text-telegram-subtext">No members yet.</p>}
+              )}
+              {!membersLoading && !membersError && members.length === 0 && <p className="text-sm text-telegram-subtext">No members yet.</p>}
               <p className="text-xs text-telegram-subtext mt-3">viewer: read/download · editor: + upload/delete/folders · admin: + members/settings · owner: + admin accounts</p>
             </div>
           )}
@@ -569,7 +726,14 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
           {tab === 'activity' && (
             <div>
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Audit log — who / what / when</h2>
-              {activity.length === 0 ? (
+              {activityLoading ? (
+                <p className="text-sm text-telegram-subtext">Loading activity…</p>
+              ) : activityError ? (
+                <div className="text-sm">
+                  <p className="text-red-500 mb-2">Failed to load activity: {activityError}</p>
+                  <button onClick={loadActivity} className="px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">Retry</button>
+                </div>
+              ) : activity.length === 0 ? (
                 <p className="text-sm text-telegram-subtext">No activity yet.</p>
               ) : (
                 <ul className="grid gap-1">
@@ -589,12 +753,47 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
           {tab === 'settings' && (
             <div className="text-sm">
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Org settings</h2>
-              <div className="p-4 rounded-xl bg-telegram-surface border border-telegram-border space-y-1">
+              <div className="p-4 rounded-xl bg-telegram-surface border border-telegram-border space-y-1 mb-4">
                 <p>Main channel: <span className="font-mono">{storage?.main_channel_id ?? '—'}</span></p>
                 <p>Backup channel: <span className="font-mono">{storage?.backup_channel_id ?? '—'}</span></p>
                 <p>Status: {storage?.provisioned ? 'provisioned' : 'not provisioned'}</p>
               </div>
-              {!canAdmin(role) && <p className="text-xs text-telegram-subtext mt-2">Only org admins can change settings.</p>}
+              {canAdmin(role) ? (
+                <form onSubmit={saveSettings} className="p-4 rounded-xl bg-telegram-surface border border-telegram-border space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-telegram-subtext mb-1">Notification mode</label>
+                    <select
+                      value={settingsDraft.notification_mode}
+                      onChange={(e) => setSettingsDraft({ ...settingsDraft, notification_mode: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+                    >
+                      <option value="">Default</option>
+                      <option value="all">All activity</option>
+                      <option value="important">Important only</option>
+                      <option value="muted">Muted</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-telegram-subtext mb-1">Lock interval (ms, empty = default)</label>
+                    <input
+                      value={settingsDraft.lock_interval_ms}
+                      onChange={(e) => setSettingsDraft({ ...settingsDraft, lock_interval_ms: e.target.value })}
+                      placeholder="e.g. 300000"
+                      inputMode="numeric"
+                      className="w-full px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={savingSettings}
+                    className="px-4 py-2 rounded-lg bg-telegram-primary text-white text-sm font-medium disabled:opacity-50"
+                  >
+                    {savingSettings ? 'Saving…' : 'Save settings'}
+                  </button>
+                </form>
+              ) : (
+                <p className="text-xs text-telegram-subtext mt-2">Only org admins can change settings.</p>
+              )}
             </div>
           )}
         </div>

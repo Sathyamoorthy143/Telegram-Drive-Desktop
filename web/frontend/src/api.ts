@@ -115,7 +115,20 @@ export const uploadFile = (file: File, folder_id?: number) => {
   return api<string>('POST', '/api/files/upload', formData);
 };
 
+/**
+ * Fail loud (never silently cross namespaces): wrappers without an org
+ * equivalent must refuse under org context instead of hitting global
+ * master endpoints with the wrong channel scope.
+ */
+function requireNoOrgContext(feature: string): void {
+  if (getOrgContext()) {
+    throw new Error(`${feature} is not available in organization context`);
+  }
+}
+
 export const downloadFile = async (folder_id: number, message_id: number): Promise<Blob> => {
+  const orgId = getOrgContext();
+  if (orgId) return downloadOrgFileBlob(orgId, folder_id, message_id);
   const res = await fetch(`${API_BASE}/api/files/${folder_id}/${message_id}/download`);
   if (!res.ok) throw new Error('Download failed');
   return res.blob();
@@ -127,17 +140,25 @@ export const deleteFile = (message_id: number, folder_id?: number) => {
   return api<boolean>('POST', '/api/files/delete', { message_id, folder_id });
 };
 
-export const moveFiles = (message_ids: number[], folder_ids: number[], source_folder_id?: number, target_folder_id?: number) =>
-  api<boolean>('POST', '/api/files/move', { message_ids, folder_ids, source_folder_id, target_folder_id });
+export const moveFiles = (message_ids: number[], folder_ids: number[], source_folder_id?: number, target_folder_id?: number) => {
+  requireNoOrgContext('Move');
+  return api<boolean>('POST', '/api/files/move', { message_ids, folder_ids, source_folder_id, target_folder_id });
+};
 
-export const copyFiles = (message_ids: number[], folder_ids: number[], source_folder_id?: number, target_folder_id?: number) =>
-  api<boolean>('POST', '/api/files/copy', { message_ids, folder_ids, source_folder_id, target_folder_id });
+export const copyFiles = (message_ids: number[], folder_ids: number[], source_folder_id?: number, target_folder_id?: number) => {
+  requireNoOrgContext('Copy');
+  return api<boolean>('POST', '/api/files/copy', { message_ids, folder_ids, source_folder_id, target_folder_id });
+};
 
-export const searchFiles = (query: string) =>
-  api<any[]>('GET', `/api/files/search?query=${encodeURIComponent(query)}`);
+export const searchFiles = (query: string) => {
+  requireNoOrgContext('Search');
+  return api<any[]>('GET', `/api/files/search?query=${encodeURIComponent(query)}`);
+};
 
-export const getBandwidth = () =>
-  api<{ up_bytes: number; down_bytes: number }>('GET', '/api/bandwidth');
+export const getBandwidth = () => {
+  requireNoOrgContext('Bandwidth stats');
+  return api<{ up_bytes: number; down_bytes: number }>('GET', '/api/bandwidth');
+};
 
 export const scanFolders = () => {
   const orgId = getOrgContext();
@@ -151,14 +172,20 @@ export const createFolder = (name: string, parent_id?: number) => {
   return api<any>('POST', '/api/folders/create', { name, parent_id });
 };
 
-export const renameFolder = (id: number, new_name: string) =>
-  api<boolean>('PUT', `/api/folders/${id}/rename`, { new_name });
+export const renameFolder = (id: number, new_name: string) => {
+  requireNoOrgContext('Rename folder');
+  return api<boolean>('PUT', `/api/folders/${id}/rename`, { new_name });
+};
 
-export const deleteFolder = (folder_id: number) =>
-  api<boolean>('DELETE', `/api/folders/${folder_id}/delete`, { folder_id });
+export const deleteFolder = (folder_id: number) => {
+  requireNoOrgContext('Delete folder');
+  return api<boolean>('DELETE', `/api/folders/${folder_id}/delete`, { folder_id });
+};
 
-export const getFolderProperties = (id: number) =>
-  api<{ file_count: number; total_size: number; created_at: string }>('GET', `/api/folders/${id}/properties`);
+export const getFolderProperties = (id: number) => {
+  requireNoOrgContext('Folder properties');
+  return api<{ file_count: number; total_size: number; created_at: string }>('GET', `/api/folders/${id}/properties`);
+};
 
 export const getStreamInfo = () =>
   api<{ token: string; base_url: string }>('GET', '/api/stream-info');
@@ -172,11 +199,15 @@ export const getPreviewUrl = (folder_id: number | string, message_id: number) =>
 export const getThumbnailUrl = (folder_id: number | string, message_id: number) =>
   `${API_BASE}/api/thumbnail/${folder_id}/${message_id}`;
 
-export const getSettings = () =>
-  api<{ telegram_api_id?: number; theme?: string; auto_login?: boolean; encryption_enabled?: boolean }>('GET', '/api/settings');
+export const getSettings = () => {
+  requireNoOrgContext('Master settings');
+  return api<{ telegram_api_id?: number; theme?: string; auto_login?: boolean; encryption_enabled?: boolean }>('GET', '/api/settings');
+};
 
-export const saveSettings = (settings: { telegram_api_id?: number; theme?: string; auto_login?: boolean; encryption_enabled?: boolean }) =>
-  api<boolean>('PUT', '/api/settings', settings);
+export const saveSettings = (settings: { telegram_api_id?: number; theme?: string; auto_login?: boolean; encryption_enabled?: boolean }) => {
+  requireNoOrgContext('Master settings');
+  return api<boolean>('PUT', '/api/settings', settings);
+};
 
 export const getStore = async () => ({
   get: async <T>(key: string): Promise<T | null> => {
@@ -190,65 +221,103 @@ export const getStore = async () => ({
 
 export const CHUNK_SIZE = 1024 * 1024;
 
-export const getTrash = () =>
-  api<any[]>('GET', '/api/trash');
+export const getTrash = () => {
+  requireNoOrgContext('Master trash (use org trash instead)');
+  return api<any[]>('GET', '/api/trash');
+};
 
-export const restoreTrash = (message_id: number, folder_id?: number) =>
-  api<boolean>('POST', '/api/trash/restore', { message_id, folder_id });
+export const restoreTrash = (message_id: number, folder_id?: number) => {
+  requireNoOrgContext('Master trash (use org trash instead)');
+  return api<boolean>('POST', '/api/trash/restore', { message_id, folder_id });
+};
 
-export const emptyTrash = () =>
-  api<boolean>('POST', '/api/trash/empty');
+export const emptyTrash = () => {
+  requireNoOrgContext('Master trash (use org trash instead)');
+  return api<boolean>('POST', '/api/trash/empty');
+};
 
-export const purgeTrash = (message_id: number, folder_id?: number) =>
-  api<boolean>('POST', '/api/trash/purge', { message_id, folder_id });
+export const purgeTrash = (message_id: number, folder_id?: number) => {
+  requireNoOrgContext('Master trash (use org trash instead)');
+  return api<boolean>('POST', '/api/trash/purge', { message_id, folder_id });
+};
 
-export const getFavorites = () =>
-  api<any[]>('GET', '/api/meta/favorites');
+export const getFavorites = () => {
+  requireNoOrgContext('Favorites');
+  return api<any[]>('GET', '/api/meta/favorites');
+};
 
-export const getRecent = () =>
-  api<any[]>('GET', '/api/meta/recent');
+export const getRecent = () => {
+  requireNoOrgContext('Recent');
+  return api<any[]>('GET', '/api/meta/recent');
+};
 
-export const starFile = (message_id: number, folder_id: number, starred: boolean) =>
-  api<boolean>('POST', '/api/meta/star', { message_id, folder_id, starred });
+export const starFile = (message_id: number, folder_id: number, starred: boolean) => {
+  requireNoOrgContext('Star');
+  return api<boolean>('POST', '/api/meta/star', { message_id, folder_id, starred });
+};
 
-export const getTags = (message_id: number, folder_id?: number) =>
-  api<any[]>('GET', `/api/meta/tags?message_id=${message_id}${folder_id !== undefined ? `&folder_id=${folder_id}` : ''}`);
+export const getTags = (message_id: number, folder_id?: number) => {
+  requireNoOrgContext('Tags');
+  return api<any[]>('GET', `/api/meta/tags?message_id=${message_id}${folder_id !== undefined ? `&folder_id=${folder_id}` : ''}`);
+};
 
-export const setTags = (message_id: number, tags: string[], folder_id?: number) =>
-  api<boolean>('PUT', '/api/meta/tags', { message_id, folder_id, tags });
+export const setTags = (message_id: number, tags: string[], folder_id?: number) => {
+  requireNoOrgContext('Tags');
+  return api<boolean>('PUT', '/api/meta/tags', { message_id, folder_id, tags });
+};
 
-export const createShare = (message_id: number, folder_id: number, expires_in?: number) =>
-  api<{ url: string }>('POST', '/api/share', { message_id, folder_id, expiry_days: expires_in });
+export const createShare = (message_id: number, folder_id: number, expires_in?: number) => {
+  requireNoOrgContext('Share links');
+  return api<{ url: string }>('POST', '/api/share', { message_id, folder_id, expiry_days: expires_in });
+};
 
 export const getShareUrl = (share_id: string) =>
   `${API_BASE}/s/${share_id}`;
 
-export const getVersions = (name: string, folder_id?: number) =>
-  api<any[]>('GET', `/api/versions?name=${encodeURIComponent(name)}${folder_id !== undefined ? `&folder_id=${folder_id}` : ''}`);
+export const getVersions = (name: string, folder_id?: number) => {
+  requireNoOrgContext('Versions');
+  return api<any[]>('GET', `/api/versions?name=${encodeURIComponent(name)}${folder_id !== undefined ? `&folder_id=${folder_id}` : ''}`);
+};
 
-export const getAllVersions = () =>
-  api<any[]>('GET', `/api/versions`);
+export const getAllVersions = () => {
+  requireNoOrgContext('Versions');
+  return api<any[]>('GET', `/api/versions`);
+};
 
-export const restoreVersion = (message_id: number, version_message_id: number, folder_id?: number, name?: string) =>
-  api<boolean>('POST', '/api/versions/restore', { folder_id, name, version_message_id: version_message_id, current_message_id: message_id });
+export const restoreVersion = (message_id: number, version_message_id: number, folder_id?: number, name?: string) => {
+  requireNoOrgContext('Versions');
+  return api<boolean>('POST', '/api/versions/restore', { folder_id, name, version_message_id: version_message_id, current_message_id: message_id });
+};
 
-export const recordVersion = (message_id: number, folder_id: number, name: string) =>
-  api<boolean>('POST', '/api/versions/record', { message_id, folder_id, name });
+export const recordVersion = (message_id: number, folder_id: number, name: string) => {
+  requireNoOrgContext('Versions');
+  return api<boolean>('POST', '/api/versions/record', { message_id, folder_id, name });
+};
 
-export const logActivity = (action: string, detail?: string, name?: string) =>
-  api<boolean>('POST', '/api/activity', { action, detail, name });
+export const logActivity = (action: string, detail?: string, name?: string) => {
+  requireNoOrgContext('Activity log');
+  return api<boolean>('POST', '/api/activity', { action, detail, name });
+};
 
-export const getActivity = () =>
-  api<any[]>('GET', '/api/activity');
+export const getActivity = () => {
+  requireNoOrgContext('Activity log');
+  return api<any[]>('GET', '/api/activity');
+};
 
-export const clearActivity = () =>
-  api<boolean>('POST', '/api/activity/clear');
+export const clearActivity = () => {
+  requireNoOrgContext('Activity log');
+  return api<boolean>('POST', '/api/activity/clear');
+};
 
-export const touchRecent = (message_id: number, folder_id: number, name?: string, size?: number) =>
-  api<boolean>('POST', '/api/meta/touch', { message_id, folder_id, name, size });
+export const touchRecent = (message_id: number, folder_id: number, name?: string, size?: number) => {
+  requireNoOrgContext('Recent');
+  return api<boolean>('POST', '/api/meta/touch', { message_id, folder_id, name, size });
+};
 
-export const searchFilesAdvanced = (query: string, filters?: any) =>
-  api<any[]>('GET', `/api/files/search?query=${encodeURIComponent(query)}${filters ? '&' + new URLSearchParams(filters).toString() : ''}`);
+export const searchFilesAdvanced = (query: string, filters?: any) => {
+  requireNoOrgContext('Search');
+  return api<any[]>('GET', `/api/files/search?query=${encodeURIComponent(query)}${filters ? '&' + new URLSearchParams(filters).toString() : ''}`);
+};
 
 export const uploadFileResumable = (file: File, folder_id?: number, options?: {
   signal?: AbortSignal;
