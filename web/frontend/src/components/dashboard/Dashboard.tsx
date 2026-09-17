@@ -73,6 +73,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     const [uploadsPaused, setUploadsPaused] = useState(false);
     const orgId = api.getOrgContext();
     const { alerts, newCount: alertCount, clearNewCount } = useOrgAlerts(orgId);
+    const [showAlerts, setShowAlerts] = useState(false);
 
     const toggleLock = () => {
         if (!hasPin) {
@@ -1159,11 +1160,29 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                     hasPin={hasPin}
                     alertCount={alertCount}
                     onOpenAlerts={() => {
+                        setShowAlerts(v => !v);
                         clearNewCount();
-                        // TODO: show alerts dropdown
-                        toast.info(`Org alerts (${alerts.length})`, { description: 'Recent org activity' });
                     }}
                 />
+                {showAlerts && orgId && (
+                    <div className="absolute top-14 right-4 z-50 w-80 max-h-96 overflow-auto glass-strong rounded-xl shadow-2xl border border-telegram-border p-2">
+                        <div className="flex items-center justify-between px-2 py-1">
+                            <p className="text-xs font-bold uppercase tracking-widest text-telegram-subtext">Org alerts</p>
+                            <button onClick={() => setShowAlerts(false)} className="text-xs text-telegram-subtext hover:text-telegram-text">Close</button>
+                        </div>
+                        {alerts.length === 0 ? (
+                            <p className="text-xs text-telegram-subtext px-2 py-4 text-center">No recent org activity</p>
+                        ) : alerts.slice(0, 20).map((a: any) => (
+                            <div key={a.id || `${a.action}-${a.created_at}`} className="px-2 py-1.5 rounded-lg hover:bg-telegram-hover">
+                                <p className="text-xs font-medium text-telegram-text">{String(a.action || '').replace('org.', '')}</p>
+                                <p className="text-[11px] text-telegram-subtext truncate">
+                                    {[a.target_type, a.target_id].filter(Boolean).join(': ')}
+                                    {a.created_at ? ` • ${new Date(a.created_at).toLocaleString()}` : ''}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {isOffline && !isSpecial && (
                     <div className="px-4 pt-2">
                         <div className="px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-xs text-yellow-300 flex items-center gap-2">

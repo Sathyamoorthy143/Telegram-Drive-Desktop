@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen } from 'lucide-react';
+import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen, HardDrive, X } from 'lucide-react';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 
@@ -16,6 +16,16 @@ type Tab = 'files' | 'trash' | 'members' | 'activity' | 'settings';
 const canEdit = (role: string) => ['editor', 'admin', 'owner'].includes(role);
 const canAdmin = (role: string) => ['admin', 'owner'].includes(role);
 
+interface UploadItem {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  progress: number;
+  status: 'staged' | 'uploading' | 'success' | 'error' | 'cancelled';
+  error?: string;
+}
+
 export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const role = session?.role || 'owner'; // master bypass acts as owner
   const [tab, setTab] = useState<Tab>('files');
@@ -27,9 +37,22 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const [storage, setStorage] = useState<{ provisioned: boolean; main_channel_id?: number; backup_channel_id?: number } | null>(null);
   const [newFolder, setNewFolder] = useState('');
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const uploadControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const uploadingRef = useRef(false);
+
+  // Abort any in-flight org uploads on unmount so chunked XHR doesn't leak.
+  useEffect(() => {
+    const controllers = uploadControllersRef.current;
+    return () => {
+      controllers.forEach((c) => { try { c.abort(); } catch {} });
+      controllers.clear();
+      uploadingRef.current = false;
+    };
+  }, []);
 
   const loadFiles = async () => {
     try {
@@ -102,22 +125,83 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-    }
+    const fileList = e.target.files;
+    if (!fileList) return;
+    const newItems: UploadItem[] = Array.from(fileList).map(f => ({
+      id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      file: f,
+      name: f.name,
+      size: f.size,
+      progress: 0,
+      status: 'staged',
+    }));
+    setUploadQueue(prev => [...prev, ...newItems]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const uploadFile = async () => {
-    if (!selectedFile) return;
+  const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
+    const newItems: UploadItem[] = Array.from(fileList).map(f => ({
+      id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      file: f,
+      name: (f as any).webkitRelativePath || f.name,
+      size: f.size,
+      progress: 0,
+      status: 'staged',
+    }));
+    setUploadQueue(prev => [...prev, ...newItems]);
+    if (folderInputRef.current) folderInputRef.current.value = '';
+  };
+
+  const removeUploadItem = (id: string) => {
+    const ctrl = uploadControllersRef.current.get(id);
+    if (ctrl) ctrl.abort();
+    uploadControllersRef.current.delete(id);
+    setUploadQueue(prev => prev.filter(x => x.id !== id));
+  };
+
+  const clearFinishedUploads = () => {
+    setUploadQueue(prev => prev.filter(x => x.status !== 'success'));
+  };
+
+  const runUploads = async () => {
+    if (uploadingRef.current) return;
+    const pending = uploadQueue.filter(x => x.status === 'staged');
+    if (pending.length === 0) return;
+    uploadingRef.current = true;
     setUploading(true);
-    try {
-      await api.uploadOrgFile(org.id, selectedFile);
-      toast.success(`Uploaded "${selectedFile.name}"`);
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      loadFiles();
-    } catch (e: any) { toast.error(e.message); }
-    setUploading(false);
+    for (const item of pending) {
+      const ctrl = new AbortController();
+      uploadControllersRef.current.set(item.id, ctrl);
+      try {
+        setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'uploading' } : x));
+        if (item.file.size > api.CHUNK_SIZE) {
+          await api.uploadOrgFileChunked(org.id, item.file, undefined, {
+            signal: ctrl.signal,
+            onProgress: (done, total) => {
+              setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, progress: Math.round((done / total) * 100) } : x));
+            },
+          });
+        } else {
+          await api.uploadOrgFile(org.id, item.file);
+        }
+        setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'success', progress: 100 } : x));
+        toast.success(`Uploaded "${item.name}"`);
+      } catch (e: any) {
+        if (e?.name === 'AbortError') {
+          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'cancelled' } : x));
+        } else {
+          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'error', error: e.message } : x));
+          toast.error(`Upload failed: ${item.name}`);
+        }
+      }
+      uploadControllersRef.current.delete(item.id);
+    }
+    try { await loadFiles(); } finally {
+      uploadingRef.current = false;
+      setUploading(false);
+    }
   };
 
   const restoreItem = async (message_id: number, folder_id?: number) => {
@@ -220,13 +304,62 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                 </form>
               )}
               {canEdit(role) && (
-                <div className="flex items-center gap-2 mb-4">
-                  <input ref={fileInputRef} type="file" onChange={handleFileSelect}
-                    className="text-sm text-telegram-subtext file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border file:border-telegram-border file:bg-telegram-surface file:text-telegram-primary" />
-                  <button onClick={uploadFile} disabled={!selectedFile || uploading}
-                    className="flex items-center gap-1 text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white disabled:opacity-50 disabled:cursor-not-allowed">
-                    <Upload className="w-4 h-4" /> {uploading ? 'Uploading…' : 'Upload'}
+                <div className="flex items-center gap-2 mb-4 flex-wrap">
+                  <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect}
+                    className="hidden" />
+                  <input ref={folderInputRef} type="file" multiple {...({ webkitdirectory: '', directory: '' } as any)} onChange={handleFolderSelect}
+                    className="hidden" />
+                  <button onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-1 text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white disabled:opacity-50">
+                    <Upload className="w-4 h-4" /> Upload Files
                   </button>
+                  <button onClick={() => folderInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-1 text-sm px-4 py-2 rounded-lg border border-telegram-border hover:bg-telegram-hover disabled:opacity-50">
+                    <FolderPlus className="w-4 h-4" /> Upload Folder
+                  </button>
+                  {uploadQueue.length > 0 && (
+                    <button onClick={runUploads} disabled={uploading}
+                      className="flex items-center gap-1 text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white disabled:opacity-50">
+                      <HardDrive className="w-4 h-4" /> {uploading ? 'Uploading…' : `Upload ${uploadQueue.length} item${uploadQueue.length > 1 ? 's' : ''}`}
+                    </button>
+                  )}
+                  {uploadQueue.length > 0 && (
+                    <button onClick={clearFinishedUploads}
+                      className="flex items-center gap-1 text-sm px-4 py-2 rounded-lg border border-telegram-border hover:bg-telegram-hover">
+                      <X className="w-4 h-4" /> Clear done
+                    </button>
+                  )}
+                </div>
+              )}
+              {uploadQueue.length > 0 && (
+                <div className="mb-4 space-y-1">
+                  {uploadQueue.map(item => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-telegram-surface border border-telegram-border">
+                      <div className="flex-1 min-w-0">
+                        <span className="truncate block">{item.name}</span>
+                        {item.status === 'uploading' && (
+                          <div className="w-full bg-telegram-hover rounded-full h-1 mt-1">
+                            <div className="bg-telegram-primary h-1 rounded-full transition-all" style={{ width: `${item.progress}%` }} />
+                          </div>
+                        )}
+                        {item.status === 'error' && <span className="text-xs text-red-500">{item.error}</span>}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        item.status === 'success' ? 'bg-green-500/20 text-green-500' :
+                        item.status === 'uploading' ? 'bg-telegram-primary/20 text-telegram-primary' :
+                        item.status === 'error' ? 'bg-red-500/20 text-red-500' :
+                        item.status === 'cancelled' ? 'bg-yellow-500/20 text-yellow-500' :
+                        'bg-telegram-hover text-telegram-subtext'
+                      }`}>
+                        {item.status === 'success' ? 'done' : item.status === 'uploading' ? `${item.progress}%` : item.status}
+                      </span>
+                      {item.status !== 'uploading' && (
+                        <button onClick={() => removeUploadItem(item.id)} className="text-xs text-red-500 hover:underline">remove</button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
               {folders.length > 0 && (
