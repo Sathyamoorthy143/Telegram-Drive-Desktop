@@ -622,7 +622,7 @@ export const getCurrentOrg = (subdomain?: string) =>
     'GET', `/api/current-org${subdomain ? `?subdomain=${encodeURIComponent(subdomain)}` : ''}`);
 
 export const getAdminOverview = () =>
-  api<{ org_count: number; orgs: any[] }>('GET', '/api/admin/overview');
+  api<{ org_count: number; orgs: any[]; partial?: boolean }>('GET', '/api/admin/overview');
 
 export const getOrganizations = () =>
   api<any[]>('GET', '/api/admin/organizations');
@@ -656,8 +656,8 @@ export const deleteOrgMember = (orgId: string, memberId: string, admin = false) 
 export const getOrgActivity = (orgId: string, admin = false) =>
   api<any[]>('GET', admin ? `/api/admin/organizations/${orgId}/activity` : `/api/org/${orgId}/activity`);
 
-export const getOrgAlerts = (orgId: string) =>
-  api<any[]>('GET', `/api/org/${orgId}/alerts`);
+export const getOrgAlerts = (orgId: string, admin = false) =>
+  api<any[]>('GET', admin ? `/api/admin/organizations/${orgId}/alerts` : `/api/org/${orgId}/alerts`);
 
 export const logOrgActivity = (orgId: string, action: string, target_type?: string, target_id?: string, details?: any) =>
   api<boolean>('POST', `/api/org/${orgId}/activity`, { action, target_type, target_id, details });

@@ -31,11 +31,14 @@ pub async fn overview(state: web::Data<AppState>) -> impl Responder {
             supabase_org::get_org_settings(&org.id),
         )
         .await;
-        let members = members.map(|m| m.len()).unwrap_or(0);
-        let trash = trash.map(|t| t.len()).unwrap_or(0);
-        let has_audit = audit.map(|a| !a.is_empty()).unwrap_or(false);
-        let settings = settings.ok().flatten();
-        serde_json::json!({
+        // Surface lookup failures explicitly: zeros must mean "empty",
+        // never "the query failed".
+        let mut errors: Vec<&str> = Vec::new();
+        let members = members.map(|m| m.len()).unwrap_or_else(|_| { errors.push("members"); 0 });
+        let trash = trash.map(|t| t.len()).unwrap_or_else(|_| { errors.push("trash"); 0 });
+        let has_audit = audit.map(|a| !a.is_empty()).unwrap_or_else(|_| { errors.push("audit"); false });
+        let settings = settings.map_err(|_| errors.push("settings")).ok().flatten();
+        let mut row = serde_json::json!({
             "id": org.id,
             "name": org.name,
             "subdomain": org.subdomain,
@@ -47,11 +50,18 @@ pub async fn overview(state: web::Data<AppState>) -> impl Responder {
             "provisioned": settings.as_ref().and_then(|s| s.channel_id).is_some(),
             "channel_id": settings.as_ref().and_then(|s| s.channel_id),
             "backup_channel_id": settings.as_ref().and_then(|s| s.backup_channel_id),
-        })
+        });
+        if !errors.is_empty() {
+            row["partial"] = serde_json::json!(true);
+            row["errors"] = serde_json::json!(errors);
+        }
+        row
     }))
     .await;
+    let partial = rows.iter().any(|r| r.get("partial").and_then(|v| v.as_bool()).unwrap_or(false));
     HttpResponse::Ok().json(serde_json::json!({
         "org_count": rows.len(),
         "orgs": rows,
+        "partial": partial,
     }))
 }

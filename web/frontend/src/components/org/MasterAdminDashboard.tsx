@@ -28,6 +28,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'admin' });
   const [provisioningId, setProvisioningId] = useState<string | null>(null);
   const [backendStale, setBackendStale] = useState(false);
+  const [overviewPartial, setOverviewPartial] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const [alerts, setAlerts] = useState<OrgAlertRow[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
@@ -44,6 +45,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       }
       const res = await api.getAdminOverview();
       setOrgs(res.orgs);
+      setOverviewPartial(res.partial === true);
     } catch (e: any) {
       toast.error(`Failed to load organizations: ${e.message}`);
     } finally {
@@ -71,7 +73,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       const settled = await Promise.allSettled(
         orgs.map(async (org) => ({
           orgName: org.name,
-          entries: await api.getOrgActivity(org.id, true),
+          entries: await api.getOrgAlerts(org.id, true),
         })),
       );
       const merged: OrgAlertRow[] = [];
@@ -224,6 +226,12 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
           </div>
         )}
 
+        {overviewPartial && (
+          <div className="mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/40 text-sm text-yellow-600">
+            Some org stats failed to load — affected rows are marked and counts may read 0. Refresh to retry.
+          </div>
+        )}
+
         <form onSubmit={createOrg} className="flex flex-wrap gap-2 mb-6 p-4 bg-telegram-surface border border-telegram-border rounded-xl">
           <input
             value={name} onChange={(e) => setName(e.target.value)} placeholder="Org name (e.g. Acme Corp)"
@@ -252,6 +260,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                       {org.name}
                       {org.active === false && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">inactive</span>}
                       {!org.provisioned && <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600">not provisioned</span>}
+                      {org.partial && <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600" title={`Failed lookups: ${(org.errors || []).join(', ')}`}>partial data</span>}
                     </div>
                     <div className="text-xs text-telegram-subtext">
                       {org.subdomain} · {org.member_count} members · {org.trash_count} trashed

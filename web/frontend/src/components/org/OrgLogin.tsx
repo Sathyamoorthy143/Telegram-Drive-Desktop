@@ -9,6 +9,14 @@ interface Props {
   onLogin: (session: { username: string; role: string; member_id: string }) => void;
 }
 
+function friendlyOrgLoginError(raw?: string): string {
+  const m = String(raw || '');
+  if (/invalid username or password/i.test(m)) return 'Wrong username or password. Ask your org admin to verify your account.';
+  if (/inactive/i.test(m)) return 'This organization is inactive — contact your admin.';
+  if (/not configured|unavailable|service/i.test(m)) return 'Organization sign-in is temporarily unavailable. Try again shortly.';
+  return m;
+}
+
 export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -29,11 +37,15 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
     setError(null);
     try {
       const sess = await api.orgLogin(orgId, username.trim(), password);
+      if (sess.org_id !== orgId) {
+        setError('Signed into the wrong organization — please use this org’s own login page.');
+        return;
+      }
       api.setOrgToken(sess.token);
       api.setOrgId(sess.org_id);
       onLogin({ username: sess.username, role: sess.role, member_id: sess.member_id });
     } catch (err: any) {
-      setError(err?.message || 'Login failed');
+      setError(friendlyOrgLoginError(err?.message) || 'Login failed');
     } finally {
       setBusy(false);
     }
@@ -80,7 +92,14 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
           <LogIn className="w-4 h-4" />
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <p className="text-xs text-telegram-subtext mt-4 text-center">
+        <button
+          type="button"
+          onClick={() => { window.location.href = '/'; }}
+          className="w-full mt-3 text-xs text-telegram-primary hover:underline"
+        >
+          ← Back to master dashboard
+        </button>
+        <p className="text-xs text-telegram-subtext mt-3 text-center">
           Organization accounts are created by your org admin. No Telegram login needed.
         </p>
       </form>

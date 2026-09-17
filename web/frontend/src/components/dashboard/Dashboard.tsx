@@ -72,8 +72,16 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const [uploadsPaused, setUploadsPaused] = useState(false);
     const orgId = api.getOrgContext();
-    const { alerts, newCount: alertCount, clearNewCount } = useOrgAlerts(orgId);
+    const { alerts, newCount: alertCount, clearNewCount, expired: alertsExpired } = useOrgAlerts(orgId);
     const [showAlerts, setShowAlerts] = useState(false);
+    const alertsExpiredToastShown = useRef(false);
+    useEffect(() => {
+        if (alertsExpired && !alertsExpiredToastShown.current) {
+            alertsExpiredToastShown.current = true;
+            toast.warning('Org alerts unavailable — your org session may have expired. Re-login if alerts stay empty.');
+        }
+        if (!alertsExpired) alertsExpiredToastShown.current = false;
+    }, [alertsExpired]);
 
     const toggleLock = () => {
         if (!hasPin) {
@@ -1191,10 +1199,10 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                     isLocked={isLocked}
                     hasPin={hasPin}
                     alertCount={alertCount}
-                    onOpenAlerts={() => {
+                    onOpenAlerts={orgId ? () => {
                         setShowAlerts(v => !v);
                         clearNewCount();
-                    }}
+                    } : undefined}
                 />
                 {showAlerts && orgId && (
                     <>

@@ -511,6 +511,17 @@ pub async fn post_activity_hdl(
     HttpResponse::Ok().json(true)
 }
 
+async fn alerts_for_org(state: &web::Data<AppState>, org_id: &str) -> HttpResponse {
+    let _ = state;
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    match supabase_org::list_org_audit(org_id, 50).await {
+        Ok(rows) => HttpResponse::Ok().json(rows),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
 /// `GET /api/org/{id}/alerts` — viewer+. Returns recent audit log entries
 /// (last ~50) for toast notifications in the org Dashboard.
 pub async fn list_alerts(
@@ -522,13 +533,22 @@ pub async fn list_alerts(
     if let Err(e) = require_org_role(&state, &req, &org_id, "viewer").await {
         return e;
     }
-    if !supabase_org::is_configured() {
-        return supabase_unavailable();
+    alerts_for_org(&state, &org_id).await
+}
+
+/// `GET /api/admin/organizations/{id}/alerts` — master only. Same feed for
+/// the cross-org alerts overview.
+pub async fn list_alerts_admin_hdl(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if require_master(&state).await.is_err() {
+        return HttpResponse::Unauthorized().body("Master admin authentication required");
     }
-    match supabase_org::list_org_audit(&org_id, 50).await {
-        Ok(rows) => HttpResponse::Ok().json(rows),
-        Err(e) => HttpResponse::InternalServerError().body(e),
-    }
+    let _ = req;
+    alerts_for_org(&state, &org_id).await
 }
 
 // ---- Org trash (org_trash table; Telegram msg kept until purge) ----

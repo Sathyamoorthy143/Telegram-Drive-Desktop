@@ -168,6 +168,8 @@ export interface OrgOverviewEntry {
     provisioned: boolean;
     channel_id?: number;
     backup_channel_id?: number;
+    partial?: boolean;
+    errors?: string[];
 }
 
 export interface OrgAlert {
