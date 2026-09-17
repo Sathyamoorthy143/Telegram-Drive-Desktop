@@ -4,6 +4,7 @@ import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw,
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
+import { withStatus, withProgress, withError, removeEntry, clearTerminal } from '../../uploadQueue';
 
 function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; folderId?: number; messageId: number; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -312,11 +313,11 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     const ctrl = uploadControllersRef.current.get(id);
     if (ctrl) ctrl.abort();
     uploadControllersRef.current.delete(id);
-    setUploadQueue(prev => prev.filter(x => x.id !== id));
+    setUploadQueue(prev => removeEntry(prev, id));
   };
 
   const clearFinishedUploads = () => {
-    setUploadQueue(prev => prev.filter(x => x.status !== 'success'));
+    setUploadQueue(prev => clearTerminal(prev, ['success']));
   };
 
   const runUploads = async () => {
@@ -383,24 +384,24 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
         const ctrl = new AbortController();
         uploadControllersRef.current.set(item.id, ctrl);
         try {
-          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'uploading' } : x));
+          setUploadQueue(prev => withStatus(prev, item.id, 'uploading'));
         if (needsChunkedUpload(item.file.size, api.CHUNKED_UPLOAD_THRESHOLD)) {
           await api.uploadOrgFileChunked(org.id, item.file, folderByItem.get(item.id), {
             signal: ctrl.signal,
             onProgress: (done, total) => {
-              setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, progress: Math.round((done / total) * 100) } : x));
+              setUploadQueue(prev => withProgress(prev, item.id, Math.round((done / total) * 100)));
             },
           });
         } else {
           await api.uploadOrgFile(org.id, item.file, folderByItem.get(item.id), { signal: ctrl.signal });
         }
-          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'success', progress: 100 } : x));
+          setUploadQueue(prev => withStatus(prev, item.id, 'success', { progress: 100 }));
           toast.success(`Uploaded "${item.name}"`);
         } catch (e: any) {
           if (e?.name === 'AbortError') {
-            setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'cancelled' } : x));
+            setUploadQueue(prev => withStatus(prev, item.id, 'cancelled'));
           } else {
-            setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'error', error: e.message } : x));
+            setUploadQueue(prev => withError(prev, item.id, e.message));
             toast.error(`Upload failed: ${item.name}`);
           }
         }

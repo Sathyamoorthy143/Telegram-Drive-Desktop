@@ -26,6 +26,7 @@ const SheetEditor = lazy(() => import('./SheetEditor').then((m) => ({ default: m
 const DocEditor = lazy(() => import('./DocEditor').then((m) => ({ default: m.DocEditor })));
 const SlideEditor = lazy(() => import('./SlideEditor').then((m) => ({ default: m.SlideEditor })));
 import { getEditKind, getFileTypeCategory, EditKind } from '../../utils';
+import { withStatus, withError, removeEntry, clearTerminal } from '../../uploadQueue';
 import { DragDropOverlay } from './DragDropOverlay';
 import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
@@ -462,8 +463,8 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         setUploadQueue(q => {
             const it = q.find(x => x.id === qid);
             // Staged items never started — remove them straight away.
-            if ((it as any)?.status === 'staged') return q.filter(x => x.id !== qid);
-            return q.map(x => x.id === qid ? { ...x, status: 'cancelled' as const } : x);
+            if ((it as any)?.status === 'staged') return removeEntry(q, qid);
+            return withStatus(q, qid, 'cancelled');
         });
         // Free the staged File handle for removed items; bump so the live
         // manager immediately fills the freed parallel slot.
@@ -650,7 +651,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
             await new Promise(r => setTimeout(r, 300));
             if (readStatus() === 'cancelled') return;
         }
-        setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'uploading' as const, progress: 5 } : x));
+        setUploadQueue(q => withStatus(q, qid, 'uploading', { progress: 5 }));
         const toastId = isLocked ? null : toast.loading(`Uploading ${file.name}...`);
         const ctrl = new AbortController();
         uploadControllers.current.set(qid, ctrl);
@@ -715,20 +716,20 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                 try { localStorage.setItem('enc_iv', JSON.stringify(m)); } catch {}
             }
             api.logActivity('upload', `folder:${activeFolderId ?? 'root'}`, file.name).catch(()=>{});
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'success' as const, progress: 100 } : x));
+            setUploadQueue(q => withStatus(q, qid, 'success', { progress: 100 }));
             if (isLocked) { queueToast(`${file.name} uploaded`, 'success'); if (toastId) toast.dismiss(toastId); }
             else toast.success(`${file.name} uploaded`, { id: toastId as any });
         } catch (err: any) {
             const cancelled = ctrl.signal.aborted || String(err?.name).includes('Abort') || String(err?.message).includes('aborted') || String(err?.message).includes('cancelled');
             if (cancelled && String(err?.message).includes('Encryption cancelled')) {
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'cancelled' as const } : x));
+                setUploadQueue(q => withStatus(q, qid, 'cancelled'));
                 if (toastId) toast.dismiss(toastId);
             } else if (cancelled) {
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'cancelled' as const } : x));
+                setUploadQueue(q => withStatus(q, qid, 'cancelled'));
                 if (toastId) toast.dismiss(toastId);
                 toast.info(`${file.name} upload cancelled`);
             } else {
-                setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'error' as const, error: err.message } : x));
+                setUploadQueue(q => withError(q, qid, err.message));
                 if (!handleAuthError(err)) {
                     if (isLocked) { queueToast(`Failed: ${file.name} - ${err.message}`, 'error'); if (toastId) toast.dismiss(toastId); }
                     else toast.error(`Failed: ${file.name} - ${err.message || 'error'}`, { id: toastId as any });
@@ -889,7 +890,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         startingIdsRef.current.delete(qid);
         uploadFilesRef.current.delete(qid);
         speedRef.current.delete(qid);
-        setUploadQueue(q => q.filter(x => x.id !== qid));
+        setUploadQueue(q => removeEntry(q, qid));
         bumpQueue();
     }, [bumpQueue]);
 
@@ -921,7 +922,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
             runOneFileUpload(file, item.id, batchPinRef.current).finally(() => {
                 startingIdsRef.current.delete(item.id);
                 queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-                setTimeout(() => setUploadQueue(q => q.filter(x => (x as any).status !== 'success')), 4000);
+                setTimeout(() => setUploadQueue(q => clearTerminal(q, ['success'])), 4000);
                 bumpQueue();
             });
         });
@@ -1325,7 +1326,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                 </Suspense>
             )}
 
-            <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error' && i.status !== 'cancelled'))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
+            <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => clearTerminal(q, ['success', 'error', 'cancelled']))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
             <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => { handleCancelAllDownloads(); setDownloadQueue(q => q.map((i: any) => (i.status === 'downloading' || i.status === 'pending') ? { ...i, status: 'cancelled' as const } : i)); }} />
             {isLocked && <LockScreen />}
         </motion.div>
