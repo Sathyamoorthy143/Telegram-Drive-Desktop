@@ -105,7 +105,11 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             if (isNaN(idInt)) throw new Error("API ID must be a number");
             const trimmedHash = apiHash.trim();
             if (!trimmedHash) throw new Error("API Hash is required");
-            await requestCode(trimmedPhone, idInt, trimmedHash);
+            const res = await requestCode(trimmedPhone, idInt, trimmedHash);
+            if (res === "already_authorized") {
+                onLogin();
+                return;
+            }
             setStep("code");
         } catch (err: unknown) {
             const raw = err instanceof Error ? err.message : err;

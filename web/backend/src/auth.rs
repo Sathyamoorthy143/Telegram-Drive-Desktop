@@ -131,6 +131,12 @@ pub async fn request_code(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
+    // The persisted session may already be authorized (previous sign-in,
+    // backend restart, Supabase restore). sendCode on an authorized session
+    // fails with AUTH_RESTART — skip it and report signed-in directly.
+    if client.get_me().await.is_ok() {
+        return HttpResponse::Ok().json("already_authorized");
+    }
     for attempt in 0..3 {
         match client
             .request_login_code(&req.phone, &api_hash)
@@ -154,6 +160,13 @@ pub async fn request_code(
                         }
                     }
                     return HttpResponse::BadGateway().body(format!("Telegram connection dropped after retry: {}", m));
+                }
+                if m.contains("AUTH_RESTART") && attempt >= 1 {
+                    return HttpResponse::BadGateway().body(
+                        "Telegram rejected the login-code request (AUTH_RESTART) after retry. \
+                        This usually means the saved session disagrees with these API credentials. \
+                        Sign out to clear the saved session, verify the API ID/Hash at https://my.telegram.org, then try again."
+                    );
                 }
                 if m.contains("AUTH_RESTART") || m.to_lowercase().contains("500") || m.contains("FLOOD_WAIT") {
                     if attempt < 1 {
