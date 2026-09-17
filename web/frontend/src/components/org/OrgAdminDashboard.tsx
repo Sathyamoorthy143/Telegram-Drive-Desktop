@@ -8,9 +8,34 @@ import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex,
 function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; folderId?: number; messageId: number; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  // Only fetch once scrolled into view — a page of thumbnails must not
+  // stampede the backend (and the shared Telegram connection) on mount.
   useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
     let objectUrl: string | null = null;
+    setFailed(false);
     api.downloadOrgFileBlob(orgId, folderId, messageId).then((blob) => {
       if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
@@ -20,9 +45,19 @@ function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; fo
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [orgId, folderId, messageId]);
-  if (failed) return <span className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover flex items-center justify-center text-sm" title={name}>🖼️</span>;
-  if (!url) return <span className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover animate-pulse" />;
+  }, [orgId, folderId, messageId, visible, attempt]);
+  if (failed) {
+    return (
+      <button
+        onClick={() => setAttempt((n) => n + 1)}
+        title={`Preview failed — click to retry (${name})`}
+        className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover hover:bg-telegram-border flex items-center justify-center text-sm"
+      >
+        🔁
+      </button>
+    );
+  }
+  if (!url) return <span ref={boxRef} className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover animate-pulse" />;
   return <img src={url} alt={name} loading="lazy" className="w-10 h-10 shrink-0 rounded-lg object-cover border border-telegram-border" />;
 }
 import type { OrgUploadItem as UploadItem } from '../../orgUpload';

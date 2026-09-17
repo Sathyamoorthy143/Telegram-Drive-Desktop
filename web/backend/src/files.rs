@@ -130,6 +130,10 @@ pub async fn download_file(
         _ => "application/octet-stream".to_string(),
     };
     let etag = format!("\"{}-{}\"", fid, mid);
+    let permit = match state.download_slots.clone().acquire_owned().await {
+        Ok(s) => s,
+        Err(_) => return HttpResponse::InternalServerError().body("download limiter shut down"),
+    };
     let workers = crate::fast_transfer::worker_count_for(crate::tier::premium_cached(&state).await);
     match crate::fast_transfer::range_decision(&req, &etag, size) {
         crate::fast_transfer::RangeDecision::NotModified => HttpResponse::NotModified().finish(),
@@ -138,6 +142,7 @@ pub async fn download_file(
             .finish(),
         crate::fast_transfer::RangeDecision::Full => {
             let stream = crate::fast_transfer::download_stream(&client, media, workers);
+            let stream = crate::fast_transfer::hold_permit(stream, permit);
             HttpResponse::Ok()
                 .content_type(mime)
                 .insert_header(("Content-Length", size.to_string()))
@@ -148,6 +153,7 @@ pub async fn download_file(
         }
         crate::fast_transfer::RangeDecision::Partial(s, e) => {
             let stream = crate::fast_transfer::download_range_stream(&client, media, Some((s, e)), workers);
+            let stream = crate::fast_transfer::hold_permit(stream, permit);
             HttpResponse::PartialContent()
                 .content_type(mime)
                 .insert_header(("Content-Length", (e - s + 1).to_string()))

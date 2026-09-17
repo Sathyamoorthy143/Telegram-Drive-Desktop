@@ -70,6 +70,22 @@ pub async fn get_client(state: &AppState) -> Result<Client, String> {
     Ok(client)
 }
 
+/// Drop the cached client so the next `get_client` rebuilds the sender pool
+/// from the persisted session. Call when requests fail with transport-level
+/// errors (`dropped (cancelled)`, disconnects) — the runner behind the cached
+/// client is dead and every further call would fail the same way until reset.
+pub async fn reset_client(state: &web::Data<AppState>) {
+    *state.client.lock().await = None;
+    crate::utils::clear_peer_cache(&state.peer_cache).await;
+}
+
+/// True for transport-level failures (dead connection), as opposed to
+/// Telegram API rejections like PHONE_NUMBER_INVALID.
+pub fn is_transport_failure(m: &str) -> bool {
+    let l = m.to_lowercase();
+    l.contains("dropped") || l.contains("disconnected") || l.contains("connection reset")
+}
+
 pub async fn connect(state: web::Data<AppState>, req: web::Json<ConnectRequest>) -> impl Responder {
     *state.api_id.lock().await = Some(req.api_id);
     match get_client(&state).await {
@@ -111,11 +127,11 @@ pub async fn request_code(
         s.telegram_api_id = Some(req.api_id);
         crate::settings::save_settings(&s);
     }
-    let client = match get_client(&state).await {
+    let mut client = match get_client(&state).await {
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    for attempt in 0..2 {
+    for attempt in 0..3 {
         match client
             .request_login_code(&req.phone, &api_hash)
             .await
@@ -126,6 +142,19 @@ pub async fn request_code(
             }
             Err(e) => {
                 let m = e.to_string();
+                if is_transport_failure(&m) {
+                    // Dead connection behind the cached client: rebuild the
+                    // pool from the persisted session and retry.
+                    if attempt < 2 {
+                        reset_client(&state).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt as u64 + 1))).await;
+                        match get_client(&state).await {
+                            Ok(c) => { client = c; continue; }
+                            Err(e2) => return HttpResponse::BadGateway().body(format!("Telegram connection dropped and reconnect failed: {}", e2)),
+                        }
+                    }
+                    return HttpResponse::BadGateway().body(format!("Telegram connection dropped after retry: {}", m));
+                }
                 if m.contains("AUTH_RESTART") || m.to_lowercase().contains("500") || m.contains("FLOOD_WAIT") {
                     if attempt < 1 {
                         continue;
@@ -308,4 +337,19 @@ pub async fn logout(state: web::Data<AppState>) -> impl Responder {
     let _ = std::fs::remove_file(format!("{}-wal", sp));
     let _ = std::fs::remove_file(format!("{}-shm", sp));
     HttpResponse::Ok().json(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_failure_classifier() {
+        assert!(is_transport_failure("request error: dropped (cancelled)"));
+        assert!(is_transport_failure("Disconnected"));
+        assert!(is_transport_failure("connection reset by peer"));
+        assert!(!is_transport_failure("PHONE_NUMBER_INVALID"));
+        assert!(!is_transport_failure("FLOOD_WAIT_30"));
+        assert!(!is_transport_failure("API_ID_INVALID"));
+    }
 }

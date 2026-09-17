@@ -30,7 +30,7 @@ use actix_web::{web, App, HttpServer, HttpResponse};
 use grammers_client::client::LoginToken;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 
 use crate::models::Settings;
 
@@ -46,7 +46,14 @@ pub struct AppState {
     pub premium_cache: Arc<Mutex<(Option<bool>, Option<std::time::Instant>)>>,
     /// In-memory org member sessions (token → session).
     pub org_sessions: auth_org::OrgTokenStore,
+    /// Caps concurrent Telegram media downloads. Each download already fans out
+    /// to 24+ RPC workers; without this, a page of thumbnails stampedes the
+    /// single shared connection into flood/disconnect (`dropped (cancelled)`).
+    pub download_slots: Arc<Semaphore>,
 }
+
+/// Max simultaneous Telegram media downloads per backend instance.
+pub const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 
 /// `GET /api/version` — lets frontends detect backend capabilities.
 /// `org_platform: true` means all `/api/admin/*` + `/api/org/*` routes exist.
@@ -90,6 +97,7 @@ async fn main() -> std::io::Result<()> {
         replicate_tx: replicate_tx.clone(),
         premium_cache: Arc::new(Mutex::new((None, None))),
         org_sessions: auth_org::new_token_store(),
+        download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)),
     });
 
     // Background MAIN → BACKUP replication worker + MAIN channel watcher.

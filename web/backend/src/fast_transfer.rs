@@ -52,6 +52,27 @@ pub fn worker_count_for(premium: bool) -> usize {
         .clamp(1, max)
 }
 
+/// Wrap a media byte-stream so a download permit is held until the stream is
+/// exhausted. Handlers return immediately while the body streams afterwards,
+/// so a permit held only in-handler would be released before any bytes flow.
+pub fn hold_permit<S>(
+    stream: S,
+    permit: tokio::sync::OwnedSemaphorePermit,
+) -> impl futures::Stream<Item = S::Item>
+where
+    S: futures::Stream + 'static,
+{
+    futures::stream::unfold(
+        (Box::pin(stream), Some(permit)),
+        |(mut s, permit)| async move {
+            match s.next().await {
+                Some(item) => Some((item, (s, permit))),
+                None => None,
+            }
+        },
+    )
+}
+
 /// If this is a flood-wait error, return the requested wait seconds.
 fn flood_wait_secs(e: &InvocationError) -> Option<u64> {
     if let InvocationError::Rpc(rpc) = e {
