@@ -116,6 +116,9 @@ pub struct OrgSession {
     /// Unix timestamp of issuance; 0 = unknown (treated as expired).
     #[serde(default)]
     pub issued_at: i64,
+    /// Unix timestamp of the last DB role re-check; 0 = never (check now).
+    #[serde(default)]
+    pub role_checked_at: i64,
 }
 
 #[derive(Deserialize)]

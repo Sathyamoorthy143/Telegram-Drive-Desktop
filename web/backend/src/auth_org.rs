@@ -58,6 +58,10 @@ pub fn extract_org_token(req: &HttpRequest) -> Option<String> {
 /// logs everyone out regardless).
 pub const ORG_TOKEN_TTL_SECS: i64 = 24 * 3600;
 
+/// Member roles are re-read from the database at most this often per session,
+/// so demotions/removals take effect without forcing a re-login.
+pub const ORG_ROLE_CHECK_TTL_SECS: i64 = 5 * 60;
+
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -90,6 +94,25 @@ pub async fn session_from_token(state: &AppState, token: &str) -> Option<OrgSess
     if should_slide_issued_at(sess.issued_at, now) {
         sess.issued_at = now;
         store.insert(token.to_string(), sess.clone());
+    }
+    // Fresh role check (cloudsphere-style stale-role immunity): a demoted or
+    // removed member loses access within ROLE_CHECK_TTL, no re-login needed
+    // to enforce it. DB failures fail OPEN (keep the session, retry next
+    // request) so a Supabase blip doesn't lock everyone out. Master-bypass
+    // sessions (empty member_id) are local-only and skip the lookup.
+    if !sess.member_id.trim().is_empty() && now - sess.role_checked_at > ORG_ROLE_CHECK_TTL_SECS {
+        match supabase_org::get_org_member_by_username(&sess.org_id, &sess.username).await {
+            Ok(Some(m)) => {
+                sess.role = m.role;
+                sess.role_checked_at = now;
+                store.insert(token.to_string(), sess.clone());
+            }
+            Ok(None) => {
+                store.remove(token);
+                return None;
+            }
+            Err(_) => {}
+        }
     }
     Some(sess)
 }
@@ -234,6 +257,7 @@ fn synthetic_master_session(org_id: &str) -> OrgSession {
         username: "master".into(),
         role: "owner".into(),
         issued_at: now_unix(),
+        role_checked_at: now_unix(),
     }
 }
 
@@ -335,13 +359,15 @@ pub async fn org_login(
         return HttpResponse::Unauthorized().body("Invalid username or password");
     }
     let token = new_token();
+    let now = now_unix();
     let sess = OrgSession {
         token: token.clone(),
         org_id: org_id.clone(),
         member_id: member.id.clone(),
         username: member.username.clone(),
         role: member.role.clone(),
-        issued_at: now_unix(),
+        issued_at: now,
+        role_checked_at: now,
     };
     state.org_sessions.lock().await.insert(token.clone(), sess.clone());
     let ip = req.peer_addr().map(|a| a.ip().to_string());
@@ -446,6 +472,7 @@ mod tests {
             username: "master".into(),
             role: "owner".into(),
             issued_at: 0,
+            role_checked_at: 0,
         };
         assert_eq!(db_user_id(&master), None);
         let member = OrgSession { member_id: "some-uuid".into(), ..master };
