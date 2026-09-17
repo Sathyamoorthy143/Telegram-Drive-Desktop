@@ -79,6 +79,17 @@ pub async fn reset_client(state: &web::Data<AppState>) {
     crate::utils::clear_peer_cache(&state.peer_cache).await;
 }
 
+/// Delete the persisted Telegram session files (main + sqlite journals).
+/// Use when auth state is unrecoverable so the next connect starts clean.
+/// Safe to call only once we know the session is NOT authorized (checked via
+/// `get_me`), otherwise it would sign out a live session.
+fn clear_saved_session_files() {
+    let sp = std::env::var("SESSION_PATH").unwrap_or_else(|_| "telegram.session".to_string());
+    let _ = std::fs::remove_file(&sp);
+    let _ = std::fs::remove_file(format!("{}-wal", sp));
+    let _ = std::fs::remove_file(format!("{}-shm", sp));
+}
+
 /// True for transport-level failures (dead connection), as opposed to
 /// Telegram API rejections like PHONE_NUMBER_INVALID.
 pub fn is_transport_failure(m: &str) -> bool {
@@ -161,14 +172,26 @@ pub async fn request_code(
                     }
                     return HttpResponse::BadGateway().body(format!("Telegram connection dropped after retry: {}", m));
                 }
-                if m.contains("AUTH_RESTART") && attempt >= 1 {
+                if m.contains("AUTH_RESTART") {
+                    // The saved auth state is stale (we already know the
+                    // session is NOT authorized — get_me failed above), so
+                    // retrying on it can never work. Wipe it, rebuild a
+                    // clean pool, and restart the auth flow from scratch.
+                    if attempt < 2 {
+                        clear_saved_session_files();
+                        reset_client(&state).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt as u64 + 1))).await;
+                        match get_client(&state).await {
+                            Ok(c) => { client = c; continue; }
+                            Err(e2) => return HttpResponse::BadGateway().body(format!("Auth state reset but reconnect failed: {}", e2)),
+                        }
+                    }
                     return HttpResponse::BadGateway().body(
-                        "Telegram rejected the login-code request (AUTH_RESTART) after retry. \
-                        This usually means the saved session disagrees with these API credentials. \
-                        Sign out to clear the saved session, verify the API ID/Hash at https://my.telegram.org, then try again."
+                        "Telegram rejected the login-code request (AUTH_RESTART) even with a fresh session. \
+                        Verify the API ID/Hash at https://my.telegram.org — they may belong to a different app or have been revoked."
                     );
                 }
-                if m.contains("AUTH_RESTART") || m.to_lowercase().contains("500") || m.contains("FLOOD_WAIT") {
+                if m.to_lowercase().contains("500") || m.contains("FLOOD_WAIT") {
                     if attempt < 1 {
                         continue;
                     }
@@ -345,10 +368,7 @@ pub async fn logout(state: web::Data<AppState>) -> impl Responder {
     *state.password_token.lock().await = None;
     *state.api_id.lock().await = None;
     crate::utils::clear_peer_cache(&state.peer_cache).await;
-    let sp = std::env::var("SESSION_PATH").unwrap_or_else(|_| "telegram.session".to_string());
-    let _ = std::fs::remove_file(&sp);
-    let _ = std::fs::remove_file(format!("{}-wal", sp));
-    let _ = std::fs::remove_file(format!("{}-shm", sp));
+    clear_saved_session_files();
     HttpResponse::Ok().json(true)
 }
 
