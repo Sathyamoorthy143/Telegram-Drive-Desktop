@@ -1165,7 +1165,9 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                     }}
                 />
                 {showAlerts && orgId && (
-                    <div className="absolute top-14 right-4 z-50 w-80 max-h-96 overflow-auto glass-strong rounded-xl shadow-2xl border border-telegram-border p-2">
+                    <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowAlerts(false)} />
+                    <div className="fixed top-16 right-4 z-50 w-80 max-h-96 overflow-auto glass-strong rounded-xl shadow-2xl border border-telegram-border p-2">
                         <div className="flex items-center justify-between px-2 py-1">
                             <p className="text-xs font-bold uppercase tracking-widest text-telegram-subtext">Org alerts</p>
                             <button onClick={() => setShowAlerts(false)} className="text-xs text-telegram-subtext hover:text-telegram-text">Close</button>
@@ -1182,6 +1184,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                             </div>
                         ))}
                     </div>
+                    </>
                 )}
                 {isOffline && !isSpecial && (
                     <div className="px-4 pt-2">

@@ -338,16 +338,18 @@ export function TopBar({
                 )}
 
                 <TierBadge />
-                {onOpenAlerts && alertCount > 0 && (
+                {onOpenAlerts && (
                     <button
                         onClick={onOpenAlerts}
-                        className="relative p-2 rounded-md bg-telegram-primary/20 text-telegram-primary hover:bg-telegram-primary/30 transition"
-                        title={`${alertCount} new alert${alertCount > 1 ? 's' : ''}`}
+                        className={`relative p-2 rounded-md transition ${alertCount > 0 ? 'bg-telegram-primary/20 text-telegram-primary hover:bg-telegram-primary/30' : 'hover:bg-telegram-hover text-telegram-subtext'}`}
+                        title={alertCount > 0 ? `${alertCount} new alert${alertCount > 1 ? 's' : ''}` : 'Org alerts'}
                     >
                         <Bell className="w-5 h-5" />
-                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                            {alertCount > 9 ? '9+' : alertCount}
-                        </span>
+                        {alertCount > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                                {alertCount > 9 ? '9+' : alertCount}
+                            </span>
+                        )}
                     </button>
                 )}
             </div>

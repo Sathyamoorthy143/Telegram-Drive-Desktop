@@ -14,6 +14,7 @@ import { OrgLogin } from "./components/org/OrgLogin";
 import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
 import { OrgAdminDashboard } from "./components/org/OrgAdminDashboard";
 import * as api from "./api";
+import { orgSlugFromPath } from './orgRouting';
 
 const queryClient = new QueryClient();
 
@@ -43,23 +44,6 @@ function subdomainFromHostname(): string | null {
   return null;
 }
 
-function orgSlugFromPath(): string | null {
-  const path = window.location.pathname;
-  if (path === "/" || path === "") return null;
-  const segments = path.split("/").filter(Boolean);
-  if (segments.length === 0) return null;
-  const slug = segments[0].toLowerCase();
-  if (slug === "api" || slug === "auth" || slug === "login" || slug === "logout" ||
-      slug === "files" || slug === "settings" || slug === "trash" || slug === "members" ||
-      slug === "activity" || slug === "admin" || slug === "share" || slug === "s" ||
-      slug === "health" || slug === "version" || slug === "stream" || slug === "preview" ||
-      slug === "thumbnail" || slug === "debug" || slug === "account" || slug === "bandwidth" ||
-      slug === "folders" || slug === "meta" || slug === "versions" || slug === "api") {
-    return null;
-  }
-  return slug;
-}
-
 type BootState =
   | { kind: "checking" }
   | { kind: "master-auth" }
@@ -77,7 +61,7 @@ export function AppContent() {
     let cancelled = false;
     const bootApp = async () => {
       // 1. Org context from URL path (path-based routing, canonical).
-      const pathSlug = orgSlugFromPath();
+      const pathSlug = orgSlugFromPath(window.location.pathname);
       // 2. Org context from subdomain (backward compat).
       const sub = subdomainFromHostname();
       let org: OrgInfo | null = null;

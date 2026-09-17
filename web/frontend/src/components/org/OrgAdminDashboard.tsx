@@ -3,6 +3,8 @@ import { toast } from 'sonner';
 import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen, HardDrive, X } from 'lucide-react';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
+import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey } from '../../orgUpload';
+import type { OrgUploadItem as UploadItem } from '../../orgUpload';
 
 interface Props {
   org: { id: string; name: string; subdomain: string };
@@ -15,16 +17,6 @@ type Tab = 'files' | 'trash' | 'members' | 'activity' | 'settings';
 
 const canEdit = (role: string) => ['editor', 'admin', 'owner'].includes(role);
 const canAdmin = (role: string) => ['admin', 'owner'].includes(role);
-
-interface UploadItem {
-  id: string;
-  file: File;
-  name: string;
-  size: number;
-  progress: number;
-  status: 'staged' | 'uploading' | 'success' | 'error' | 'cancelled';
-  error?: string;
-}
 
 export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const role = session?.role || 'owner'; // master bypass acts as owner
@@ -131,6 +123,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
       id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       file: f,
       name: f.name,
+      dirs: [],
       size: f.size,
       progress: 0,
       status: 'staged',
@@ -142,14 +135,18 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList) return;
-    const newItems: UploadItem[] = Array.from(fileList).map(f => ({
-      id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      file: f,
-      name: (f as any).webkitRelativePath || f.name,
-      size: f.size,
-      progress: 0,
-      status: 'staged',
-    }));
+    const newItems: UploadItem[] = Array.from(fileList).map(f => {
+      const rel = (f as any).webkitRelativePath || f.name;
+      return {
+        id: `org-upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        file: f,
+        name: rel,
+        dirs: splitRelativePath(rel).dirs,
+        size: f.size,
+        progress: 0,
+        status: 'staged',
+      };
+    });
     setUploadQueue(prev => [...prev, ...newItems]);
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
@@ -167,37 +164,94 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
 
   const runUploads = async () => {
     if (uploadingRef.current) return;
-    const pending = uploadQueue.filter(x => x.status === 'staged');
+    const pending = stagedUploads(uploadQueue);
     if (pending.length === 0) return;
     uploadingRef.current = true;
     setUploading(true);
-    for (const item of pending) {
-      const ctrl = new AbortController();
-      uploadControllersRef.current.set(item.id, ctrl);
-      try {
-        setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'uploading' } : x));
-        if (item.file.size > api.CHUNK_SIZE) {
-          await api.uploadOrgFileChunked(org.id, item.file, undefined, {
-            signal: ctrl.signal,
-            onProgress: (done, total) => {
-              setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, progress: Math.round((done / total) * 100) } : x));
-            },
-          });
-        } else {
-          await api.uploadOrgFile(org.id, item.file);
+    // Folder lookup for recreating folder-upload structure server-side.
+    const folderIndex = new Map<string, number>();
+    try {
+      const fresh = await api.scanOrgFolders(org.id);
+      for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
+    } catch {}
+    const createdDirs = new Map<string, number>();
+    // Max simultaneous file uploads; chunked transfers already parallelize internally.
+    const UPLOAD_CONCURRENCY = 3;
+    const resolveUploadFolder = async (dirs: string[]): Promise<number | undefined> => {
+      if (dirs.length === 0) return undefined;
+      let parent: number | undefined = undefined;
+      let path = '';
+      for (const dir of dirs) {
+        path = path ? `${path}/${dir}` : dir;
+        const cached = createdDirs.get(path);
+        if (cached !== undefined) { parent = cached; continue; }
+        const key = childFolderKey(parent, dir);
+        let id = folderIndex.get(key);
+        if (id === undefined) {
+          try {
+            const created: any = await api.createOrgFolder(org.id, dir, parent);
+            id = created?.id;
+            if (id !== undefined) folderIndex.set(key, id);
+          } catch {
+            // Create raced or failed — re-scan once, then fall back to root.
+            try {
+              const fresh = await api.scanOrgFolders(org.id);
+              for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
+              id = folderIndex.get(key);
+            } catch {}
+          }
         }
-        setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'success', progress: 100 } : x));
-        toast.success(`Uploaded "${item.name}"`);
-      } catch (e: any) {
-        if (e?.name === 'AbortError') {
-          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'cancelled' } : x));
-        } else {
-          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'error', error: e.message } : x));
-          toast.error(`Upload failed: ${item.name}`);
+        if (id === undefined) {
+          toast.error(`Could not create folder "${path}" — uploading to root`);
+          return undefined;
         }
+        createdDirs.set(path, id);
+        parent = id;
       }
-      uploadControllersRef.current.delete(item.id);
+      return parent;
+    };
+    // Resolve target folders sequentially first so parallel workers never
+    // race creating the same directory twice.
+    const folderByItem = new Map<string, number | undefined>();
+    for (const item of pending) {
+      folderByItem.set(item.id, await resolveUploadFolder(item.dirs));
     }
+    // Bounded worker pool: each worker pulls the next pending item until drained.
+    let next = 0;
+    const worker = async () => {
+      while (next < pending.length) {
+        const item = pending[next++];
+        if (!item) return;
+        const ctrl = new AbortController();
+        uploadControllersRef.current.set(item.id, ctrl);
+        try {
+          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'uploading' } : x));
+          if (needsChunkedUpload(item.file.size, api.CHUNK_SIZE)) {
+            await api.uploadOrgFileChunked(org.id, item.file, folderByItem.get(item.id), {
+              signal: ctrl.signal,
+              onProgress: (done, total) => {
+                setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, progress: Math.round((done / total) * 100) } : x));
+              },
+            });
+          } else {
+            await api.uploadOrgFile(org.id, item.file, folderByItem.get(item.id));
+          }
+          setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'success', progress: 100 } : x));
+          toast.success(`Uploaded "${item.name}"`);
+        } catch (e: any) {
+          if (e?.name === 'AbortError') {
+            setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'cancelled' } : x));
+          } else {
+            setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'error', error: e.message } : x));
+            toast.error(`Upload failed: ${item.name}`);
+          }
+        }
+        uploadControllersRef.current.delete(item.id);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(UPLOAD_CONCURRENCY, pending.length) }, () => worker()),
+    );
     try { await loadFiles(); } finally {
       uploadingRef.current = false;
       setUploading(false);

@@ -6,6 +6,18 @@ import type { OrgAlert } from '../types';
 const POLL_INTERVAL_MS = 30000;
 const MAX_ALERTS = 50;
 
+/** Pure dedupe: return entries not yet seen, recording their ids. Id-less entries are skipped. */
+export function filterNewAlerts(seen: Set<string>, data: OrgAlert[]): OrgAlert[] {
+  const fresh: OrgAlert[] = [];
+  for (const a of data) {
+    if (a.id && !seen.has(a.id)) {
+      seen.add(a.id);
+      fresh.push(a);
+    }
+  }
+  return fresh;
+}
+
 export function useOrgAlerts(orgId: string | null) {
   const [alerts, setAlerts] = useState<OrgAlert[]>([]);
   const [newCount, setNewCount] = useState(0);
@@ -25,13 +37,7 @@ export function useOrgAlerts(orgId: string | null) {
       try {
         const data = await api.getOrgAlerts(orgId);
         if (cancelled) return;
-        const newAlerts: OrgAlert[] = [];
-        for (const a of data) {
-          if (a.id && !seenIdsRef.current.has(a.id)) {
-            seenIdsRef.current.add(a.id);
-            newAlerts.push(a);
-          }
-        }
+        const newAlerts = filterNewAlerts(seenIdsRef.current, data);
         if (newAlerts.length > 0) {
           setNewCount(prev => prev + newAlerts.length);
           // Show toast for the most recent new alert only (debounce spam)
