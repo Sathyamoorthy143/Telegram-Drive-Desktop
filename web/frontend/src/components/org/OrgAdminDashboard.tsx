@@ -248,7 +248,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
 
   const logout = async () => {
     try { await api.orgLogout(org.id); } catch {}
-    api.setOrgToken(null);
+    api.setOrgToken(null, org.id);
     if (!session) api.setOrgId(null);
     onLogout();
   };

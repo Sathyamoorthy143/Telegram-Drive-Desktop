@@ -1,13 +1,39 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-export function getOrgToken(): string | null {
-  try { return localStorage.getItem('td_org_token'); } catch { return null; }
+const LEGACY_ORG_TOKEN_KEY = 'td_org_token';
+const orgTokenKey = (orgId: string) => `td_org_token_${orgId}`;
+
+/**
+ * Per-org token slots: staying signed into sdpk no longer wipes (or leaks
+ * into) the acme session. `orgId` defaults to the active org context.
+ * Reads fall back to the legacy single key once, then migrate.
+ */
+export function getOrgToken(orgId?: string | null): string | null {
+  const id = orgId ?? getOrgContext();
+  try {
+    if (id) {
+      const slot = localStorage.getItem(orgTokenKey(id));
+      if (slot) return slot;
+    }
+    return localStorage.getItem(LEGACY_ORG_TOKEN_KEY);
+  } catch { return null; }
 }
 
-export function setOrgToken(token: string | null) {
+export function setOrgToken(token: string | null, orgId?: string | null) {
+  const id = orgId ?? getOrgContext();
   try {
-    if (token) localStorage.setItem('td_org_token', token);
-    else localStorage.removeItem('td_org_token');
+    if (token && id) {
+      localStorage.setItem(orgTokenKey(id), token);
+      localStorage.removeItem(LEGACY_ORG_TOKEN_KEY);
+    } else if (token) {
+      localStorage.setItem(LEGACY_ORG_TOKEN_KEY, token);
+    } else if (id) {
+      localStorage.removeItem(orgTokenKey(id));
+      // Also drop a legacy token that may belong to this org.
+      if (getOrgId() === id) localStorage.removeItem(LEGACY_ORG_TOKEN_KEY);
+    } else {
+      localStorage.removeItem(LEGACY_ORG_TOKEN_KEY);
+    }
   } catch {}
 }
 
@@ -24,6 +50,7 @@ export function setOrgId(orgId: string | null) {
 }
 
 let _currentOrgId: string | null = null;
+let _currentOrgSlug: string | null = null;
 
 export function getOrgContext(): string | null {
   return _currentOrgId;
@@ -32,6 +59,15 @@ export function getOrgContext(): string | null {
 export function setOrgContext(orgId: string | null) {
   _currentOrgId = orgId;
   setOrgId(orgId);
+  if (orgId === null) _currentOrgSlug = null;
+}
+
+export function getOrgSlug(): string | null {
+  return _currentOrgSlug;
+}
+
+export function setOrgSlug(slug: string | null) {
+  _currentOrgSlug = slug;
 }
 
 export async function api<T>(method: string, path: string, body?: any, options?: { signal?: AbortSignal }): Promise<T> {
@@ -42,9 +78,12 @@ export async function api<T>(method: string, path: string, body?: any, options?:
     headers['Content-Type'] = 'application/json';
   }
   // Org member auth travels on a separate header so it never clashes with
-  // the (cookieless) master Telegram session.
+  // the (cookieless) master Telegram session. Scoped to the active org
+  // context — other orgs' tokens are never attached.
   const orgToken = getOrgToken();
   if (orgToken) headers['X-Org-Token'] = orgToken;
+  // Subdomain-first routing hint (backend also accepts ?subdomain=).
+  if (_currentOrgSlug) headers['X-Org-Subdomain'] = _currentOrgSlug;
 
   const res = await fetch(`${API_BASE}${path}`, {
     method,
@@ -380,7 +419,7 @@ export const uploadOrgFileResumable = (orgId: string, file: File, folder_id?: nu
   const formData = new FormData();
   formData.append('file', file);
   if (folder_id !== undefined) formData.append('folder_id', folder_id.toString());
-  const orgToken = getOrgToken();
+  const orgToken = getOrgToken(orgId);
 
   return new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -453,7 +492,7 @@ async function _uploadFileChunked(
   else options?.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
 
   const orgPrefix = orgId ? `/api/org/${orgId}` : '/api';
-  const orgToken = orgId ? getOrgToken() : null;
+  const orgToken = orgId ? getOrgToken(orgId) : null;
 
   return (async () => {
     // Hash manifest: per-chunk SHA-256 plus the whole-file root over the
@@ -705,7 +744,7 @@ export const downloadOrgFileBlob = async (
   options?: { signal?: AbortSignal },
 ): Promise<Blob> => {
   const fid = folder_id ?? 0;
-  const orgToken = getOrgToken();
+  const orgToken = getOrgToken(orgId);
   const res = await fetch(`${API_BASE}/api/org/${orgId}/files/${fid}/${message_id}/download`, {
     headers: orgToken ? { 'X-Org-Token': orgToken } : {},
     signal: options?.signal,

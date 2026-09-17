@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
-  setOrgContext, moveFiles, searchFiles, getTrash, starFile,
+  setOrgContext, setOrgToken, getOrgToken, setOrgSlug, getOrgSlug,
+  moveFiles, searchFiles, getTrash, starFile,
   getSettings, createShare, searchFilesAdvanced,
 } from './api';
 
@@ -11,6 +13,37 @@ describe('org-context guards', () => {
     // Swallow the inevitable network rejection (no backend in tests).
     expect(() => moveFiles([], []).catch(() => {})).not.toThrow();
     expect(() => searchFiles('x').catch(() => {})).not.toThrow();
+  });
+
+  it('keeps per-org token slots isolated', () => {
+    setOrgContext(null);
+    setOrgToken('tok-a', 'org-a');
+    setOrgToken('tok-b', 'org-b');
+    try {
+      expect(getOrgToken('org-a')).toBe('tok-a');
+      expect(getOrgToken('org-b')).toBe('tok-b');
+      setOrgContext('org-a');
+      expect(getOrgToken()).toBe('tok-a');
+      // Clearing one org keeps the other signed in.
+      setOrgToken(null, 'org-a');
+      expect(getOrgToken('org-a')).toBeNull();
+      expect(getOrgToken('org-b')).toBe('tok-b');
+    } finally {
+      setOrgToken(null, 'org-b');
+      setOrgContext(null);
+    }
+  });
+
+  it('tracks the org slug hint alongside context', () => {
+    setOrgContext('org-a');
+    setOrgSlug('acme');
+    try {
+      expect(getOrgSlug()).toBe('acme');
+      setOrgContext(null);
+      expect(getOrgSlug()).toBeNull();
+    } finally {
+      setOrgContext(null);
+    }
   });
 
   it('namespace-sensitive wrappers refuse under org context', () => {

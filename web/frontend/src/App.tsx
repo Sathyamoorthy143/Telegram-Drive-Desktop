@@ -117,30 +117,30 @@ export function AppContent() {
       }
       if (cancelled) return;
 
-      // Set org context for API auto-routing.
+      // Set org context for API auto-routing (+ slug hint header).
       if (org && orgSource) {
         api.setOrgContext(org.id);
+        api.setOrgSlug(orgSource === 'path' ? pathSlug : sub);
       }
 
       const masterConnected = await api.checkConnection().catch(() => false);
       if (cancelled) return;
 
       if (org) {
-        // 2. Org mode: prefer stored member token, else master bypass, else login.
-        const storedToken = api.getOrgToken();
-        const storedOrg = api.getOrgId();
-        if (storedToken && storedOrg !== org.id) {
-          // Never send another org's token to this org's endpoints.
-          api.setOrgToken(null);
-        }
-        if (storedToken && storedOrg === org.id) {
+        // 2. Org mode: prefer this org's stored member token (other orgs'
+        // tokens stay in their own slots), else master bypass, else login.
+        const storedToken = api.getOrgToken(org.id);
+        if (storedToken) {
           try {
             const me = await api.orgMe(org.id);
             if (cancelled) return;
             setBoot({ kind: "org-dashboard", org, session: { username: me.username, role: me.role, member_id: me.member_id } });
             return;
           } catch {
-            api.setOrgToken(null);
+            // Drop this org's slot only — and tell the server, so no
+            // orphaned session lingers until TTL.
+            api.setOrgToken(null, org.id);
+            api.orgLogout(org.id).catch(() => {});
           }
         }
         if (cancelled) return;
@@ -261,7 +261,7 @@ export function AppContent() {
           session={boot.session}
           onBack={boot.session ? undefined : () => { api.setOrgContext(null); window.location.href = '/'; }}
           onLogout={() => {
-            api.setOrgToken(null);
+            api.setOrgToken(null, boot.org.id);
             api.setOrgContext(null);
             window.location.href = boot.session ? `/${boot.org.subdomain}` : '/';
           }}

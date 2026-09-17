@@ -71,12 +71,25 @@ pub fn is_token_expired(issued_at: i64, now: i64) -> bool {
     now - issued_at > ORG_TOKEN_TTL_SECS
 }
 
+/// Pure sliding-window check: refresh the stamp once past half-TTL so active
+/// sessions survive without a store write on every request.
+pub fn should_slide_issued_at(issued_at: i64, now: i64) -> bool {
+    !is_token_expired(issued_at, now) && now - issued_at > ORG_TOKEN_TTL_SECS / 2
+}
+
 pub async fn session_from_token(state: &AppState, token: &str) -> Option<OrgSession> {
     let mut store = state.org_sessions.lock().await;
-    let sess = store.get(token)?.clone();
-    if is_token_expired(sess.issued_at, now_unix()) {
+    let mut sess = store.get(token)?.clone();
+    let now = now_unix();
+    if is_token_expired(sess.issued_at, now) {
         store.remove(token);
         return None;
+    }
+    // Sliding window: active sessions stay alive, but refresh the stamp at
+    // most every half-TTL so each request doesn't rewrite the store.
+    if should_slide_issued_at(sess.issued_at, now) {
+        sess.issued_at = now;
+        store.insert(token.to_string(), sess.clone());
     }
     Some(sess)
 }
@@ -446,5 +459,16 @@ mod tests {
         assert!(is_token_expired(now - ORG_TOKEN_TTL_SECS - 1, now));
         assert!(!is_token_expired(now - ORG_TOKEN_TTL_SECS + 60, now));
         assert!(!is_token_expired(now, now));
+    }
+
+    #[test]
+    fn sliding_window_bounds() {
+        let now = 1_800_000_000;
+        assert!(!should_slide_issued_at(now, now));
+        assert!(!should_slide_issued_at(now - 60, now));
+        assert!(should_slide_issued_at(now - ORG_TOKEN_TTL_SECS / 2 - 1, now));
+        // Expired sessions slide nowhere — they are dropped instead.
+        assert!(!should_slide_issued_at(0, now));
+        assert!(!should_slide_issued_at(now - ORG_TOKEN_TTL_SECS - 1, now));
     }
 }

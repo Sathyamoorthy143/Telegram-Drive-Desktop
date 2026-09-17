@@ -41,7 +41,7 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
         setError('Signed into the wrong organization — please use this org’s own login page.');
         return;
       }
-      api.setOrgToken(sess.token);
+      api.setOrgToken(sess.token, sess.org_id);
       api.setOrgId(sess.org_id);
       onLogin({ username: sess.username, role: sess.role, member_id: sess.member_id });
     } catch (err: any) {
