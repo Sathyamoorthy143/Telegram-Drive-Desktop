@@ -65,10 +65,16 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
+/// Pure expiry check (kept separate for unit testing): unknown (0) or
+/// older-than-TTL issuance is expired.
+pub fn is_token_expired(issued_at: i64, now: i64) -> bool {
+    now - issued_at > ORG_TOKEN_TTL_SECS
+}
+
 pub async fn session_from_token(state: &AppState, token: &str) -> Option<OrgSession> {
     let mut store = state.org_sessions.lock().await;
     let sess = store.get(token)?.clone();
-    if now_unix() - sess.issued_at > ORG_TOKEN_TTL_SECS {
+    if is_token_expired(sess.issued_at, now_unix()) {
         store.remove(token);
         return None;
     }
@@ -431,5 +437,14 @@ mod tests {
         assert_eq!(db_user_id(&master), None);
         let member = OrgSession { member_id: "some-uuid".into(), ..master };
         assert_eq!(db_user_id(&member), Some("some-uuid".to_string()));
+    }
+
+    #[test]
+    fn token_expiry_bounds() {
+        let now = 1_800_000_000;
+        assert!(is_token_expired(0, now));
+        assert!(is_token_expired(now - ORG_TOKEN_TTL_SECS - 1, now));
+        assert!(!is_token_expired(now - ORG_TOKEN_TTL_SECS + 60, now));
+        assert!(!is_token_expired(now, now));
     }
 }

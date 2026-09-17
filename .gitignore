@@ -40,3 +40,6 @@ Error.html
 # graphify (generated knowledge-graph artifacts)
 graphify-out/
 raw/
+
+# Local planning notes (agent working files, not project docs)
+.kilo/
