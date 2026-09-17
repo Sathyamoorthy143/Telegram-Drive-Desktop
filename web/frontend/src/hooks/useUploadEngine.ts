@@ -18,7 +18,7 @@ export type EngineStatus =
 export interface EngineItem {
   id: string;
   status: EngineStatus;
-  progress: number;
+  progress?: number;
   error?: string;
   selected?: boolean;
   [key: string]: any;
@@ -38,6 +38,7 @@ export interface EngineAdapters<T extends EngineItem> {
   notifySuccess: (name: string) => void;
   notifyError: (name: string, message: string) => void;
   notifyInfo: (msg: string) => void;
+  notifyCancel?: (name: string) => void;
   /** Return true when the error was an auth failure already handled (e.g. forced logout). */
   onAuthError?: (err: any) => boolean;
   /** Called after each item settles (refresh lists, etc.). */
@@ -208,6 +209,9 @@ export function useUploadEngine<T extends EngineItem>(
           String(err?.message).includes('cancelled');
         if (cancelled) {
           setQueue((q) => withStatus(q, qid, 'cancelled'));
+          if (!String(err?.message).includes('Encryption cancelled')) {
+            ad.notifyCancel?.(name);
+          }
         } else {
           setQueue((q) => withError(q, qid, err.message));
           if (!ad.onAuthError?.(err)) ad.notifyError(name, err.message || 'error');

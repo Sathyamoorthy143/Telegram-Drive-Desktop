@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { History } from 'lucide-react';
 
-import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings, FolderMetadata } from '../../types';
+import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings, FolderMetadata, QueueItem } from '../../types';
 import { formatBytes } from '../../utils';
 import * as api from '../../api';
 import { useOrgAlerts } from '../../hooks/useOrgAlerts';
@@ -26,7 +26,9 @@ const SheetEditor = lazy(() => import('./SheetEditor').then((m) => ({ default: m
 const DocEditor = lazy(() => import('./DocEditor').then((m) => ({ default: m.DocEditor })));
 const SlideEditor = lazy(() => import('./SlideEditor').then((m) => ({ default: m.SlideEditor })));
 import { getEditKind, getFileTypeCategory, EditKind } from '../../utils';
-import { withStatus, withError, removeEntry, clearTerminal } from '../../uploadQueue';
+import { useUploadEngine } from '../../hooks/useUploadEngine';
+// NOTE: queue list-transitions live in uploadQueue.ts via the engine;
+// Dashboard keeps only staging UI, selection handlers above delegate to it.
 import { DragDropOverlay } from './DragDropOverlay';
 import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
@@ -71,7 +73,6 @@ function useKeyboardShortcuts(handlers: {
 export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBanner?: React.ReactNode }) {
     const queryClient = useQueryClient();
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
-    const [uploadsPaused, setUploadsPaused] = useState(false);
     const orgId = api.getOrgContext();
     const { alerts, newCount: alertCount, clearNewCount, expired: alertsExpired } = useOrgAlerts(orgId);
     const [showAlerts, setShowAlerts] = useState(false);
@@ -96,58 +97,8 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         }
         // When locked, the LockScreen overlay (rendered below) handles unlock.
     };
-    const uploadsPausedRef = useRef(false);
-    const uploadControllers = useRef<Map<string, AbortController>>(new Map());
-    // per-file pause: qids the user paused individually (independent of global pause-all)
-    const pausedFileIdsRef = useRef<Set<string>>(new Set());
-    // Sync mirror of uploadQueue for synchronous reads. React setState updaters
-    // are async — NEVER read state inside setUploadQueue(q => {...}) and expect
-    // it synchronously (that was the no-upload regression).
-    const uploadQueueRef = useRef<any[]>([]);
-    // Live parallel manager: max files in flight at once (user-controllable 1..8).
-    const [maxParallelFiles, setMaxParallelFiles] = useState(4);
-    const maxParallelRef = useRef(4);
-    const setMaxParallel = useCallback((n: number) => {
-        const v = Math.min(8, Math.max(1, n));
-        maxParallelRef.current = v;
-        setMaxParallelFiles(v);
-    }, []);
-    // Guard against double-start races in the manager effect.
-    const startingIdsRef = useRef<Set<string>>(new Set());
-    // Shared encryption PIN cache so the manager never prompts per file.
+    // Shared encryption PIN cache so the uploader never prompts per file.
     const batchPinRef = useRef<{ pin: string | null | undefined }>({ pin: undefined });
-    const [, forceQueueRender] = useState(0);
-    const bumpQueue = useCallback(() => forceQueueRender(n => n + 1), []);
-    // per-file speedometer: {last sample time, bytes done, smoothed B/s}
-    const speedRef = useRef<Map<string, { t: number; done: number; speed: number }>>(new Map());
-
-    // Compulsory speed + ETA readout: called on every progress event (XHR for
-    // single POST, chunk completions for resumable). Speed is EMA-smoothed and
-    // re-sampled at most every 250ms so the numbers don't jitter.
-    const reportProgress = useCallback((qid: string, done: number, total: number) => {
-        const now = Date.now();
-        const prev = speedRef.current.get(qid);
-        let speed = prev?.speed ?? 0;
-        if (prev && now - prev.t >= 250 && done > prev.done) {
-            const inst = ((done - prev.done) / (now - prev.t)) * 1000;
-            speed = prev.speed > 0 ? prev.speed * 0.6 + inst * 0.4 : inst;
-            speedRef.current.set(qid, { t: now, done, speed });
-        } else if (!prev) {
-            speedRef.current.set(qid, { t: now, done, speed: 0 });
-        }
-        const remaining = Math.max(0, total - done);
-        const eta = speed > 0 && done < total ? Math.round(remaining / speed) : undefined;
-        setUploadQueue(q => q.map(x => {
-            if (x.id !== qid) return x;
-            const next: any = { ...x, progress: total ? Math.round((done / total) * 100) : 5 };
-            if (speed > 0) {
-                next.speed = Math.max(0, Math.round(speed));
-                if (eta !== undefined) next.eta = eta;
-            }
-            return next;
-        }));
-    }, []);
-    const setPausedAll = (p: boolean) => { uploadsPausedRef.current = p; setUploadsPaused(p); };
     const safeToast = useCallback((type: 'success'|'error'|'info', msg: string) => {
         if (isLocked) {
             if (notificationMode === 'suppress') { queueToast(msg, type); return; }
@@ -190,11 +141,77 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     const [previewContextIndex, setPreviewContextIndex] = useState(-1);
     const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
     const [propertyFile, setPropertyFile] = useState<TelegramFile | null>(null);
-    const [uploadQueue, setUploadQueue] = useState<any[]>([]);
     const [downloadQueue, setDownloadQueue] = useState<any[]>([]);
-    // Keep ref mirror in sync for synchronous status reads.
-    useEffect(() => { uploadQueueRef.current = uploadQueue; }, [uploadQueue]);
-    const uploadFilesRef = useRef<Map<string, File>>(new Map());
+    // Shared parallel upload engine: queue state, slots, pause/resume,
+    // cancel, retry, speed/ETA. Staging UI + per-file transfer (with
+    // encryption) are injected via adapters below.
+    const up = useUploadEngine<QueueItem>(
+      {
+        uploadOne: async (item, file, ctx) => {
+          const toastId = isLocked ? null : toast.loading(`Uploading ${file.name}...`);
+          try {
+            let upFile: File = file;
+            let encIv: string | undefined;
+            try {
+              const { isEncryptionEnabled, encryptFile, encName } = await import('../../lib/crypto');
+              if (isEncryptionEnabled()) {
+                const batchEnc = batchPinRef.current;
+                if (batchEnc.pin === undefined) {
+                  batchEnc.pin = window.prompt('Encryption ON — enter your lock PIN to encrypt ' + file.name + ' (applies to this batch)');
+                }
+                const pin = batchEnc.pin;
+                if (!pin) {
+                  batchEnc.pin = null;
+                  throw new Error('Encryption cancelled — PIN required');
+                }
+                const buf = await file.arrayBuffer();
+                const { blob, ivB64 } = await encryptFile(pin, buf);
+                encIv = ivB64;
+                upFile = new File([blob], encName(file.name), { type: 'application/octet-stream' });
+              }
+            } catch (e: any) { if (e?.message?.includes('cancelled')) throw e; }
+            if (upFile.size > api.CHUNKED_UPLOAD_THRESHOLD) {
+              await api.uploadFileChunked(upFile, activeFolderId ?? undefined, {
+                signal: ctx.signal,
+                onProgress: (done, total) => ctx.onProgress(done, total),
+                onUploadId: (id) => ctx.onUploadId(id),
+                waitIfPaused: ctx.waitIfPaused,
+                isCancelled: ctx.isCancelled,
+              });
+            } else {
+              await api.uploadFile(upFile, activeFolderId ?? undefined, { signal: ctx.signal });
+            }
+            if (encIv) {
+              const m = JSON.parse(localStorage.getItem('enc_iv') || '{}');
+              m[`${activeFolderId ?? 'null'}:${upFile.name}`] = encIv;
+              try { localStorage.setItem('enc_iv', JSON.stringify(m)); } catch {}
+            }
+            api.logActivity('upload', `folder:${activeFolderId ?? 'root'}`, file.name).catch(()=>{});
+          } finally {
+            if (toastId) toast.dismiss(toastId);
+          }
+        },
+        notifySuccess: (name) => {
+          if (isLocked) queueToast(`${name} uploaded`, 'success');
+          else toast.success(`${name} uploaded`);
+        },
+        notifyError: (name, message) => {
+          if (isLocked) queueToast(`Failed: ${name} - ${message}`, 'error');
+          else toast.error(`Failed: ${name} - ${message || 'error'}`);
+        },
+        notifyInfo: (msg) => {
+          if (isLocked) queueToast(msg, 'info');
+          else toast.info(msg);
+        },
+        notifyCancel: (name) => toast.info(`${name} upload cancelled`),
+        onAuthError: (err) => handleAuthError(err),
+        onItemDone: () => queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] }),
+        onManualStart: () => { batchPinRef.current = { pin: undefined }; },
+        setBusy,
+      },
+      { maxParallel: 4 },
+    );
+    const uploadQueue = up.queue;
     const internalDragRef = useRef<number | null>(null);
     const [internalDragFileId, _setInternalDragFileId] = useState<number | null>(null);
     const setInternalDragFileId = (id: number | null) => {
@@ -456,43 +473,15 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     }, [queryClient]);
 
     const handleCancelUpload = useCallback((qid: string) => {
-        try { uploadControllers.current.get(qid)?.abort(); } catch {}
-        uploadControllers.current.delete(qid);
-        pausedFileIdsRef.current.delete(qid);
-        startingIdsRef.current.delete(qid);
-        setUploadQueue(q => {
-            const it = q.find(x => x.id === qid);
-            // Staged items never started — remove them straight away.
-            if ((it as any)?.status === 'staged') return removeEntry(q, qid);
-            return withStatus(q, qid, 'cancelled');
-        });
-        // Free the staged File handle for removed items; bump so the live
-        // manager immediately fills the freed parallel slot.
-        setTimeout(() => {
-            setUploadQueue(q => {
-                if (!q.some(x => x.id === qid)) uploadFilesRef.current.delete(qid);
-                return q;
-            });
-        }, 0);
-        bumpQueue();
-    }, [bumpQueue]);
+        up.cancelItem(qid);
+    }, [up]);
     const handleCancelAllUploads = useCallback(() => {
-        uploadControllers.current.forEach(c => { try { c.abort(); } catch {} });
-        uploadControllers.current.clear();
-        pausedFileIdsRef.current.clear();
-        startingIdsRef.current.clear();
-        setPausedAll(false);
-        setUploadQueue(q => q.map(x => ((x as any).status === 'staged' || (x as any).status === 'pending' || (x as any).status === 'uploading' || (x as any).status === 'paused') ? { ...x, status: 'cancelled' as const } : x));
-        setBusy(false);
-        bumpQueue();
-    }, [setBusy, bumpQueue]);
-    const handlePauseAllUploads = useCallback(() => { setPausedAll(true); bumpQueue(); }, [bumpQueue]);
+        up.cancelAll();
+    }, [up]);
+    const handlePauseAllUploads = useCallback(() => { up.pauseAll(); }, [up]);
     const handleResumeAllUploads = useCallback(() => {
-        setPausedAll(false);
-        pausedFileIdsRef.current.clear();
-        setUploadQueue(q => q.map(x => x.status === 'paused' ? { ...x, status: 'pending' as const } : x));
-        bumpQueue();
-    }, [bumpQueue]);
+        up.resumeAll();
+    }, [up]);
 
     const handleBulkMove = useCallback(async (targetFolderId: number | null) => {
         try {
@@ -629,304 +618,64 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         } catch (e: any) { toast.error(`Star failed: ${e.message}`); }
     }, [activeFolderId, favRows, refetchFav, queryClient]);
 
-    // Single-file upload: pause/cancel/queue feedback + encryption.
-    // Files >1MB (CHUNK_SIZE) use the parallel chunked resumable path (8
-    // workers x 8MB PUTs) so per-file pause + retry works LIVE mid-upload.
-    // Only tiny files (<1MB, instant) use single POST. This makes the pause
-    // button and checkbox-uncheck actually stop network traffic mid-flight
-    // instead of being fake for mid-size files.
-    // batchEnc (optional) caches the encryption PIN once per batch so N
-    // blocking window.prompt modals never appear as a hang.
-    const runOneFileUpload = useCallback(async (file: File, qid: string, batchEnc?: { pin: string | null | undefined }) => {
-        uploadFilesRef.current.set(qid, file);
-        // Synchronous status reads via ref mirror (setState updaters are async).
-        const readStatus = () => uploadQueueRef.current.find(x => x.id === qid)?.status as string | undefined;
-        if (readStatus() === 'cancelled') return;
-        // honour pause (global OR per-file): wait here until resumed (flip to
-        // paused visibly; cancel is re-checked every 300ms so a paused batch
-        // never looks frozen)
-        const isPausedNow = () => uploadsPausedRef.current || pausedFileIdsRef.current.has(qid);
-        while (isPausedNow()) {
-            setUploadQueue(q => q.map(x => (x.id === qid && (x.status === 'pending' || x.status === 'uploading' || x.status === 'staged')) ? { ...x, status: 'paused' as const } : x));
-            await new Promise(r => setTimeout(r, 300));
-            if (readStatus() === 'cancelled') return;
-        }
-        setUploadQueue(q => withStatus(q, qid, 'uploading', { progress: 5 }));
-        const toastId = isLocked ? null : toast.loading(`Uploading ${file.name}...`);
-        const ctrl = new AbortController();
-        uploadControllers.current.set(qid, ctrl);
-        try {
-            let upFile: File = file;
-            let encIv: string | undefined;
-            try {
-                const { isEncryptionEnabled, encryptFile, encName } = await import('../../lib/crypto');
-                if (isEncryptionEnabled()) {
-                    let pin: string | null;
-                    if (batchEnc) {
-                        // Prompt once per batch: reuse PIN for remaining files.
-                        if (batchEnc.pin === undefined) {
-                            batchEnc.pin = window.prompt('Encryption ON — enter your lock PIN to encrypt ' + file.name + ' (applies to this batch)');
-                        }
-                        pin = batchEnc.pin;
-                    } else {
-                        pin = window.prompt('Encryption ON — enter your lock PIN to encrypt ' + file.name);
-                    }
-                    if (!pin) {
-                        // Fail fast with clear cancelled status; remaining files
-                        // still proceed (they see batchEnc.pin and mark cancelled
-                        // without re-prompting).
-                        if (batchEnc) batchEnc.pin = null;
-                        throw new Error('Encryption cancelled — PIN required');
-                    }
-                    const buf = await file.arrayBuffer();
-                    const { blob, ivB64 } = await encryptFile(pin, buf);
-                    encIv = ivB64;
-                    upFile = new File([blob], encName(file.name), { type: 'application/octet-stream' });
-                }
-            } catch (e: any) { if (e?.message?.includes('cancelled')) throw e; }
-            // Max-speed + LIVE-controllable: above threshold goes chunked
-            // (8 parallel 8MB PUTs, hash manifest, per-chunk retry,
-            // cooperative pause). At/below uses single POST (instant).
-            if (upFile.size > api.CHUNKED_UPLOAD_THRESHOLD) {
-                await api.uploadFileChunked(upFile, activeFolderId ?? undefined, {
-                  signal: ctrl.signal,
-                  onProgress: (done, total) => reportProgress(qid, done, total),
-                  onUploadId: (id) => setUploadQueue(q => q.map(x => x.id === qid ? { ...x, uploadId: id } : x)),
-                  waitIfPaused: async () => {
-                    while (uploadsPausedRef.current || pausedFileIdsRef.current.has(qid)) {
-                      if (readStatus() === 'cancelled') throw new DOMException('cancelled', 'AbortError');
-                      setUploadQueue(q => q.map(x => (x.id === qid && (x.status === 'pending' || x.status === 'uploading')) ? { ...x, status: 'paused' as const } : x));
-                      await new Promise(r => setTimeout(r, 300));
-                    }
-                    if (readStatus() === 'cancelled') throw new DOMException('cancelled', 'AbortError');
-                    // Only flip back to uploading if this file wasn't individually paused
-                    // (global resume shouldn't un-pause an individually-paused file).
-                    if (!pausedFileIdsRef.current.has(qid)) {
-                      setUploadQueue(q => q.map(x => x.id === qid && x.status === 'paused' ? { ...x, status: 'uploading' as const } : x));
-                    }
-                  },
-                  isCancelled: () => readStatus() === 'cancelled',
-                });
-            } else {
-                await api.uploadFile(upFile, activeFolderId ?? undefined, { signal: ctrl.signal });
-            }
-            if (encIv) {
-                const m = JSON.parse(localStorage.getItem('enc_iv') || '{}');
-                m[`${activeFolderId ?? 'null'}:${upFile.name}`] = encIv;
-                try { localStorage.setItem('enc_iv', JSON.stringify(m)); } catch {}
-            }
-            api.logActivity('upload', `folder:${activeFolderId ?? 'root'}`, file.name).catch(()=>{});
-            setUploadQueue(q => withStatus(q, qid, 'success', { progress: 100 }));
-            if (isLocked) { queueToast(`${file.name} uploaded`, 'success'); if (toastId) toast.dismiss(toastId); }
-            else toast.success(`${file.name} uploaded`, { id: toastId as any });
-        } catch (err: any) {
-            const cancelled = ctrl.signal.aborted || String(err?.name).includes('Abort') || String(err?.message).includes('aborted') || String(err?.message).includes('cancelled');
-            if (cancelled && String(err?.message).includes('Encryption cancelled')) {
-                setUploadQueue(q => withStatus(q, qid, 'cancelled'));
-                if (toastId) toast.dismiss(toastId);
-            } else if (cancelled) {
-                setUploadQueue(q => withStatus(q, qid, 'cancelled'));
-                if (toastId) toast.dismiss(toastId);
-                toast.info(`${file.name} upload cancelled`);
-            } else {
-                setUploadQueue(q => withError(q, qid, err.message));
-                if (!handleAuthError(err)) {
-                    if (isLocked) { queueToast(`Failed: ${file.name} - ${err.message}`, 'error'); if (toastId) toast.dismiss(toastId); }
-                    else toast.error(`Failed: ${file.name} - ${err.message || 'error'}`, { id: toastId as any });
-                } else if (toastId) toast.dismiss(toastId);
-            }
-        } finally {
-            uploadControllers.current.delete(qid);
-            speedRef.current.delete(qid);
-        }
-    }, [activeFolderId, isLocked, queueToast, handleAuthError, reportProgress]);
-
+    // Per-file transfer lives in the shared engine adapter (see the
+    // useUploadEngine call above); retry just re-queues through the engine.
     const handleRetryUpload = useCallback((qid: string) => {
-        const file = uploadFilesRef.current.get(qid);
-        if (!file) { toast.error('Original file unavailable — please re-select it'); return; }
-        pausedFileIdsRef.current.delete(qid);
-        startingIdsRef.current.delete(qid);
-        // Flip to pending and let the live manager own the start (avoids
-        // double-start races with the manager effect).
-        setUploadQueue(q => q.map(x => x.id === qid ? { ...x, status: 'pending' as const, progress: 0, error: undefined, selected: true } : x));
-        bumpQueue();
-    }, [bumpQueue]);
+        up.retryItem(qid);
+    }, [up]);
 
     const handleRetryAllFailed = useCallback(() => {
-        const failed = uploadQueueRef.current.filter(x => x.status === 'error');
-        if (failed.length === 0) return;
-        const retryable = failed.filter(x => uploadFilesRef.current.has(x.id));
-        const missing = failed.length - retryable.length;
-        if (retryable.length === 0) { toast.error('Original files unavailable — please re-select them'); return; }
-        const ids = new Set(retryable.map(x => x.id));
-        ids.forEach(id => { pausedFileIdsRef.current.delete(id); startingIdsRef.current.delete(id); });
-        setUploadQueue(q => q.map(x => ids.has(x.id) ? { ...x, status: 'pending' as const, progress: 0, error: undefined, selected: true } : x));
-        bumpQueue();
-        toast.info(`Retrying ${retryable.length} failed upload(s)${missing > 0 ? ` — ${missing} unavailable, re-select` : ''}`);
-    }, [bumpQueue]);
+        up.retryAllFailed();
+    }, [up]);
 
     // ---- Controllable staged uploads: checkbox select + per-file pause ----
     // Files are first STAGED (no network). User ticks checkboxes, then hits
     // "Upload selected". This gives full control over which files go when.
-    const newQid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-
+    // Starts, parallelism, pause/resume, and retries are owned by the shared
+    // upload engine (useUploadEngine) — these wrappers only stage/select.
     const stageFilesForUpload = useCallback((fileList: File[], pathFn?: (f: File) => string) => {
         if (fileList.length === 0) return [] as string[];
-        const ids = fileList.map(() => newQid());
-        fileList.forEach((f, i) => uploadFilesRef.current.set(ids[i], f));
-        setUploadQueue(prev => [...prev, ...fileList.map((f, i) => ({
-            id: ids[i],
-            path: pathFn ? pathFn(f) : f.name,
-            name: f.name,
-            size: f.size,
-            status: 'staged' as const,
-            progress: 0,
-            selected: true,
-        }))]);
+        const ids = up.stage(
+          fileList.map((f) => ({
+            file: f,
+            meta: {
+              path: pathFn ? pathFn(f) : f.name,
+              name: f.name,
+              size: f.size,
+              folderId: activeFolderId,
+              selected: true,
+            },
+          })),
+        );
         toast.info(`${fileList.length} file(s) staged — tick checkboxes, then hit Upload`);
         return ids;
-    }, []);
+    }, [up, activeFolderId]);
 
-    // ---- LIVE parallel manager: checkbox + per-file pause DURING uploads ----
-    // One-shot batches can't be managed mid-flight. Instead `handleStart`
-    // only flips staged->pending; this manager effect owns all starts and
-    // keeps at most maxParallelRef files in flight. Pausing (button OR
-    // checkbox-uncheck) frees a slot so the next queued file starts
-    // automatically. Staging more files mid-batch just joins the queue.
     const handleStartSelectedUploads = useCallback((onlyIds?: string[]) => {
-        // Compute targets from the ref mirror SYNCHRONOUSLY. Reading inside
-        // setUploadQueue(q => {...}) is async and always yields [] — that was
-        // the regression where Upload selected toasted "Nothing selected" and
-        // nothing ever reached Telegram.
-        const snapshot = uploadQueueRef.current;
-        const pool = snapshot.filter(x => (x.status === 'staged' || x.status === 'pending' || x.status === 'paused' || (x as any).status === 'error')
-            && (x.selected !== false)
-            && (!onlyIds || onlyIds.includes(x.id)));
-        let ids = pool.map(x => x.id);
-        if (ids.length === 0 && onlyIds && onlyIds.length > 0) {
-            ids = onlyIds.filter(id => uploadFilesRef.current.has(id));
-        }
-        if (ids.length === 0) {
-            toast.info('Nothing selected — tick checkboxes first');
-            return;
-        }
-        ids.forEach(id => { pausedFileIdsRef.current.delete(id); startingIdsRef.current.delete(id); });
-        setUploadQueue(q => q.map(x => ids.includes(x.id) ? { ...x, status: 'pending' as const, error: undefined, selected: true } : x));
-        // Reset shared PIN when a fresh manual start begins (manager reuses it
-        // for the whole live session so only one prompt appears).
-        batchPinRef.current = { pin: undefined };
-        bumpQueue();
-    }, [bumpQueue]);
+        up.start(onlyIds);
+    }, [up]);
 
     // Checkbox works LIVE: staged/pending flips selection; unchecking a
     // RUNNING upload pauses it (frees a slot); checking a paused one queues it.
     const handleToggleUploadSelect = useCallback((qid: string) => {
-        const it = uploadQueueRef.current.find(x => x.id === qid);
-        if (!it) return;
-        const curStatus = it.status as string;
-        const nextSelected = !((it as any)?.selected !== false);
-        if (curStatus === 'uploading' && !nextSelected) {
-            // Uncheck live upload => pause it now; manager starts next queued.
-            pausedFileIdsRef.current.add(qid);
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, selected: nextSelected, status: 'paused' as const } : x));
-        } else if (curStatus === 'paused' && nextSelected) {
-            // Re-check paused => queue for resume (manager starts when slot free).
-            pausedFileIdsRef.current.delete(qid);
-            startingIdsRef.current.delete(qid);
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, selected: nextSelected, status: 'pending' as const } : x));
-        } else {
-            setUploadQueue(q => q.map(x => x.id === qid ? { ...x, selected: nextSelected } : x));
-        }
-        bumpQueue();
-    }, [bumpQueue]);
+        up.toggleSelect(qid);
+    }, [up]);
 
     const handleSelectAllUploads = useCallback((select: boolean) => {
-        setUploadQueue(q => q.map(x => {
-            const s = (x as any).status;
-            if (s === 'staged' || s === 'pending' || s === 'paused' || s === 'uploading') {
-                if (!select && (s === 'uploading' || s === 'pending')) pausedFileIdsRef.current.add(x.id);
-                else if (select && s === 'paused' && (x as any).selected === false) pausedFileIdsRef.current.delete(x.id);
-                return { ...x, selected: select };
-            }
-            return x;
-        }));
-        // Unchecking uploading items via select-all must visibly pause them.
-        if (!select) {
-            setUploadQueue(q => q.map(x => {
-                const s = (x as any).status;
-                if ((s === 'uploading' || s === 'pending') && (x as any).selected === false) return { ...x, status: 'paused' as const };
-                return x;
-            }));
-        }
-        bumpQueue();
-    }, [bumpQueue]);
+        up.selectAll(select);
+    }, [up]);
 
     const handlePauseUploadItem = useCallback((qid: string) => {
-        pausedFileIdsRef.current.add(qid);
-        // Keep checkbox checked so resume keeps it selected; status paused
-        // frees the manager slot for the next queued file.
-        setUploadQueue(q => q.map(x => x.id === qid && ((x as any).status === 'uploading' || (x as any).status === 'pending' || (x as any).status === 'staged') ? { ...x, status: 'paused' as const } : x));
-        bumpQueue();
-    }, [bumpQueue]);
+        up.pauseItem(qid);
+    }, [up]);
 
     const handleResumeUploadItem = useCallback((qid: string) => {
-        pausedFileIdsRef.current.delete(qid);
-        // Queue for resume — the manager effect starts it when a slot frees.
-        // If its controller is still alive (paused mid-chunk), the existing
-        // waitIfPaused loop resumes it immediately without a new start.
-        setUploadQueue(q => q.map(x => {
-            if (x.id !== qid) return x;
-            const s = (x as any).status;
-            if (s === 'paused' || s === 'staged') return { ...x, status: 'pending' as const, selected: true };
-            return x;
-        }));
-        bumpQueue();
-    }, [bumpQueue]);
+        up.resumeItem(qid);
+    }, [up]);
 
     const handleRemoveUploadItem = useCallback((qid: string) => {
-        try { uploadControllers.current.get(qid)?.abort(); } catch {}
-        uploadControllers.current.delete(qid);
-        pausedFileIdsRef.current.delete(qid);
-        startingIdsRef.current.delete(qid);
-        uploadFilesRef.current.delete(qid);
-        speedRef.current.delete(qid);
-        setUploadQueue(q => removeEntry(q, qid));
-        bumpQueue();
-    }, [bumpQueue]);
-
-    // Live manager effect: owns ALL upload starts. Keeps at most
-    // maxParallelRef files in flight; pausing (button or checkbox-uncheck)
-    // frees a slot so the next pending+selected file starts automatically.
-    // Staging more files mid-batch just joins the queue — no restart needed.
-    // Changing the Parallel dropdown live throttles or widens the pipeline.
-    useEffect(() => {
-        const activeCount = uploadControllers.current.size;
-        const hasWork = uploadQueue.some(x => (x as any).status === 'uploading' || (x as any).status === 'pending');
-        setBusy(hasWork || activeCount > 0);
-        if (uploadsPausedRef.current) return;
-        const slots = maxParallelRef.current - activeCount;
-        if (slots <= 0) return;
-        const next = uploadQueue
-            .filter(x => (x as any).status === 'pending'
-                && (x as any).selected !== false
-                && !pausedFileIdsRef.current.has(x.id)
-                && !startingIdsRef.current.has(x.id)
-                && !uploadControllers.current.has(x.id)
-                && uploadFilesRef.current.has(x.id))
-            .slice(0, slots);
-        if (next.length === 0) return;
-        next.forEach(item => {
-            const file = uploadFilesRef.current.get(item.id);
-            if (!file) return;
-            startingIdsRef.current.add(item.id);
-            runOneFileUpload(file, item.id, batchPinRef.current).finally(() => {
-                startingIdsRef.current.delete(item.id);
-                queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-                setTimeout(() => setUploadQueue(q => clearTerminal(q, ['success'])), 4000);
-                bumpQueue();
-            });
-        });
-    }, [uploadQueue, maxParallelFiles, uploadsPaused, runOneFileUpload, queryClient, activeFolderId, setBusy, bumpQueue]);
+        up.removeItem(qid);
+    }, [up]);
 
     // Upload entry points — STAGE only (no auto-upload). User controls via checkboxes.
     const handleManualUpload = useCallback(() => {
@@ -1326,7 +1075,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                 </Suspense>
             )}
 
-            <UploadQueue items={uploadQueue} paused={uploadsPaused} onClearFinished={() => setUploadQueue(q => clearTerminal(q, ['success', 'error', 'cancelled']))} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={maxParallelFiles} onMaxParallelChange={setMaxParallel} />
+            <UploadQueue items={uploadQueue} paused={up.pausedAll} onClearFinished={() => up.clearFinished()} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={up.maxParallel} onMaxParallelChange={up.setMaxParallel} />
             <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => { handleCancelAllDownloads(); setDownloadQueue(q => q.map((i: any) => (i.status === 'downloading' || i.status === 'pending') ? { ...i, status: 'cancelled' as const } : i)); }} />
             {isLocked && <LockScreen />}
         </motion.div>

@@ -5,7 +5,7 @@
 export interface QueueEntry {
   id: string;
   status: string;
-  progress: number;
+  progress?: number;
   error?: string;
 }
 
