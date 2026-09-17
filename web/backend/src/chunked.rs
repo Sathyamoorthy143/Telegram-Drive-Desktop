@@ -499,6 +499,8 @@ pub async fn complete_upload(
         meta.name.clone(),
         meta.folder_id,
         total,
+        None,
+        None,
     )
     .await;
     // Mark the metadata row complete with the Telegram message id (best effort).

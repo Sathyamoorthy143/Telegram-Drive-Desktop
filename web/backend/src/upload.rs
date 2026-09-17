@@ -139,7 +139,7 @@ pub async fn upload_file(
         fname
     );
 
-    let (resp, _msg_id) = deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size).await;
+    let (resp, _msg_id) = deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size, None, None).await;
 
     // Cleanup temp file (tmp_file was already flushed + dropped after writing)
     let _ = fs::remove_file(&tmp_path).await;
@@ -157,6 +157,8 @@ pub async fn deliver_to_telegram(
     fname: String,
     folder_id: Option<i64>,
     total_size: u64,
+    org_channel: Option<i64>,
+    org_backup: Option<i64>,
 ) -> (HttpResponse, Option<i64>) {
     // Get the Telegram client - quick auth check, don't hang on invalid session
     let client = match tokio::time::timeout(std::time::Duration::from_secs(5), get_client(&state)).await {
@@ -171,9 +173,10 @@ pub async fn deliver_to_telegram(
         Err(_) => return (HttpResponse::RequestTimeout().body("Telegram auth check timeout"), None),
     }
 
-    // Resolve the target peer: folder channel, MAIN storage channel for
-    // unfiled uploads (once provisioned), else Saved Messages (legacy).
-    let target = folder_id.or(crate::storage::main_id(&state));
+    // Resolve the target peer: org channel (when provided), folder channel,
+    // MAIN storage channel for unfiled uploads (once provisioned), else
+    // Saved Messages (legacy).
+    let target = org_channel.or(folder_id).or(crate::storage::main_id(&state));
     log::info!("Upload stage: resolve_peer folder_id={:?} target={:?}", folder_id, target);
     let peer = match tokio::time::timeout(
         std::time::Duration::from_secs(20),
@@ -242,7 +245,7 @@ pub async fn deliver_to_telegram(
     // landed in a channel (MAIN or folder), whenever backup is provisioned.
     // The worker forwards server-side in the background; the ledger + watcher
     // make this idempotent.
-    if let (Some(src_id), Some(_)) = (target, crate::storage::backup_id(&state)) {
+    if let (Some(src_id), Some(_)) = (target, org_backup.or_else(|| crate::storage::backup_id(&state))) {
         crate::replicate::enqueue(
             &state,
             crate::replicate::ReplicateJob::new(src_id, msg_id),

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus } from 'lucide-react';
+import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload } from 'lucide-react';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 
@@ -27,6 +27,9 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   const [storage, setStorage] = useState<{ provisioned: boolean; main_channel_id?: number; backup_channel_id?: number } | null>(null);
   const [newFolder, setNewFolder] = useState('');
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadFiles = async () => {
     try {
@@ -96,6 +99,25 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
       setNewFolder('');
       loadFiles();
     } catch (e: any) { toast.error(e.message); }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const uploadFile = async () => {
+    if (!selectedFile) return;
+    setUploading(true);
+    try {
+      await api.uploadOrgFile(org.id, selectedFile);
+      toast.success(`Uploaded "${selectedFile.name}"`);
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      loadFiles();
+    } catch (e: any) { toast.error(e.message); }
+    setUploading(false);
   };
 
   const restoreItem = async (message_id: number, folder_id?: number) => {
@@ -193,6 +215,16 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                     <FolderPlus className="w-4 h-4" /> Create
                   </button>
                 </form>
+              )}
+              {canEdit(role) && (
+                <div className="flex items-center gap-2 mb-4">
+                  <input ref={fileInputRef} type="file" onChange={handleFileSelect}
+                    className="text-sm text-telegram-subtext file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border file:border-telegram-border file:bg-telegram-surface file:text-telegram-primary" />
+                  <button onClick={uploadFile} disabled={!selectedFile || uploading}
+                    className="flex items-center gap-1 text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                    <Upload className="w-4 h-4" /> {uploading ? 'Uploading…' : 'Upload'}
+                  </button>
+                </div>
               )}
               {folders.length > 0 && (
                 <>

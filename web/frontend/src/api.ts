@@ -474,6 +474,15 @@ export const getOrgStorageStatus = (orgId: string) =>
   api<{ provisioned: boolean; main_channel_id?: number; backup_channel_id?: number }>(
     'GET', `/api/org/${orgId}/storage/status`);
 
+export const uploadOrgFile = (orgId: string, file: File, folder_id?: number) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (folder_id !== undefined) {
+    formData.append('folder_id', folder_id.toString());
+  }
+  return api<string>('POST', `/api/org/${orgId}/files/upload`, formData);
+};
+
 export const provisionOrgStorage = (orgId: string) =>
   api<{ main_channel_id: number; backup_channel_id: number }>(
     'POST', `/api/admin/organizations/${orgId}/provision`);
