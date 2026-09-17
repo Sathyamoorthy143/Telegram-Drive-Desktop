@@ -76,4 +76,12 @@ describe('buildFolderIndex', () => {
     expect(index.get(childFolderKey(undefined, 'sub'))).toBe(3);
     expect(index.get(childFolderKey(2, 'sub'))).toBeUndefined();
   });
+
+  it('keeps the first folder on same-name collisions', () => {
+    const index = buildFolderIndex([
+      { id: 1, name: 'docs' },
+      { id: 2, name: 'docs' },
+    ]);
+    expect(index.get(childFolderKey(undefined, 'docs'))).toBe(1);
+  });
 });

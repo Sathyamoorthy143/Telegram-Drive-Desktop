@@ -42,10 +42,16 @@ export function childFolderKey(parentId: number | undefined, name: string): stri
   return `${parentId ?? 0}/${name}`;
 }
 
-/** Index folders by parent/name so folder-upload structure can be matched without duplicates. */
+/**
+ * Index folders by parent/name so folder-upload structure can be matched without duplicates.
+ * First occurrence wins, so repeated scans stay deterministic under same-name collisions.
+ */
 export function buildFolderIndex(folders: OrgFolderRef[]): Map<string, number> {
   const index = new Map<string, number>();
-  for (const f of folders) index.set(childFolderKey(f.parent_id ?? undefined, f.name), f.id);
+  for (const f of folders) {
+    const key = childFolderKey(f.parent_id ?? undefined, f.name);
+    if (!index.has(key)) index.set(key, f.id);
+  }
   return index;
 }
 

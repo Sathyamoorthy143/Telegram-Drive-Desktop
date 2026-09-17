@@ -670,3 +670,35 @@ pub async fn provision_org_storage(
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserved_slugs_match_frontend_parity_pin() {
+        // MUST stay identical to RESERVED_SLUGS in web/frontend/src/orgRouting.ts.
+        let mut got = [
+            "files", "settings", "trash", "members", "activity", "admin", "api", "auth",
+            "login", "logout", "share", "s", "health", "version", "stream", "preview",
+            "thumbnail", "debug", "account", "bandwidth", "folders", "meta", "versions",
+        ];
+        got.sort_unstable();
+        let mut probed: Vec<&str> = got.iter().copied().filter(|s| is_reserved_slug(s)).collect();
+        probed.sort_unstable();
+        assert_eq!(probed, got);
+        assert!(!is_reserved_slug("sdpk"));
+        assert!(!is_reserved_slug("acme-corp"));
+    }
+
+    #[test]
+    fn valid_subdomain_rejects_bad_input() {
+        assert!(valid_subdomain("acme"));
+        assert!(valid_subdomain("acme-corp-1"));
+        assert!(!valid_subdomain(""));
+        assert!(!valid_subdomain("-acme"));
+        assert!(!valid_subdomain("acme-"));
+        assert!(!valid_subdomain("ac me"));
+        assert!(!valid_subdomain("acme_corp"));
+    }
+}

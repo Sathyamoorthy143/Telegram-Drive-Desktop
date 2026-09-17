@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, Building2, Plus, Trash2, Power, Database, Users, Activity, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Building2, Plus, Trash2, Power, Database, Users, Activity, FolderOpen, Bell } from 'lucide-react';
 import * as api from '../../api';
 import type { OrgOverviewEntry, OrgMember, AuditEntry } from '../../types';
+
+interface OrgAlertRow extends AuditEntry {
+  orgName: string;
+}
 
 interface Props {
   onOpenOrg: (org: { id: string; name: string; subdomain: string }) => void;
@@ -24,6 +28,9 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'admin' });
   const [provisioningId, setProvisioningId] = useState<string | null>(null);
   const [backendStale, setBackendStale] = useState(false);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const [alerts, setAlerts] = useState<OrgAlertRow[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
 
   const refresh = async () => {
     try {
@@ -54,6 +61,30 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       else setActivity(await api.getOrgActivity(org.id, true));
     } catch (e: any) {
       toast.error(e.message);
+    }
+  };
+
+  const loadAlertsOverview = async () => {
+    setShowAlerts(true);
+    setAlertsLoading(true);
+    try {
+      const settled = await Promise.allSettled(
+        orgs.map(async (org) => ({
+          orgName: org.name,
+          entries: await api.getOrgActivity(org.id, true),
+        })),
+      );
+      const merged: OrgAlertRow[] = [];
+      for (const r of settled) {
+        if (r.status !== 'fulfilled') continue;
+        for (const a of r.value.entries) merged.push({ ...a, orgName: r.value.orgName });
+      }
+      merged.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+      setAlerts(merged.slice(0, 30));
+    } catch (e: any) {
+      toast.error(`Failed to load alerts: ${e.message}`);
+    } finally {
+      setAlertsLoading(false);
     }
   };
 
@@ -152,11 +183,39 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <Building2 className="w-6 h-6 text-telegram-primary" />
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-semibold">Organizations</h1>
             <p className="text-sm text-telegram-subtext">Master admin — create orgs, provision Telegram channels, manage admins.</p>
           </div>
+          <button
+            onClick={() => (showAlerts ? setShowAlerts(false) : loadAlertsOverview())}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover"
+            title="Recent activity across all organizations"
+          >
+            <Bell className="w-3.5 h-3.5" /> {showAlerts ? 'Hide alerts' : 'Alerts overview'}
+          </button>
         </div>
+
+        {showAlerts && (
+          <div className="mb-4 p-3 rounded-xl bg-telegram-surface border border-telegram-border">
+            <p className="text-xs font-bold uppercase tracking-widest text-telegram-subtext mb-2">Recent activity · all orgs</p>
+            {alertsLoading ? (
+              <p className="text-sm text-telegram-subtext">Loading alerts…</p>
+            ) : alerts.length === 0 ? (
+              <p className="text-sm text-telegram-subtext">No recent activity across organizations.</p>
+            ) : (
+              <ul className="space-y-1 max-h-72 overflow-y-auto">
+                {alerts.map((a, i) => (
+                  <li key={a.id || `${a.orgName}-${a.created_at}-${i}`} className="text-xs text-telegram-subtext">
+                    <span className="text-telegram-primary font-medium">{a.orgName}</span>
+                    {' · '}<span className="text-telegram-text font-medium">{a.action}</span>
+                    {a.target_type ? ` · ${a.target_type}:${a.target_id}` : ''} · {a.created_at || ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {backendStale && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/40 text-sm text-red-500">

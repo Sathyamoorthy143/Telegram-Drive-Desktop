@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orgSlugFromPath } from './orgRouting';
+import { orgSlugFromPath, RESERVED_SLUGS } from './orgRouting';
 
 describe('orgSlugFromPath', () => {
   it('extracts slug from root-level org path', () => {
@@ -27,5 +27,14 @@ describe('orgSlugFromPath', () => {
 
   it('still resolves org slug when a reserved word appears deeper in the path', () => {
     expect(orgSlugFromPath('/sdpk/settings')).toBe('sdpk');
+  });
+
+  it('reserved set matches backend is_reserved_slug (parity pin)', () => {
+    expect([...RESERVED_SLUGS].sort()).toEqual([
+      'account', 'activity', 'admin', 'api', 'auth', 'bandwidth', 'debug',
+      'files', 'folders', 'health', 'login', 'logout', 'members', 'meta',
+      'preview', 's', 'settings', 'share', 'stream', 'thumbnail', 'trash',
+      'version', 'versions',
+    ]);
   });
 });

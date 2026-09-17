@@ -1,7 +1,8 @@
 // Pure path-based org routing helpers (no DOM access — pass the path in).
 // Used by App.tsx boot logic; unit-tested in orgRouting.test.ts.
 
-const RESERVED_SLUGS = new Set([
+/** Slugs no org may claim. MUST stay identical to `is_reserved_slug` in web/backend/src/orgs.rs. */
+export const RESERVED_SLUGS = new Set([
   'api', 'auth', 'login', 'logout',
   'files', 'settings', 'trash', 'members',
   'activity', 'admin', 'share', 's',

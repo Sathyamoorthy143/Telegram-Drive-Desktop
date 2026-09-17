@@ -355,9 +355,11 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
 <button onClick={logout} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Sign out">
             <LogOut className="w-4 h-4" />
         </button>
-        <button onClick={() => { window.location.href = `/${org.subdomain}`; }} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Open full Dashboard">
+        {!session && (
+          <button onClick={() => { window.location.href = '/'; }} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Master dashboard">
             <FolderOpen className="w-4 h-4" />
-        </button>
+          </button>
+        )}
     </header>
 
       <div className="flex-1 overflow-y-auto p-4">

@@ -49,7 +49,6 @@ type BootState =
   | { kind: "master-auth" }
   | { kind: "master-drive" }
   | { kind: "master-orgs" }
-  | { kind: "master-open-org"; org: OrgInfo }
   | { kind: "org-login"; org: OrgInfo }
   | { kind: "org-dashboard"; org: OrgInfo; session: OrgSessionInfo | null };
 

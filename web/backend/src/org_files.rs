@@ -128,9 +128,23 @@ pub async fn org_download_file(
     path: web::Path<(String, i64, i32)>,
 ) -> impl Responder {
     let (org_id, fid, mid) = path.into_inner();
-    if let Err(e) = require_org_role(&state, &req, &org_id, "viewer").await {
-        return e;
-    }
+    let sess = match require_org_role(&state, &req, &org_id, "viewer").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let uid = crate::auth_org::db_user_id(&sess);
+    let ip = req.peer_addr().map(|a| a.ip().to_string());
+    let ua = req
+        .headers()
+        .get(actix_web::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    supabase_org::audit_best_effort(
+        &org_id, uid, "file.download", "file", &mid.to_string(),
+        serde_json::json!({ "folder_id": fid }),
+        ip, ua,
+    )
+    .await;
     let org_main = match org_main_or_400(&state, &org_id).await {
         Ok(id) => id,
         Err(e) => return e,
