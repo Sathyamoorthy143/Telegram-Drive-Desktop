@@ -48,3 +48,12 @@ export function buildFolderIndex(folders: OrgFolderRef[]): Map<string, number> {
   for (const f of folders) index.set(childFolderKey(f.parent_id ?? undefined, f.name), f.id);
   return index;
 }
+
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'ico']);
+
+/** True for files worth fetching an inline thumbnail for (mime first, extension fallback). */
+export function isPreviewableImage(name: string, mimeType?: string | null): boolean {
+  if (mimeType?.toLowerCase().startsWith('image/')) return true;
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  return IMAGE_EXTS.has(ext);
+}

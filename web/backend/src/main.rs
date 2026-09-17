@@ -228,6 +228,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/org/{id}/trash/restore", web::post().to(orgs::restore_trash_hdl))
                     .route("/org/{id}/trash/purge", web::post().to(orgs::purge_trash_hdl))
                     .route("/org/{id}/files", web::get().to(org_files::org_get_files))
+                    .route("/org/{id}/files/{fid}/{mid}/download", web::get().to(org_files::org_download_file))
                     .route("/org/{id}/files/upload", web::post().to(org_files::org_upload_file))
                     .route("/org/{id}/files/upload/init", web::post().to(chunked::org_init_upload))
                     .route("/org/{id}/files/upload/chunk", web::put().to(chunked::org_put_chunk))

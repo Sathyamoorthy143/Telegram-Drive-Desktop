@@ -209,23 +209,15 @@ export function AppContent() {
         />
       )}
       {boot.kind === "org-dashboard" && (
-        <Dashboard
+        <OrgAdminDashboard
+          org={boot.org}
+          session={boot.session}
+          onBack={boot.session ? undefined : () => { api.setOrgContext(null); window.location.href = '/'; }}
           onLogout={() => {
             api.setOrgToken(null);
             api.setOrgContext(null);
-            window.location.href = '/';
+            window.location.href = boot.session ? `/${boot.org.subdomain}` : '/';
           }}
-          topBanner={
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
-              <button
-                onClick={() => { api.setOrgContext(null); window.location.href = '/'; }}
-                className="text-xs px-3 py-1.5 rounded-full bg-telegram-surface/90 backdrop-blur border border-telegram-border shadow hover:border-telegram-primary"
-                title="Back to master dashboard"
-              >
-                ← Master Dashboard
-              </button>
-            </div>
-          }
         />
       )}
     </main>

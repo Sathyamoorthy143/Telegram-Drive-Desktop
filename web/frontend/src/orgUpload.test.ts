@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   stagedUploads, needsChunkedUpload, splitRelativePath,
-  childFolderKey, buildFolderIndex, type OrgUploadItem,
+  childFolderKey, buildFolderIndex, isPreviewableImage, type OrgUploadItem,
 } from './orgUpload';
 
 const item = (id: string, status: OrgUploadItem['status']): OrgUploadItem => ({
@@ -48,6 +48,19 @@ describe('splitRelativePath', () => {
   it('returns no dirs for plain file names', () => {
     expect(splitRelativePath('file.pdf')).toEqual({ dirs: [], fileName: 'file.pdf' });
     expect(splitRelativePath('')).toEqual({ dirs: [], fileName: '' });
+  });
+});
+
+describe('isPreviewableImage', () => {
+  it('trusts the mime type first', () => {
+    expect(isPreviewableImage('file.bin', 'image/png')).toBe(true);
+    expect(isPreviewableImage('photo.jpg', 'application/octet-stream')).toBe(true);
+  });
+
+  it('falls back to the file extension', () => {
+    expect(isPreviewableImage('photo.JPG')).toBe(true);
+    expect(isPreviewableImage('doc.pdf', null)).toBe(false);
+    expect(isPreviewableImage('README', undefined)).toBe(false);
   });
 });
 

@@ -3,7 +3,28 @@ import { toast } from 'sonner';
 import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen, HardDrive, X } from 'lucide-react';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
-import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey } from '../../orgUpload';
+import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
+
+function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; folderId?: number; messageId: number; name: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    api.downloadOrgFileBlob(orgId, folderId, messageId).then((blob) => {
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
+    }).catch(() => { if (!cancelled) setFailed(true); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [orgId, folderId, messageId]);
+  if (failed) return <span className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover flex items-center justify-center text-sm" title={name}>🖼️</span>;
+  if (!url) return <span className="w-10 h-10 shrink-0 rounded-lg bg-telegram-hover animate-pulse" />;
+  return <img src={url} alt={name} loading="lazy" className="w-10 h-10 shrink-0 rounded-lg object-cover border border-telegram-border" />;
+}
 import type { OrgUploadItem as UploadItem } from '../../orgUpload';
 
 interface Props {
@@ -433,6 +454,9 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
                 <ul className="grid gap-1">
                   {files.map((f: any) => (
                     <li key={f.id} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-telegram-surface border border-telegram-border">
+                      {isPreviewableImage(f.name, f.mime_type) && (
+                        <OrgImageThumb orgId={org.id} folderId={f.folder_id} messageId={f.id} name={f.name} />
+                      )}
                       <span className="flex-1 truncate">{f.name}</span>
                       {canEdit(role) && (
                         <button onClick={() => deleteFile(f.id, f.folder_id)} className="text-xs text-red-500 hover:underline">trash</button>
