@@ -17,13 +17,14 @@
 //! * `GET  /api/files/upload/session?upload_id=` → {received:[], hashes:{}}
 //! * `POST /api/files/upload/complete` {upload_id}
 
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::tier;
+use crate::auth_org::require_org_role;
 use crate::AppState;
 
 const SESSION_DIR: &str = "/tmp/telegram-uploads";
@@ -196,7 +197,7 @@ fn sanitize_name(name: &str) -> String {
 pub async fn init_upload(
     state: web::Data<AppState>,
     req: web::Json<InitRequest>,
-) -> impl Responder {
+) -> HttpResponse {
     let max_size = tier::current_cap(&state).await;
     if req.size == 0 || req.size > max_size {
         return HttpResponse::BadRequest().body("invalid size");
@@ -273,7 +274,7 @@ pub async fn init_upload(
     })
 }
 
-pub async fn put_chunk(query: web::Query<ChunkQuery>, body: web::Bytes) -> impl Responder {
+pub async fn put_chunk(query: web::Query<ChunkQuery>, body: web::Bytes) -> HttpResponse {
     if body.len() > MAX_PART_BYTES {
         return HttpResponse::PayloadTooLarge().body("chunk too large");
     }
@@ -400,7 +401,9 @@ pub async fn session_status(query: web::Query<SessionQuery>) -> impl Responder {
 pub async fn complete_upload(
     state: web::Data<AppState>,
     req: web::Json<CompleteRequest>,
-) -> impl Responder {
+    org_channel: Option<i64>,
+    org_backup: Option<i64>,
+) -> HttpResponse {
     let dir = match session_dir(&req.upload_id) {
         Ok(d) => d,
         Err(e) => return e,
@@ -499,8 +502,8 @@ pub async fn complete_upload(
         meta.name.clone(),
         meta.folder_id,
         total,
-        None,
-        None,
+        org_channel,
+        org_backup,
     )
     .await;
     // Mark the metadata row complete with the Telegram message id (best effort).
@@ -541,4 +544,63 @@ pub async fn record_single_upload(
         })),
     )
     .await;
+}
+
+// ---- Org-scoped chunked upload ----
+
+/// `POST /api/org/{id}/files/upload/init` — editor+. Same logic as
+/// `init_upload` but enforces org role.
+pub async fn org_init_upload(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<InitRequest>,
+) -> HttpResponse {
+    let org_id = path.into_inner();
+    if let Err(e) = require_org_role(&state, &req, &org_id, "editor").await {
+        return e;
+    }
+    init_upload(state, body).await
+}
+
+/// `PUT /api/org/{id}/files/upload/chunk` — editor+. Same logic as
+/// `put_chunk` but enforces org role.
+pub async fn org_put_chunk(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    query: web::Query<ChunkQuery>,
+    body: web::Bytes,
+) -> HttpResponse {
+    let org_id = path.into_inner();
+    if let Err(e) = require_org_role(&state, &req, &org_id, "editor").await {
+        return e;
+    }
+    put_chunk(query, body).await
+}
+
+/// `POST /api/files/upload/complete` — global (non-org) wrapper.
+pub async fn complete_upload_global(
+    state: web::Data<AppState>,
+    req: web::Json<CompleteRequest>,
+) -> HttpResponse {
+    complete_upload(state, req, None, None).await
+}
+
+/// `POST /api/org/{id}/files/upload/complete` — editor+. Delivers to
+/// the org's Telegram channels.
+pub async fn org_complete_upload(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<CompleteRequest>,
+) -> HttpResponse {
+    let org_id = path.into_inner();
+    match require_org_role(&state, &req, &org_id, "editor").await {
+        Ok(_sess) => {
+            let (org_main, org_backup) = crate::storage::org_channel_ids(&org_id).await;
+            complete_upload(state, body, org_main, org_backup).await
+        }
+        Err(e) => e,
+    }
 }

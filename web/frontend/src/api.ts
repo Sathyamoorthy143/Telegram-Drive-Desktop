@@ -20,6 +20,18 @@ export function setOrgId(orgId: string | null) {
     if (orgId) localStorage.setItem('td_org_id', orgId);
     else localStorage.removeItem('td_org_id');
   } catch {}
+  _currentOrgId = orgId;
+}
+
+let _currentOrgId: string | null = null;
+
+export function getOrgContext(): string | null {
+  return _currentOrgId;
+}
+
+export function setOrgContext(orgId: string | null) {
+  _currentOrgId = orgId;
+  setOrgId(orgId);
 }
 
 export async function api<T>(method: string, path: string, body?: any): Promise<T> {
@@ -70,10 +82,15 @@ export const getUserInfo = () =>
 export const logout = () =>
   api<boolean>('POST', '/api/auth/logout');
 
-export const getFiles = (folder_id?: number) =>
-  api<any[]>('GET', `/api/files${folder_id ? `?folder_id=${folder_id}` : ''}`);
+export const getFiles = (folder_id?: number) => {
+  const orgId = getOrgContext();
+  if (orgId) return getOrgFiles(orgId, folder_id);
+  return api<any[]>('GET', `/api/files${folder_id ? `?folder_id=${folder_id}` : ''}`);
+};
 
 export const uploadFile = (file: File, folder_id?: number) => {
+  const orgId = getOrgContext();
+  if (orgId) return uploadOrgFile(orgId, file, folder_id);
   const formData = new FormData();
   formData.append('file', file);
   if (folder_id !== undefined) {
@@ -88,8 +105,11 @@ export const downloadFile = async (folder_id: number, message_id: number): Promi
   return res.blob();
 };
 
-export const deleteFile = (message_id: number, folder_id?: number) =>
-  api<boolean>('POST', '/api/files/delete', { message_id, folder_id });
+export const deleteFile = (message_id: number, folder_id?: number) => {
+  const orgId = getOrgContext();
+  if (orgId) return deleteOrgFile(orgId, message_id, folder_id);
+  return api<boolean>('POST', '/api/files/delete', { message_id, folder_id });
+};
 
 export const moveFiles = (message_ids: number[], folder_ids: number[], source_folder_id?: number, target_folder_id?: number) =>
   api<boolean>('POST', '/api/files/move', { message_ids, folder_ids, source_folder_id, target_folder_id });
@@ -103,11 +123,17 @@ export const searchFiles = (query: string) =>
 export const getBandwidth = () =>
   api<{ up_bytes: number; down_bytes: number }>('GET', '/api/bandwidth');
 
-export const scanFolders = () =>
-  api<any[]>('GET', '/api/folders/scan');
+export const scanFolders = () => {
+  const orgId = getOrgContext();
+  if (orgId) return scanOrgFolders(orgId);
+  return api<any[]>('GET', '/api/folders/scan');
+};
 
-export const createFolder = (name: string, parent_id?: number) =>
-  api<any>('POST', '/api/folders/create', { name, parent_id });
+export const createFolder = (name: string, parent_id?: number) => {
+  const orgId = getOrgContext();
+  if (orgId) return createOrgFolder(orgId, name, parent_id);
+  return api<any>('POST', '/api/folders/create', { name, parent_id });
+};
 
 export const renameFolder = (id: number, new_name: string) =>
   api<boolean>('PUT', `/api/folders/${id}/rename`, { new_name });
@@ -216,6 +242,8 @@ export const uploadFileResumable = (file: File, folder_id?: number, options?: {
   waitIfPaused?: () => Promise<void>;
   isCancelled?: () => boolean;
 }) => {
+  const orgId = getOrgContext();
+  if (orgId) return uploadOrgFileResumable(orgId, file, folder_id, options);
   const formData = new FormData();
   formData.append('file', file);
   if (folder_id !== undefined) formData.append('folder_id', folder_id.toString());
@@ -232,6 +260,41 @@ export const uploadFileResumable = (file: File, folder_id?: number, options?: {
     xhr.addEventListener('error', () => reject(new Error('Upload network error')));
     xhr.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
     xhr.open('POST', `${API_BASE}/api/files/upload`);
+    if (options?.signal?.aborted) {
+      xhr.abort();
+      return;
+    }
+    options?.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(formData);
+  });
+};
+
+export const uploadOrgFileResumable = (orgId: string, file: File, folder_id?: number, options?: {
+  signal?: AbortSignal;
+  resumeUploadId?: string;
+  onProgress?: (done: number, total: number) => void;
+  onUploadId?: (id: string) => void;
+  waitIfPaused?: () => Promise<void>;
+  isCancelled?: () => boolean;
+}) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (folder_id !== undefined) formData.append('folder_id', folder_id.toString());
+  const orgToken = getOrgToken();
+
+  return new Promise<string>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && options?.onProgress) options.onProgress(e.loaded, e.total);
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
+      else reject(new Error(xhr.responseText || `Upload failed: ${xhr.status}`));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Upload network error')));
+    xhr.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    xhr.open('POST', `${API_BASE}/api/org/${orgId}/files/upload`);
+    if (orgToken) xhr.setRequestHeader('X-Org-Token', orgToken);
     if (options?.signal?.aborted) {
       xhr.abort();
       return;
@@ -258,14 +321,42 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
   waitIfPaused?: () => Promise<void>;
   isCancelled?: () => boolean;
 }) => {
+  const orgId = getOrgContext();
+  if (orgId) return uploadOrgFileChunked(orgId, file, folder_id, options);
+  return _uploadFileChunked(null, file, folder_id, options);
+};
+
+export const uploadOrgFileChunked = (orgId: string, file: File, folder_id?: number, options?: {
+  signal?: AbortSignal;
+  onProgress?: (done: number, total: number) => void;
+  onUploadId?: (id: string) => void;
+  waitIfPaused?: () => Promise<void>;
+  isCancelled?: () => boolean;
+}) => _uploadFileChunked(orgId, file, folder_id, options);
+
+async function _uploadFileChunked(
+  orgId: string | null,
+  file: File,
+  folder_id?: number,
+  options?: {
+    signal?: AbortSignal;
+    onProgress?: (done: number, total: number) => void;
+    onUploadId?: (id: string) => void;
+    waitIfPaused?: () => Promise<void>;
+    isCancelled?: () => boolean;
+  },
+) {
   const total = file.size;
   const totalChunks = Math.ceil(total / CHUNKED_SIZE);
   const abortController = new AbortController();
   if (options?.signal?.aborted) abortController.abort();
   else options?.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
 
+  const orgPrefix = orgId ? `/api/org/${orgId}` : '/api';
+  const orgToken = orgId ? getOrgToken() : null;
+
   return (async () => {
-    const initRes = await api<any>('POST', '/api/files/upload/init', {
+    const initRes = await api<any>('POST', `${orgPrefix}/files/upload/init`, {
       name: file.name,
       size: total,
       folder_id,
@@ -300,24 +391,25 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
       const blob = file.slice(start, end);
       const buffer = await blob.arrayBuffer();
 
-      // Max-speed: 3 attempts with exponential backoff on transient failures
-      // (5xx / 429 / network). 4xx (except 429) fails fast — retrying is useless.
       let lastErr: any = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
-        // Pause cooperatively between retries as well.
         await options?.waitIfPaused?.();
         try {
-          const res = await fetch(`${API_BASE}/api/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`, {
+          const chunkUrl = `${API_BASE}${orgPrefix}/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`;
+          const fetchOpts: RequestInit = {
             method: 'PUT',
             body: buffer,
             signal: abortController.signal,
-          });
+          };
+          if (orgToken) {
+            fetchOpts.headers = { 'X-Org-Token': orgToken };
+          }
+          const res = await fetch(chunkUrl, fetchOpts);
           if (res.ok) {
             report(index, end - start);
             return index;
           }
-          // 429 / 5xx are transient — retry; other 4xx fail immediately.
           if (res.status === 429 || res.status >= 500) {
             lastErr = new Error(`Chunk ${index} transient: ${res.status}`);
           } else {
@@ -357,10 +449,10 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
       throw new DOMException('cancelled', 'AbortError');
     }
 
-    const complete = await api<any>('POST', '/api/files/upload/complete', { upload_id: uploadId });
+    const complete = await api<any>('POST', `${orgPrefix}/files/upload/complete`, { upload_id: uploadId });
     return complete;
   })();
-};
+}
 
 export const uploadFileWithProgress = (file: File, folder_id?: number, options?: {
   signal?: AbortSignal;
@@ -434,6 +526,9 @@ export const deleteOrgMember = (orgId: string, memberId: string, admin = false) 
 
 export const getOrgActivity = (orgId: string, admin = false) =>
   api<any[]>('GET', admin ? `/api/admin/organizations/${orgId}/activity` : `/api/org/${orgId}/activity`);
+
+export const getOrgAlerts = (orgId: string) =>
+  api<any[]>('GET', `/api/org/${orgId}/alerts`);
 
 export const logOrgActivity = (orgId: string, action: string, target_type?: string, target_id?: string, details?: any) =>
   api<boolean>('POST', `/api/org/${orgId}/activity`, { action, target_type, target_id, details });

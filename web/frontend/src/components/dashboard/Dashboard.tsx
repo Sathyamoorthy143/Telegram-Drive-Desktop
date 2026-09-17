@@ -7,6 +7,7 @@ import { History } from 'lucide-react';
 import { TelegramFile, BandwidthStats, FileClipboard, ViewSettings, FolderMetadata } from '../../types';
 import { formatBytes } from '../../utils';
 import * as api from '../../api';
+import { useOrgAlerts } from '../../hooks/useOrgAlerts';
 
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -70,6 +71,8 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     const queryClient = useQueryClient();
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const [uploadsPaused, setUploadsPaused] = useState(false);
+    const orgId = api.getOrgContext();
+    const { alerts, newCount: alertCount, clearNewCount } = useOrgAlerts(orgId);
 
     const toggleLock = () => {
         if (!hasPin) {
@@ -1154,6 +1157,12 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                     onToggleLock={toggleLock}
                     isLocked={isLocked}
                     hasPin={hasPin}
+                    alertCount={alertCount}
+                    onOpenAlerts={() => {
+                        clearNewCount();
+                        // TODO: show alerts dropdown
+                        toast.info(`Org alerts (${alerts.length})`, { description: 'Recent org activity' });
+                    }}
                 />
                 {isOffline && !isSpecial && (
                     <div className="px-4 pt-2">

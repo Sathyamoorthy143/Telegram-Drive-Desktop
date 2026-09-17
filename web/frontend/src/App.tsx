@@ -43,6 +43,23 @@ function subdomainFromHostname(): string | null {
   return null;
 }
 
+function orgSlugFromPath(): string | null {
+  const path = window.location.pathname;
+  if (path === "/" || path === "") return null;
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length === 0) return null;
+  const slug = segments[0].toLowerCase();
+  if (slug === "api" || slug === "auth" || slug === "login" || slug === "logout" ||
+      slug === "files" || slug === "settings" || slug === "trash" || slug === "members" ||
+      slug === "activity" || slug === "admin" || slug === "share" || slug === "s" ||
+      slug === "health" || slug === "version" || slug === "stream" || slug === "preview" ||
+      slug === "thumbnail" || slug === "debug" || slug === "account" || slug === "bandwidth" ||
+      slug === "folders" || slug === "meta" || slug === "versions" || slug === "api") {
+    return null;
+  }
+  return slug;
+}
+
 type BootState =
   | { kind: "checking" }
   | { kind: "master-auth" }
@@ -59,26 +76,49 @@ export function AppContent() {
   useEffect(() => {
     let cancelled = false;
     const bootApp = async () => {
-      // 1. Org context from subdomain (org1.example.com) or ?org= override.
+      // 1. Org context from URL path (path-based routing, canonical).
+      const pathSlug = orgSlugFromPath();
+      // 2. Org context from subdomain (backward compat).
       const sub = subdomainFromHostname();
       let org: OrgInfo | null = null;
-      if (sub) {
+      let orgSource: 'path' | 'subdomain' | null = null;
+      if (pathSlug) {
+        try {
+          const res = await api.getCurrentOrg(pathSlug);
+          if (cancelled) return;
+          if (res.org) {
+            org = res.org;
+            orgSource = 'path';
+          }
+        } catch {
+          org = null;
+        }
+      }
+      if (!org && sub) {
         try {
           const res = await api.getCurrentOrg(sub);
           if (cancelled) return;
-          org = res.org;
+          if (res.org) {
+            org = res.org;
+            orgSource = 'subdomain';
+          }
         } catch {
-          // 404 unknown subdomain → fall through to master flow.
           org = null;
         }
         if (cancelled) return;
-        if (org && org.active === false) {
-          // Inactive org: stay on a dead-end message via org-login with error.
-          setBoot({ kind: "org-login", org });
-          return;
-        }
       }
       if (cancelled) return;
+
+      if (org && org.active === false) {
+        setBoot({ kind: "org-login", org });
+        return;
+      }
+      if (cancelled) return;
+
+      // Set org context for API auto-routing.
+      if (org && orgSource) {
+        api.setOrgContext(org.id);
+      }
 
       const masterConnected = await api.checkConnection().catch(() => false);
       if (cancelled) return;
@@ -174,15 +214,7 @@ export function AppContent() {
       {boot.kind === "master-orgs" && (
         <MasterAdminDashboard
           onBack={() => setBoot({ kind: "master-drive" })}
-          onOpenOrg={(org) => setBoot({ kind: "master-open-org", org })}
-        />
-      )}
-      {boot.kind === "master-open-org" && (
-        <OrgAdminDashboard
-          org={boot.org}
-          session={null}
-          onBack={() => setBoot({ kind: "master-orgs" })}
-          onLogout={() => setBoot({ kind: "master-orgs" })}
+          onOpenOrg={(org) => { window.location.href = `/${org.subdomain}`; }}
         />
       )}
       {boot.kind === "org-login" && (
@@ -193,20 +225,23 @@ export function AppContent() {
         />
       )}
       {boot.kind === "org-dashboard" && (
-        <OrgAdminDashboard
-          org={boot.org}
-          session={boot.session}
+        <Dashboard
           onLogout={() => {
             api.setOrgToken(null);
-            api.checkConnection().then((connected) => {
-              // Master bypass stays in dashboard via re-boot; members go to login.
-              if (boot.session === null && connected) {
-                setBoot({ kind: "org-dashboard", org: boot.org, session: null });
-              } else {
-                setBoot({ kind: "org-login", org: boot.org });
-              }
-            }).catch(() => setBoot({ kind: "org-login", org: boot.org }));
+            api.setOrgContext(null);
+            window.location.href = '/';
           }}
+          topBanner={
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
+              <button
+                onClick={() => { api.setOrgContext(null); window.location.href = '/'; }}
+                className="text-xs px-3 py-1.5 rounded-full bg-telegram-surface/90 backdrop-blur border border-telegram-border shadow hover:border-telegram-primary"
+                title="Back to master dashboard"
+              >
+                ← Master Dashboard
+              </button>
+            </div>
+          }
         />
       )}
     </main>

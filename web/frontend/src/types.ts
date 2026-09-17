@@ -169,3 +169,16 @@ export interface OrgOverviewEntry {
     channel_id?: number;
     backup_channel_id?: number;
 }
+
+export interface OrgAlert {
+    id: string;
+    org_id: string;
+    user_id?: string;
+    action: string;
+    target_type?: string;
+    target_id?: string;
+    details?: any;
+    ip_address?: string;
+    user_agent?: string;
+    created_at?: string;
+}

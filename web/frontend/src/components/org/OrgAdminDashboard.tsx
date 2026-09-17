@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload } from 'lucide-react';
+import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen } from 'lucide-react';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 
@@ -193,10 +193,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
             </button>
           ))}
         </nav>
-        <button onClick={logout} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Sign out">
-          <LogOut className="w-4 h-4" />
+<button onClick={logout} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Sign out">
+            <LogOut className="w-4 h-4" />
         </button>
-      </header>
+        <button onClick={() => { window.location.href = `/${org.subdomain}`; }} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Open full Dashboard">
+            <FolderOpen className="w-4 h-4" />
+        </button>
+    </header>
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="max-w-4xl mx-auto">

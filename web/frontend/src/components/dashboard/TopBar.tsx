@@ -2,7 +2,7 @@ import { HardDrive, Sun, Moon, ChevronDown,
     FolderInput, PanelRightClose, PanelRightOpen, FilePlus,
     FolderPlus, ArrowUpDown, Check, List, Grid2X2, Search,
     Clipboard, Scissors, Copy, Camera, Star, Tag, Pencil, ListTree,
-    Lock, Unlock
+    Lock, Unlock, Bell
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -39,6 +39,8 @@ interface TopBarProps {
     onToggleLock?: () => void;
     isLocked?: boolean;
     hasPin?: boolean;
+    alertCount?: number;
+    onOpenAlerts?: () => void;
 }
 
 export function TopBar({
@@ -46,6 +48,7 @@ export function TopBar({
     onManualUpload, onFolderUpload, onCameraUpload, onCreateFolder, onPaste, onCut, onCopy, canPaste,
     viewSettings, onUpdateViewSettings, searchTerm, onSearchChange, searchFilters, onSearchFiltersChange,
     onToggleLock, isLocked, hasPin,
+    alertCount = 0, onOpenAlerts,
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();
     const [activeDropdown, setActiveDropdown] = useState<'new' | 'sort' | 'view' | null>(null);
@@ -367,6 +370,18 @@ export function TopBar({
                 )}
 
                 <TierBadge />
+                {onOpenAlerts && alertCount > 0 && (
+                    <button
+                        onClick={onOpenAlerts}
+                        className="relative p-2 rounded-md bg-telegram-primary/20 text-telegram-primary hover:bg-telegram-primary/30 transition"
+                        title={`${alertCount} new alert${alertCount > 1 ? 's' : ''}`}
+                    >
+                        <Bell className="w-5 h-5" />
+                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                            {alertCount > 9 ? '9+' : alertCount}
+                        </span>
+                    </button>
+                )}
             </div>
         </header>
     );

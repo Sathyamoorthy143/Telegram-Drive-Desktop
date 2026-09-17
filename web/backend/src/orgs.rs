@@ -31,6 +31,15 @@ fn valid_role(role: &str) -> bool {
     matches!(role, "viewer" | "editor" | "admin" | "owner")
 }
 
+fn is_reserved_slug(s: &str) -> bool {
+    let reserved = [
+        "files", "settings", "trash", "members", "activity", "admin", "api", "auth",
+        "login", "logout", "share", "s", "health", "version", "stream", "preview",
+        "thumbnail", "debug", "account", "bandwidth", "folders", "meta", "versions",
+    ];
+    reserved.contains(&s)
+}
+
 // ---- Current-org resolution (frontend boot) ----
 
 /// `GET /api/current-org?subdomain=...` — resolve org from Host header.
@@ -46,6 +55,9 @@ pub async fn current_org(state: web::Data<AppState>, req: HttpRequest, q: web::Q
     let Some(sub) = sub else {
         return HttpResponse::Ok().json(serde_json::json!({ "org": null, "subdomain": null }));
     };
+    if is_reserved_slug(&sub) {
+        return HttpResponse::Ok().json(serde_json::json!({ "org": null, "subdomain": null }));
+    }
     if !supabase_org::is_configured() {
         return HttpResponse::Ok().json(serde_json::json!({ "org": null, "subdomain": sub }));
     }
@@ -101,6 +113,9 @@ pub async fn create_organization(
     }
     if !valid_subdomain(&sub) {
         return HttpResponse::BadRequest().body("invalid subdomain (a-z, 0-9, hyphen, max 63 chars)");
+    }
+    if is_reserved_slug(&sub) {
+        return HttpResponse::BadRequest().body("subdomain is reserved and cannot be used as an org slug");
     }
     let org = match supabase_org::create_organization(name, &sub).await {
         Ok(o) => o,
@@ -494,6 +509,26 @@ pub async fn post_activity_hdl(
     )
     .await;
     HttpResponse::Ok().json(true)
+}
+
+/// `GET /api/org/{id}/alerts` — viewer+. Returns recent audit log entries
+/// (last ~50) for toast notifications in the org Dashboard.
+pub async fn list_alerts(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(e) = require_org_role(&state, &req, &org_id, "viewer").await {
+        return e;
+    }
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    match supabase_org::list_org_audit(&org_id, 50).await {
+        Ok(rows) => HttpResponse::Ok().json(rows),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
 }
 
 // ---- Org trash (org_trash table; Telegram msg kept until purge) ----

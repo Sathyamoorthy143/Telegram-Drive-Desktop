@@ -156,7 +156,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/files/upload/init", web::post().to(chunked::init_upload))
                     .route("/files/upload/chunk", web::put().to(chunked::put_chunk))
                     .route("/files/upload/session", web::get().to(chunked::session_status))
-                    .route("/files/upload/complete", web::post().to(chunked::complete_upload))
+                    .route("/files/upload/complete", web::post().to(chunked::complete_upload_global))
                     .route("/files/{fid}/{mid}/download", web::get().to(files::download_file))
                     .route("/files/delete", web::post().to(trash::soft_delete))
                     .route("/files/delete/hard", web::post().to(files::delete_file))
@@ -229,10 +229,15 @@ async fn main() -> std::io::Result<()> {
                     .route("/org/{id}/trash/purge", web::post().to(orgs::purge_trash_hdl))
                     .route("/org/{id}/files", web::get().to(org_files::org_get_files))
                     .route("/org/{id}/files/upload", web::post().to(org_files::org_upload_file))
+                    .route("/org/{id}/files/upload/init", web::post().to(chunked::org_init_upload))
+                    .route("/org/{id}/files/upload/chunk", web::put().to(chunked::org_put_chunk))
+                    .route("/org/{id}/files/upload/session", web::get().to(chunked::session_status))
+                    .route("/org/{id}/files/upload/complete", web::post().to(chunked::org_complete_upload))
                     .route("/org/{id}/files/delete", web::post().to(org_files::org_soft_delete))
                     .route("/org/{id}/folders/scan", web::get().to(org_files::org_scan_folders))
                     .route("/org/{id}/folders/create", web::post().to(org_files::org_create_folder))
                     .route("/org/{id}/storage/status", web::get().to(org_files::org_storage_status))
+                    .route("/org/{id}/alerts", web::get().to(orgs::list_alerts))
                     // Unknown /api/* paths return JSON 404 (never index.html) so
                     // outdated-backend skew surfaces as a readable error.
                     .default_service(web::route().to(|| async {

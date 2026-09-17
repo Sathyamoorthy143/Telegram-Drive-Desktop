@@ -93,6 +93,16 @@ pub async fn require_master(state: &web::Data<AppState>) -> Result<(), HttpRespo
     }
 }
 
+/// Validate org_id path parameter: must match `[a-z0-9-]+`, 1-63 chars.
+/// Prevents path traversal / injection via org routes.
+pub fn valid_org_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 63
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+}
+
 /// Require `min_role` in `org_id`. Master admin bypasses as owner.
 /// Returns the resolved session (synthetic owner session for master).
 pub async fn require_org_role(
@@ -101,6 +111,10 @@ pub async fn require_org_role(
     org_id: &str,
     min_role: &str,
 ) -> Result<OrgSession, HttpResponse> {
+    // Validate org_id format: must be a valid subdomain-like string.
+    if !valid_org_id(org_id) {
+        return Err(HttpResponse::BadRequest().body("invalid org id format"));
+    }
     if let Some(sess) = org_session_from_req(state, req).await {
         if sess.org_id == org_id && supabase_org::role_satisfies(&sess.role, min_role) {
             return Ok(sess);
