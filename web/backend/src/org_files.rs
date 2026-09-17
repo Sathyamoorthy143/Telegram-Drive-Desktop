@@ -9,11 +9,9 @@
 
 use actix_multipart::Multipart;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
-use futures::StreamExt;
 use grammers_client::media::Media;
 use grammers_client::peer::Peer;
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 
 use crate::auth::get_client;
 use crate::auth_org::require_org_role;
@@ -478,7 +476,7 @@ pub async fn org_upload_file(
     state: web::Data<AppState>,
     req: HttpRequest,
     path: web::Path<String>,
-    mut payload: Multipart,
+    payload: Multipart,
 ) -> impl Responder {
     let org_id = path.into_inner();
     if let Err(e) = require_org_role(&state, &req, &org_id, "editor").await {
@@ -493,129 +491,29 @@ pub async fn org_upload_file(
         }
     };
 
-    let mut folder_id: Option<i64> = None;
-    let mut file_name: Option<String> = None;
-    let mut total_size: u64 = 0;
-    let tmp_dir = match tempfile::tempdir() {
-        Ok(d) => d,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to create temp dir: {}", e))
-        }
-    };
-    let mut tmp_file: Option<fs::File> = None;
-    let mut tmp_path: Option<std::path::PathBuf> = None;
-    let mut got_file = false;
     let max_size = crate::tier::current_cap(&state).await;
-
-    while let Some(item) = payload.next().await {
-        let mut field = match item {
-            Ok(f) => f,
-            Err(e) => return HttpResponse::BadRequest().body(format!("Multipart error: {}", e)),
-        };
-        let name = field.name().unwrap_or_default().to_string();
-        match name.as_str() {
-            "folder_id" => {
-                let mut val = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    if let Ok(b) = chunk {
-                        val.extend_from_slice(&b);
-                    }
-                }
-                folder_id = String::from_utf8(val)
-                    .ok()
-                    .and_then(|s| s.parse::<i64>().ok());
-            }
-            "file" => {
-                got_file = true;
-                let raw_name = field
-                    .content_disposition()
-                    .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
-                    .unwrap_or_else(|| "upload.bin".to_string());
-                let safe_name = std::path::Path::new(&raw_name)
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .filter(|s| !s.is_empty() && s != ".")
-                    .unwrap_or_else(|| "upload.bin".to_string());
-                file_name = Some(safe_name.clone());
-                log::info!("Org upload started: {} for folder {:?}", safe_name, folder_id);
-                let path = tmp_dir.path().join(&safe_name);
-                let f = match fs::File::create(&path).await {
-                    Ok(f) => f,
-                    Err(e) => {
-                        return HttpResponse::InternalServerError()
-                            .body(format!("Failed to create temp file: {}", e))
-                    }
-                };
-                tmp_path = Some(path);
-                let mut tf = f;
-                while let Some(chunk) = field.next().await {
-                    match chunk {
-                        Ok(data) => {
-                            total_size += data.len() as u64;
-                            if total_size > max_size {
-                                return HttpResponse::PayloadTooLarge()
-                                    .body(format!("File too large. Max: {} bytes", max_size));
-                            }
-                            if let Err(e) = tf.write_all(&data).await {
-                                return HttpResponse::InternalServerError()
-                                    .body(format!("Write error: {}", e));
-                            }
-                        }
-                        Err(e) => {
-                            return HttpResponse::InternalServerError()
-                                .body(format!("Upload read error: {}", e));
-                        }
-                    }
-                }
-                tmp_file = Some(tf);
-            }
-            _ => {
-                while let Some(chunk) = field.next().await {
-                    if chunk.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if !got_file {
-        return HttpResponse::BadRequest().body("No file field in upload");
-    }
-
-    let fname = file_name.unwrap_or_else(|| "upload.bin".to_string());
-    let tmp_path = match tmp_path {
-        Some(p) => p,
-        None => return HttpResponse::InternalServerError().body("Temp file missing"),
+    let up = match crate::upload::read_single_upload(payload, max_size).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    let mut tmp_file = match tmp_file {
-        Some(f) => f,
-        None => return HttpResponse::InternalServerError().body("Temp file missing"),
-    };
-    if let Err(e) = tmp_file.flush().await {
-        return HttpResponse::InternalServerError().body(format!("Flush error: {}", e));
-    }
-    drop(tmp_file);
-
     log::info!(
         "Org upload received {} bytes for '{}', uploading to Telegram...",
-        total_size,
-        fname
+        up.total_size,
+        up.file_name
     );
 
     let (resp, _msg_id) = deliver_to_telegram(
         state,
-        tmp_path.clone(),
-        fname.clone(),
-        folder_id,
-        total_size,
+        up.tmp_path.clone(),
+        up.file_name.clone(),
+        up.folder_id,
+        up.total_size,
         Some(main_id),
         org_backup,
+        None,
     )
     .await;
 
-    let _ = fs::remove_file(&tmp_path).await;
-    let _ = tmp_dir.close();
+    let _ = fs::remove_file(&up.tmp_path).await;
     resp
 }

@@ -13,13 +13,23 @@ use crate::tier;
 use crate::utils::resolve_peer_ref;
 use crate::AppState;
 
-/// Multipart upload endpoint — receives file chunks and uploads to Telegram.
-/// Streams to a temp file, then uploads. The size cap is tier-aware
-/// (2 GB free / 4 GB Premium, enforced server-side by Telegram).
-pub async fn upload_file(
-    state: web::Data<AppState>,
+/// Parsed single-file multipart upload. `_tmp_dir` must stay alive until the
+/// file has been delivered — dropping it deletes the staged bytes.
+pub struct SingleUpload {
+    pub file_name: String,
+    pub tmp_path: std::path::PathBuf,
+    pub total_size: u64,
+    pub folder_id: Option<i64>,
+    pub _tmp_dir: tempfile::TempDir,
+}
+
+/// Shared single-file multipart parser (global + org uploads).
+/// Field order is irrelevant: everything is collected first, consumed after
+/// the loop — a `folder_id` arriving after `file` is still honored.
+pub async fn read_single_upload(
     mut payload: Multipart,
-) -> impl actix_web::Responder {
+    max_size: u64,
+) -> Result<SingleUpload, HttpResponse> {
     // NOTE: each field's body MUST be consumed inline. Storing a Field and
     // polling the parent Multipart for the next part deadlocks (bounded
     // internal channel fills, parser stalls) and the request hangs forever.
@@ -29,20 +39,18 @@ pub async fn upload_file(
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,
         Err(e) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to create temp dir: {}", e))
+            return Err(HttpResponse::InternalServerError()
+                .body(format!("Failed to create temp dir: {}", e)))
         }
     };
     let mut tmp_file: Option<fs::File> = None;
     let mut tmp_path: Option<std::path::PathBuf> = None;
     let mut got_file = false;
-    // Tier-aware cap (2 GB free / 4 GB Premium), resolved once per upload.
-    let max_size = tier::current_cap(&state).await;
 
     while let Some(item) = payload.next().await {
         let mut field = match item {
             Ok(f) => f,
-            Err(e) => return HttpResponse::BadRequest().body(format!("Multipart error: {}", e)),
+            Err(e) => return Err(HttpResponse::BadRequest().body(format!("Multipart error: {}", e))),
         };
 
         let name = field.name().unwrap_or_default().to_string();
@@ -76,8 +84,8 @@ pub async fn upload_file(
                 let f = match fs::File::create(&path).await {
                     Ok(f) => f,
                     Err(e) => {
-                        return HttpResponse::InternalServerError()
-                            .body(format!("Failed to create temp file: {}", e))
+                        return Err(HttpResponse::InternalServerError()
+                            .body(format!("Failed to create temp file: {}", e)))
                     }
                 };
                 tmp_path = Some(path);
@@ -87,17 +95,17 @@ pub async fn upload_file(
                         Ok(data) => {
                             total_size += data.len() as u64;
                             if total_size > max_size {
-                                return HttpResponse::PayloadTooLarge()
-                                    .body(format!("File too large. Max: {} bytes", max_size));
+                                return Err(HttpResponse::PayloadTooLarge()
+                                    .body(format!("File too large. Max: {} bytes", max_size)));
                             }
                             if let Err(e) = tf.write_all(&data).await {
-                                return HttpResponse::InternalServerError()
-                                    .body(format!("Write error: {}", e));
+                                return Err(HttpResponse::InternalServerError()
+                                    .body(format!("Write error: {}", e)));
                             }
                         }
                         Err(e) => {
-                            return HttpResponse::InternalServerError()
-                                .body(format!("Upload read error: {}", e));
+                            return Err(HttpResponse::InternalServerError()
+                                .body(format!("Upload read error: {}", e)));
                         }
                     }
                 }
@@ -115,21 +123,21 @@ pub async fn upload_file(
     }
 
     if !got_file {
-        return HttpResponse::BadRequest().body("No file field in upload");
+        return Err(HttpResponse::BadRequest().body("No file field in upload"));
     }
 
     let fname = file_name.unwrap_or_else(|| "upload.bin".to_string());
     let tmp_path = match tmp_path {
         Some(p) => p,
-        None => return HttpResponse::InternalServerError().body("Temp file missing"),
+        None => return Err(HttpResponse::InternalServerError().body("Temp file missing")),
     };
     let mut tmp_file = match tmp_file {
         Some(f) => f,
-        None => return HttpResponse::InternalServerError().body("Temp file missing"),
+        None => return Err(HttpResponse::InternalServerError().body("Temp file missing")),
     };
     // Ensure all bytes are flushed to disk before re-opening for Telegram upload.
     if let Err(e) = tmp_file.flush().await {
-        return HttpResponse::InternalServerError().body(format!("Flush error: {}", e));
+        return Err(HttpResponse::InternalServerError().body(format!("Flush error: {}", e)));
     }
     drop(tmp_file);
 
@@ -139,11 +147,42 @@ pub async fn upload_file(
         fname
     );
 
-    let (resp, _msg_id) = deliver_to_telegram(state, tmp_path.clone(), fname.clone(), folder_id, total_size, None, None).await;
+    Ok(SingleUpload {
+        file_name: fname,
+        tmp_path,
+        total_size,
+        folder_id,
+        _tmp_dir: tmp_dir,
+    })
+}
 
-    // Cleanup temp file (tmp_file was already flushed + dropped after writing)
-    let _ = fs::remove_file(&tmp_path).await;
-    let _ = tmp_dir.close();
+/// Multipart upload endpoint — receives file chunks and uploads to Telegram.
+/// Streams to a temp file, then uploads. The size cap is tier-aware
+/// (2 GB free / 4 GB Premium, enforced server-side by Telegram).
+pub async fn upload_file(
+    state: web::Data<AppState>,
+    payload: Multipart,
+) -> impl actix_web::Responder {
+    // Tier-aware cap (2 GB free / 4 GB Premium), resolved once per upload.
+    let max_size = tier::current_cap(&state).await;
+    let up = match read_single_upload(payload, max_size).await {
+        Ok(u) => u,
+        Err(e) => return e,
+    };
+    let (resp, _msg_id) = deliver_to_telegram(
+        state,
+        up.tmp_path.clone(),
+        up.file_name.clone(),
+        up.folder_id,
+        up.total_size,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    // Cleanup temp file (staged bytes vanish with `_tmp_dir` on return).
+    let _ = fs::remove_file(&up.tmp_path).await;
     resp
 }
 
@@ -159,6 +198,7 @@ pub async fn deliver_to_telegram(
     total_size: u64,
     org_channel: Option<i64>,
     org_backup: Option<i64>,
+    existing_id: Option<String>,
 ) -> (HttpResponse, Option<i64>) {
     // Get the Telegram client - quick auth check, don't hang on invalid session
     let client = match tokio::time::timeout(std::time::Duration::from_secs(5), get_client(&state)).await {
@@ -264,12 +304,15 @@ pub async fn deliver_to_telegram(
     };
 
     // Metadata DB row so the filesystem structure accumulates for every file.
+    // Chunked flows already own a row (created at init): update it instead of
+    // inserting a duplicate.
     crate::chunked::record_single_upload(
         folder_id,
         fname.clone(),
         file_size,
         msg_id as i64,
         mime_type.clone(),
+        existing_id,
     )
     .await;
 

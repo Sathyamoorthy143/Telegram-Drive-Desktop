@@ -93,6 +93,19 @@ fn sha256_hex(data: &[u8]) -> String {
     hex::encode(h.finalize())
 }
 
+/// Expected on-disk size of part `index`: full chunk_size except the last,
+/// which holds the remainder. Guards against short/truncated parts.
+fn part_expected_size(meta: &SessionMeta, index: u32) -> u64 {
+    if meta.total_chunks == 0 {
+        return 0;
+    }
+    if index + 1 < meta.total_chunks {
+        meta.chunk_size
+    } else {
+        meta.size - meta.chunk_size as u64 * (meta.total_chunks as u64 - 1)
+    }
+}
+
 fn valid_hex64(s: &str) -> bool {
     s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -311,17 +324,33 @@ pub async fn put_chunk(query: web::Query<ChunkQuery>, body: web::Bytes) -> HttpR
             }
         }
     }
-    let actual = sha256_hex(&body);
-    if let Some(exp) = expected.as_deref() {
-        if exp.to_lowercase() != actual {
-            // Corrupted in transit — do NOT store; client resends this chunk.
-            return HttpResponse::UnprocessableEntity()
-                .body(format!("chunk {} hash mismatch", query.index));
+    // Hashing + disk write run on the blocking pool: up to 32MB of SHA-256
+    // and fs I/O must not stall the async executor under 8 parallel workers.
+    enum StoreErr {
+        Mismatch(String),
+        Io,
+    }
+    let part_file = part_path(&dir, query.index);
+    let index = query.index;
+    let body_len = body.len();
+    let stored = tokio::task::spawn_blocking(move || {
+        let actual = sha256_hex(&body);
+        if let Some(exp) = expected.as_deref() {
+            if exp.to_lowercase() != actual {
+                // Corrupted in transit — do NOT store; client resends this chunk.
+                return Err(StoreErr::Mismatch(format!("chunk {} hash mismatch", index)));
+            }
         }
-    }
-    if std::fs::write(part_path(&dir, query.index), &body).is_err() {
-        return HttpResponse::InternalServerError().body("cannot store chunk");
-    }
+        std::fs::write(&part_file, &body)
+            .map(|_| actual)
+            .map_err(|_| StoreErr::Io)
+    })
+    .await;
+    let actual = match stored {
+        Ok(Ok(h)) => h,
+        Ok(Err(StoreErr::Mismatch(m))) => return HttpResponse::UnprocessableEntity().body(m),
+        _ => return HttpResponse::InternalServerError().body("cannot store chunk"),
+    };
     db_write(
         "POST",
         "chunks?on_conflict=file_id,idx",
@@ -329,7 +358,7 @@ pub async fn put_chunk(query: web::Query<ChunkQuery>, body: web::Bytes) -> HttpR
             "file_id": query.upload_id,
             "idx": query.index as i64,
             "sha256": actual,
-            "size": body.len() as i64,
+            "size": body_len as i64,
         })),
     )
     .await;
@@ -415,10 +444,32 @@ pub async fn complete_upload(
         Some(m) => m,
         None => return HttpResponse::NotFound().body("unknown upload session"),
     };
+    // Every part must exist AND match its expected size (all but the last
+    // are exactly chunk_size; the last is the remainder). A short part means
+    // a truncated reassembly — reject instead of uploading a corrupt file.
+    // Missing parts after a restart/deploy return 409 so the client resumes.
+    let mut missing: Vec<u32> = Vec::new();
     for i in 0..meta.total_chunks {
-        if !part_path(&dir, i).exists() {
-            return HttpResponse::BadRequest().body(format!("missing chunk {}", i));
+        let p = part_path(&dir, i);
+        let expected = part_expected_size(&meta, i);
+        match std::fs::metadata(&p) {
+            Ok(md) if md.len() == expected => {}
+            Ok(md) => {
+                return HttpResponse::UnprocessableEntity().body(format!(
+                    "chunk {} corrupt: expected {} bytes, found {}",
+                    i,
+                    expected,
+                    md.len()
+                ))
+            }
+            Err(_) => missing.push(i),
         }
+    }
+    if !missing.is_empty() {
+        return HttpResponse::Conflict().json(serde_json::json!({
+            "error": "incomplete upload session — resume missing chunks",
+            "missing": missing,
+        }));
     }
     // Reassemble into a temp file with a single streaming copy.
     // Hash security: each chunk's SHA-256 was already verified in `put_chunk`
@@ -490,11 +541,11 @@ pub async fn complete_upload(
         }
     }
     if total != meta.size {
-        log::warn!(
-            "chunked upload size mismatch: declared {} got {}",
+        return HttpResponse::UnprocessableEntity().body(format!(
+            "size mismatch: declared {} bytes, reassembled {}",
             meta.size,
             total
-        );
+        ));
     }
     let (resp, telegram_message_id) = crate::upload::deliver_to_telegram(
         state,
@@ -504,6 +555,7 @@ pub async fn complete_upload(
         total,
         org_channel,
         org_backup,
+        Some(req.upload_id.clone()),
     )
     .await;
     // Mark the metadata row complete with the Telegram message id (best effort).
@@ -518,15 +570,34 @@ pub async fn complete_upload(
     resp
 }
 
-/// Record a single-POST (non-chunked) upload in the metadata DB so the
-/// filesystem structure accumulates for every file, not just chunked ones.
+/// Record an upload in the metadata DB so the filesystem structure
+/// accumulates for every file, not just chunked ones. When `existing_id` is
+/// given (chunked flow owns its row since init), that row is updated instead
+/// of inserting a duplicate.
 pub async fn record_single_upload(
     folder_id: Option<i64>,
     name: String,
     size: u64,
     message_id: i64,
     mime: String,
+    existing_id: Option<String>,
 ) {
+    if let Some(id) = existing_id {
+        db_write(
+            "PATCH",
+            &format!("files?id=eq.{}", id),
+            Some(serde_json::json!({
+                "folder_id": folder_id,
+                "name": name,
+                "size": size as i64,
+                "status": "complete",
+                "telegram_message_id": message_id,
+                "mime": mime,
+            })),
+        )
+        .await;
+        return;
+    }
     db_write(
         "POST",
         "files",
@@ -544,6 +615,36 @@ pub async fn record_single_upload(
         })),
     )
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(total_chunks: u32, chunk_size: u64, size: u64) -> SessionMeta {
+        SessionMeta {
+            name: "f".into(),
+            size,
+            folder_id: None,
+            total_chunks,
+            chunk_size,
+            file_sha256: None,
+            chunk_hashes: vec![],
+            created: 0,
+        }
+    }
+
+    #[test]
+    fn part_expected_sizes() {
+        // 20MB in 8MB parts: 8, 8, 4.
+        let m = meta(3, 8 * 1024 * 1024, 20 * 1024 * 1024);
+        assert_eq!(part_expected_size(&m, 0), 8 * 1024 * 1024);
+        assert_eq!(part_expected_size(&m, 1), 8 * 1024 * 1024);
+        assert_eq!(part_expected_size(&m, 2), 4 * 1024 * 1024);
+        // Single-chunk file: the only part is the whole file.
+        let m = meta(1, 8 * 1024 * 1024, 100);
+        assert_eq!(part_expected_size(&m, 0), 100);
+    }
 }
 
 // ---- Org-scoped chunked upload ----

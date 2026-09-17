@@ -34,7 +34,7 @@ export function setOrgContext(orgId: string | null) {
   setOrgId(orgId);
 }
 
-export async function api<T>(method: string, path: string, body?: any): Promise<T> {
+export async function api<T>(method: string, path: string, body?: any, options?: { signal?: AbortSignal }): Promise<T> {
   const isFormData = body instanceof FormData;
 
   const headers: Record<string, string> = {};
@@ -50,6 +50,7 @@ export async function api<T>(method: string, path: string, body?: any): Promise<
     method,
     headers,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+    signal: options?.signal,
   });
 
   if (!res.ok) {
@@ -104,15 +105,15 @@ export const getFiles = (folder_id?: number) => {
   return api<any[]>('GET', `/api/files${folder_id ? `?folder_id=${folder_id}` : ''}`);
 };
 
-export const uploadFile = (file: File, folder_id?: number) => {
+export const uploadFile = (file: File, folder_id?: number, options?: { signal?: AbortSignal }) => {
   const orgId = getOrgContext();
-  if (orgId) return uploadOrgFile(orgId, file, folder_id);
+  if (orgId) return uploadOrgFile(orgId, file, folder_id, options);
   const formData = new FormData();
   formData.append('file', file);
   if (folder_id !== undefined) {
     formData.append('folder_id', folder_id.toString());
   }
-  return api<string>('POST', '/api/files/upload', formData);
+  return api<string>('POST', '/api/files/upload', formData, options);
 };
 
 /**
@@ -220,6 +221,14 @@ export const getStore = async () => ({
 });
 
 export const CHUNK_SIZE = 1024 * 1024;
+
+/**
+ * Single routing threshold for chunked uploads. Files at or below this use
+ * one POST (instant); above it they go chunked with hash manifest + resume.
+ * Kept equal to the 8MB wire chunk size so small files never pay for a
+ * one-chunk init/complete round trip.
+ */
+export const CHUNKED_UPLOAD_THRESHOLD = 8 * 1024 * 1024;
 
 export const getTrash = () => {
   requireNoOrgContext('Master trash (use org trash instead)');
@@ -441,17 +450,46 @@ async function _uploadFileChunked(
   const orgToken = orgId ? getOrgToken() : null;
 
   return (async () => {
+    // Hash manifest: per-chunk SHA-256 plus the whole-file root over the
+    // concatenated raw digests (same construction the server verifies).
+    // Lets the server reject corrupt chunks instead of trusting the bytes.
+    const chunkHashes: string[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) {
+        throw new DOMException('cancelled', 'AbortError');
+      }
+      const start = i * CHUNKED_SIZE;
+      const end = Math.min(start + CHUNKED_SIZE, total);
+      chunkHashes.push(await sha256(await file.slice(start, end).arrayBuffer()));
+    }
+    const rootBytes = new Uint8Array(chunkHashes.length * 32);
+    chunkHashes.forEach((h, i) => {
+      const raw = h.match(/../g)?.map((b) => parseInt(b, 16)) ?? [];
+      rootBytes.set(raw, i * 32);
+    });
+    const fileRoot = await sha256(rootBytes.buffer as ArrayBuffer);
+
     const initRes = await api<any>('POST', `${orgPrefix}/files/upload/init`, {
       name: file.name,
       size: total,
       folder_id,
       total_chunks: totalChunks,
       chunk_size: CHUNKED_SIZE,
+      file_sha256: fileRoot,
+      hashes: chunkHashes,
     });
     const uploadId = initRes.upload_id as string;
     options?.onUploadId?.(uploadId);
 
+    // Seed from the server session too: if a previous attempt landed chunks
+    // (or init raced), don't resend what the backend already holds.
     const uploaded = new Set<number>(initRes.received as number[]);
+    try {
+      const session = await api<any>('GET', `${orgPrefix}/files/upload/session?upload_id=${encodeURIComponent(uploadId)}`);
+      for (const idx of (session?.received as number[]) || []) uploaded.add(idx);
+    } catch {
+      // Session lookup is best-effort; init's list still applies.
+    }
     let doneBytes = uploaded.size * CHUNKED_SIZE;
     const speedMap = new Map<string, { t: number; done: number; speed: number }>();
     const report = (chunkIndex: number, chunkBytes: number) => {
@@ -481,7 +519,7 @@ async function _uploadFileChunked(
         if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
         await options?.waitIfPaused?.();
         try {
-          const chunkUrl = `${API_BASE}${orgPrefix}/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}`;
+          const chunkUrl = `${API_BASE}${orgPrefix}/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}&hash=${encodeURIComponent(chunkHashes[index])}`;
           const fetchOpts: RequestInit = {
             method: 'PUT',
             body: buffer,
@@ -664,13 +702,13 @@ export const downloadOrgFileBlob = async (orgId: string, folder_id: number | und
   return res.blob();
 };
 
-export const uploadOrgFile = (orgId: string, file: File, folder_id?: number) => {
+export const uploadOrgFile = (orgId: string, file: File, folder_id?: number, options?: { signal?: AbortSignal }) => {
   const formData = new FormData();
   formData.append('file', file);
   if (folder_id !== undefined) {
     formData.append('folder_id', folder_id.toString());
   }
-  return api<string>('POST', `/api/org/${orgId}/files/upload`, formData);
+  return api<string>('POST', `/api/org/${orgId}/files/upload`, formData, options);
 };
 
 export const provisionOrgStorage = (orgId: string) =>

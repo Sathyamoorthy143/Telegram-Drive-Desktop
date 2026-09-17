@@ -379,16 +379,16 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
         uploadControllersRef.current.set(item.id, ctrl);
         try {
           setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'uploading' } : x));
-          if (needsChunkedUpload(item.file.size, api.CHUNK_SIZE)) {
-            await api.uploadOrgFileChunked(org.id, item.file, folderByItem.get(item.id), {
-              signal: ctrl.signal,
-              onProgress: (done, total) => {
-                setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, progress: Math.round((done / total) * 100) } : x));
-              },
-            });
-          } else {
-            await api.uploadOrgFile(org.id, item.file, folderByItem.get(item.id));
-          }
+        if (needsChunkedUpload(item.file.size, api.CHUNKED_UPLOAD_THRESHOLD)) {
+          await api.uploadOrgFileChunked(org.id, item.file, folderByItem.get(item.id), {
+            signal: ctrl.signal,
+            onProgress: (done, total) => {
+              setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, progress: Math.round((done / total) * 100) } : x));
+            },
+          });
+        } else {
+          await api.uploadOrgFile(org.id, item.file, folderByItem.get(item.id), { signal: ctrl.signal });
+        }
           setUploadQueue(prev => prev.map(x => x.id === item.id ? { ...x, status: 'success', progress: 100 } : x));
           toast.success(`Uploaded "${item.name}"`);
         } catch (e: any) {

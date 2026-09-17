@@ -642,10 +642,10 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                     upFile = new File([blob], encName(file.name), { type: 'application/octet-stream' });
                 }
             } catch (e: any) { if (e?.message?.includes('cancelled')) throw e; }
-            // Max-speed + LIVE-controllable: >1MB goes chunked (8 parallel 8MB
-            // PUTs, per-chunk retry, cooperative pause checked before every
-            // chunk + between retries). Only <=1MB uses single POST (instant).
-            if (upFile.size > api.CHUNK_SIZE) {
+            // Max-speed + LIVE-controllable: above threshold goes chunked
+            // (8 parallel 8MB PUTs, hash manifest, per-chunk retry,
+            // cooperative pause). At/below uses single POST (instant).
+            if (upFile.size > api.CHUNKED_UPLOAD_THRESHOLD) {
                 await api.uploadFileChunked(upFile, activeFolderId ?? undefined, {
                   signal: ctrl.signal,
                   onProgress: (done, total) => reportProgress(qid, done, total),
@@ -666,10 +666,9 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                   isCancelled: () => readStatus() === 'cancelled',
                 });
             } else {
-                await api.uploadFile(upFile, activeFolderId ?? undefined);
+                await api.uploadFile(upFile, activeFolderId ?? undefined, { signal: ctrl.signal });
             }
             if (encIv) {
-                try { await api.setTags(Date.now() % 2147483647, [], activeFolderId ?? undefined); } catch {}
                 const m = JSON.parse(localStorage.getItem('enc_iv') || '{}');
                 m[`${activeFolderId ?? 'null'}:${upFile.name}`] = encIv;
                 try { localStorage.setItem('enc_iv', JSON.stringify(m)); } catch {}
