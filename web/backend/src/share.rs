@@ -71,6 +71,47 @@ pub struct CreateShareRequest {
     pub message_id: i32,
     pub folder_id: Option<i64>,
     pub expiry_days: Option<i64>, // default 7
+    pub password: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ShareAccessQuery {
+    pub password: Option<String>,
+}
+
+/// HTML-escape for the tiny password-gate page (token is server-minted but
+/// never trust interpolation).
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Password gate page for browser visits to `/s/{token}`. Submits back as
+/// `?password=` (query, so plain links/bookmarks keep working).
+fn password_gate_page(token: &str, wrong: bool) -> HttpResponse {
+    let t = html_escape(token);
+    HttpResponse::Unauthorized()
+        .content_type("text/html; charset=utf-8")
+        .body(format!(
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+            <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+            <title>Password required</title></head>\
+            <body style=\"font-family:sans-serif;display:flex;min-height:90vh;align-items:center;justify-content:center;background:#0e1621;color:#fff\">\
+            <form method=\"get\" action=\"/s/{}\">\
+            <h2>This link is password protected</h2>\
+            {}<input type=\"password\" name=\"password\" placeholder=\"Link password\" autofocus \
+            style=\"padding:8px;border-radius:8px;border:1px solid #444;background:#1c2733;color:#fff\">\
+            <button type=\"submit\" style=\"padding:8px 16px;border-radius:8px;border:0;background:#2481cc;color:#fff\">Open</button>\
+            </form></body></html>",
+            t,
+            if wrong {
+                "<p style=\"color:#ff6b6b\">Incorrect password, try again.</p>"
+            } else {
+                ""
+            }
+        ))
 }
 
 async fn supabase_req(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<reqwest::Response, String> {
@@ -99,22 +140,42 @@ pub async fn create_share(state: web::Data<AppState>, req: web::Json<CreateShare
     let exp_dt = Utc::now() + Duration::days(days);
     let token = mint_token(req.message_id, req.folder_id, exp_dt.timestamp());
     let expires_at = exp_dt.to_rfc3339();
+    // Optional link password: SHA-256 scoped to the token (same construction
+    // as org member passwords). Requires the Supabase row below — a password
+    // that cannot be stored is refused rather than silently dropped.
+    let password = req.password.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let password_hash = password.map(|p| crate::supabase_org::hash_org_password(p, &token));
     // Best-effort Supabase row so links show up in list/revoke/views.
-    // Failures (e.g. missing table) are logged, never fatal.
+    // Failures (e.g. missing table) are logged, never fatal — unless a
+    // password was requested, which must be enforceable to exist at all.
     let row = serde_json::json!({
         "token": token,
         "message_id": req.message_id,
         "folder_id": req.folder_id,
         "expires_at": expires_at,
-        "views": 0
+        "views": 0,
+        "password_hash": password_hash,
     });
     match supabase_req("POST", "shared_links", Some(row)).await {
         Ok(resp) if resp.status().is_success() => {}
         Ok(resp) => {
             let txt = resp.text().await.unwrap_or_default();
+            // A missing password_hash column surfaces here on old schemas.
+            if password_hash.is_some() {
+                return HttpResponse::BadRequest().body(
+                    "Password-protected links need the latest shared_links schema (password_hash column). Run the SUPABASE.md migration, then retry.",
+                );
+            }
             log::warn!("shared_links insert skipped (list/revoke unavailable): {}", txt.chars().take(160).collect::<String>());
         }
-        Err(e) => log::warn!("shared_links insert skipped (list/revoke unavailable): {}", e),
+        Err(e) => {
+            if password_hash.is_some() {
+                return HttpResponse::ServiceUnavailable().body(
+                    "Password-protected links need the sharing database online. Retry shortly or share without a password.",
+                );
+            }
+            log::warn!("shared_links insert skipped (list/revoke unavailable): {}", e);
+        }
     }
     let base = std::env::var("FRONTEND_URL").or_else(|_| std::env::var("DOMAIN")).unwrap_or("https://frestorage.dpdns.org".into());
     let url = format!("{}/s/{}", base.trim_end_matches('/'), token);
@@ -144,6 +205,7 @@ pub async fn public_share(
     req: actix_web::HttpRequest,
     state: web::Data<AppState>,
     path: web::Path<String>,
+    query: web::Query<ShareAccessQuery>,
 ) -> impl Responder {
     let token = path.into_inner();
     // Stateless tokens verify locally (no DB needed); legacy 8-char tokens
@@ -198,6 +260,53 @@ pub async fn public_share(
                     .header("apikey", &k).header("Authorization", format!("Bearer {}", k))
                     .json(&serde_json::json!({"p_token": token_clone})).send().await;
             });
+        }
+    }
+    // Password gate: best-effort row lookup covering both token flavors.
+    // No row / no hash → open link. Hash present → require a match via the
+    // X-Share-Password header (preferred, stays out of logs) or ?password=
+    // (browser form flow). Missing password renders the gate page (401).
+    let supplied = req
+        .headers()
+        .get("X-Share-Password")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            query
+                .password
+                .clone()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+    let gate: Option<String> = match supabase_req(
+        "GET",
+        &format!("shared_links?token=eq.{}&select=password_hash", token),
+        None,
+    )
+    .await
+    {
+        Ok(r) if r.status().is_success() => r
+            .json::<Vec<serde_json::Value>>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .and_then(|row| {
+                row.get("password_hash")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            }),
+        _ => None,
+    };
+    if let Some(hash) = gate.filter(|h| !h.is_empty()) {
+        let ok = supplied
+            .as_deref()
+            .map(|p| crate::supabase_org::hash_org_password(p, &token) == hash)
+            .unwrap_or(false);
+        if !ok {
+            return password_gate_page(&token, supplied.is_some());
         }
     }
     // stream file via Telegram
@@ -267,6 +376,23 @@ mod tests {
         let t2 = mint_token(7, None, 9999999999);
         let (mid2, fid2, _) = verify_token(&t2).expect("valid token");
         assert_eq!((mid2, fid2), (7, None));
+    }
+
+    #[test]
+    fn password_gate_page_is_401_with_form() {
+        let ok = password_gate_page("abc.def.ghi.jkl", false);
+        assert_eq!(ok.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+        let wrong = password_gate_page("abc.def.ghi.jkl", true);
+        assert_eq!(wrong.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn share_password_hash_roundtrip() {
+        // Same construction as org member passwords, scoped to the token.
+        let h = crate::supabase_org::hash_org_password("s3cret", "tok123");
+        assert!(crate::supabase_org::verify_org_password("s3cret", "tok123", &h));
+        assert!(!crate::supabase_org::verify_org_password("wrong", "tok123", &h));
+        assert!(!crate::supabase_org::verify_org_password("s3cret", "other", &h));
     }
 
     #[test]

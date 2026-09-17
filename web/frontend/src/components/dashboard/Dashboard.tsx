@@ -600,13 +600,26 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
 
     const handleShare = useCallback(async (file: any) => {
         try {
-            const res: any = await api.createShare(file.id, file.folder_id ?? activeFolderId ?? undefined, 7);
+            const password = await askPrompt({
+                title: 'Share file',
+                message: `Create a 7-day link for "${file.name}". Optional password below (empty = open link).`,
+                placeholder: 'Link password (optional)',
+                confirmLabel: 'Copy link',
+            });
+            // Cancelled prompt returns null — abort without creating a link.
+            if (password === null) return;
+            const res: any = await api.createShare(
+                file.id,
+                file.folder_id ?? activeFolderId ?? undefined,
+                7,
+                password?.trim() || undefined,
+            );
             const url = res.url || `${window.location.origin}/s/${res.token}`;
             await navigator.clipboard.writeText(url);
             toast.success(`Share link copied: ${url}`);
             api.logActivity('share', url, file.name).catch(()=>{});
         } catch (e: any) { toast.error(`Share failed: ${e.message}`); }
-    }, [activeFolderId]);
+    }, [activeFolderId, askPrompt]);
 
     const handleStar = useCallback(async (file: any) => {
         try {

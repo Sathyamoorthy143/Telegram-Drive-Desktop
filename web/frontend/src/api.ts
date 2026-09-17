@@ -320,9 +320,9 @@ export const setTags = (message_id: number, tags: string[], folder_id?: number) 
   return api<boolean>('PUT', '/api/meta/tags', { message_id, folder_id, tags });
 };
 
-export const createShare = (message_id: number, folder_id: number, expires_in?: number) => {
+export const createShare = (message_id: number, folder_id: number, expires_in?: number, password?: string) => {
   requireNoOrgContext('Share links');
-  return api<{ url: string }>('POST', '/api/share', { message_id, folder_id, expiry_days: expires_in });
+  return api<{ url: string }>('POST', '/api/share', { message_id, folder_id, expiry_days: expires_in, password });
 };
 
 export const getShareUrl = (share_id: string) =>

@@ -63,8 +63,11 @@ create table if not exists shared_links (
   created_at timestamptz default now(),
   expires_at timestamptz,
   views int default 0,
+  password_hash text,
   user_id bigint references telegram_sessions(user_id) on delete cascade
 );
+-- Password-protected links (added later): backfill the column on old schemas.
+alter table shared_links add column if not exists password_hash text;
 create index if not exists idx_share_user on shared_links(user_id);
 create index if not exists idx_share_expires on shared_links(expires_at);
 
