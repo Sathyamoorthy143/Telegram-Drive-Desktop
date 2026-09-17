@@ -54,8 +54,25 @@ pub fn extract_org_token(req: &HttpRequest) -> Option<String> {
     None
 }
 
+/// Org bearer tokens live this long (in-memory store, so a backend restart
+/// logs everyone out regardless).
+pub const ORG_TOKEN_TTL_SECS: i64 = 24 * 3600;
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 pub async fn session_from_token(state: &AppState, token: &str) -> Option<OrgSession> {
-    state.org_sessions.lock().await.get(token).cloned()
+    let mut store = state.org_sessions.lock().await;
+    let sess = store.get(token)?.clone();
+    if now_unix() - sess.issued_at > ORG_TOKEN_TTL_SECS {
+        store.remove(token);
+        return None;
+    }
+    Some(sess)
 }
 
 /// Member id safe for uuid columns: master-bypass sessions carry an empty
@@ -77,29 +94,106 @@ pub async fn org_session_from_req(
     session_from_token(state, &tok).await
 }
 
-/// True when the caller holds a live Telegram session (master admin).
-/// A failed `get_me` may just be a dead pool behind the cached client
-/// (dropped connection after flood/idle/restart) rather than a signed-out
-/// user — so rebuild once from the persisted session and retry before
-/// denying. A genuinely signed-out session still fails fast afterwards.
-pub async fn is_master_admin(state: &web::Data<AppState>) -> bool {
-    if let Some(c) = state.client.lock().await.clone() {
-        if c.get_me().await.is_ok() {
-            return true;
+/// Master-admin verdict with the failure reason preserved, so callers can
+/// tell "signed out" (re-login) apart from "Telegram unreachable" (retry).
+pub enum MasterCheck {
+    Authorized,
+    Unauthorized,
+    TransportUnavailable,
+}
+
+/// Positive and negative verdicts are cached briefly; transport failures are
+/// never cached. Cleared on auth transitions (sign-in, 2FA, logout).
+pub const MASTER_CACHE_TTL_SECS: u64 = 30;
+
+pub fn clear_master_cache(state: &AppState) {
+    // Sync try_lock: never block request paths on the cache.
+    if let Ok(mut g) = state.master_cache.try_lock() {
+        *g = (None, None);
+    }
+}
+
+fn classify_master_err(m: &str) -> MasterCheck {
+    if crate::auth::is_transport_failure(m) {
+        MasterCheck::TransportUnavailable
+    } else if m.contains("Unauthorized")
+        || m.contains("AuthKey")
+        || m.contains("AUTH_KEY")
+        || m.contains("not logged")
+    {
+        MasterCheck::Unauthorized
+    } else {
+        // Unknown RPC error: favor "retry shortly" over logging the user out.
+        MasterCheck::TransportUnavailable
+    }
+}
+
+pub async fn check_master(state: &web::Data<AppState>) -> MasterCheck {
+    if let (Some(v), Some(at)) = state.master_cache.lock().await.clone() {
+        if at.elapsed() < std::time::Duration::from_secs(MASTER_CACHE_TTL_SECS) {
+            return if v {
+                MasterCheck::Authorized
+            } else {
+                MasterCheck::Unauthorized
+            };
         }
-        crate::auth::reset_client(state).await;
     }
-    if let Ok(c) = crate::auth::get_client(state).await {
-        return c.get_me().await.is_ok();
+    let verdict = match state.client.lock().await.clone() {
+        Some(c) => match c.get_me().await {
+            Ok(_) => MasterCheck::Authorized,
+            Err(e) => {
+                let m = e.to_string();
+                if !crate::auth::is_transport_failure(&m) {
+                    classify_master_err(&m)
+                } else {
+                    // Dead pool behind the cached client: rebuild once from
+                    // the persisted session and re-probe before denying.
+                    crate::auth::reset_client(state).await;
+                    match crate::auth::get_client(state).await {
+                        Ok(c2) => match c2.get_me().await {
+                            Ok(_) => MasterCheck::Authorized,
+                            Err(e2) => classify_master_err(&e2.to_string()),
+                        },
+                        Err(_) => MasterCheck::TransportUnavailable,
+                    }
+                }
+            }
+        },
+        None => match crate::auth::get_client(state).await {
+            Ok(c) => match c.get_me().await {
+                Ok(_) => MasterCheck::Authorized,
+                Err(e) => classify_master_err(&e.to_string()),
+            },
+            Err(e) => {
+                // No usable session/config at all → signed out, not transport.
+                let _ = e;
+                MasterCheck::Unauthorized
+            }
+        },
+    };
+    let cacheable = !matches!(verdict, MasterCheck::TransportUnavailable);
+    if cacheable {
+        *state.master_cache.lock().await = (
+            Some(matches!(verdict, MasterCheck::Authorized)),
+            Some(std::time::Instant::now()),
+        );
     }
-    false
+    verdict
+}
+
+/// True when the caller holds a live Telegram session (master admin).
+pub async fn is_master_admin(state: &web::Data<AppState>) -> bool {
+    matches!(check_master(state).await, MasterCheck::Authorized)
 }
 
 pub async fn require_master(state: &web::Data<AppState>) -> Result<(), HttpResponse> {
-    if is_master_admin(state).await {
-        Ok(())
-    } else {
-        Err(HttpResponse::Unauthorized().body("Master admin authentication required (Telegram login)"))
+    match check_master(state).await {
+        MasterCheck::Authorized => Ok(()),
+        MasterCheck::Unauthorized => {
+            Err(HttpResponse::Unauthorized().body("Master admin authentication required (Telegram login)"))
+        }
+        MasterCheck::TransportUnavailable => Err(HttpResponse::ServiceUnavailable()
+            .body("Telegram temporarily unreachable — you are still signed in, retry shortly")),
     }
 }
 
@@ -113,8 +207,22 @@ pub fn valid_org_id(s: &str) -> bool {
         && !s.ends_with('-')
 }
 
+fn synthetic_master_session(org_id: &str) -> OrgSession {
+    OrgSession {
+        token: String::new(),
+        org_id: org_id.to_string(),
+        member_id: String::new(),
+        username: "master".into(),
+        role: "owner".into(),
+        issued_at: now_unix(),
+    }
+}
+
 /// Require `min_role` in `org_id`. Master admin bypasses as owner.
 /// Returns the resolved session (synthetic owner session for master).
+/// The master probe runs at most once per request (cached), and applies
+/// uniformly: a live master Telegram session bypasses regardless of which
+/// (possibly stale or low-privilege) org token was presented.
 pub async fn require_org_role(
     state: &web::Data<AppState>,
     req: &HttpRequest,
@@ -129,16 +237,13 @@ pub async fn require_org_role(
         if sess.org_id == org_id && supabase_org::role_satisfies(&sess.role, min_role) {
             return Ok(sess);
         }
-        // Token for a different org → fall through to master check so the
-        // error message stays accurate (403, not 401).
-        if sess.org_id != org_id && is_master_admin(state).await {
-            return Ok(OrgSession {
-                token: String::new(),
-                org_id: org_id.to_string(),
-                member_id: String::new(),
-                username: "master".into(),
-                role: "owner".into(),
-            });
+        match check_master(state).await {
+            MasterCheck::Authorized => return Ok(synthetic_master_session(org_id)),
+            MasterCheck::TransportUnavailable => {
+                return Err(HttpResponse::ServiceUnavailable()
+                    .body("Telegram temporarily unreachable — retry shortly"))
+            }
+            MasterCheck::Unauthorized => {}
         }
         if sess.org_id != org_id {
             return Err(HttpResponse::Forbidden().body("Token belongs to a different organization"));
@@ -146,16 +251,14 @@ pub async fn require_org_role(
         return Err(HttpResponse::Forbidden()
             .body(format!("Insufficient permissions. Required role: {}", min_role)));
     }
-    if is_master_admin(state).await {
-        return Ok(OrgSession {
-            token: String::new(),
-            org_id: org_id.to_string(),
-            member_id: String::new(),
-            username: "master".into(),
-            role: "owner".into(),
-        });
+    match check_master(state).await {
+        MasterCheck::Authorized => Ok(synthetic_master_session(org_id)),
+        MasterCheck::TransportUnavailable => Err(HttpResponse::ServiceUnavailable()
+            .body("Telegram temporarily unreachable — retry shortly")),
+        MasterCheck::Unauthorized => {
+            Err(HttpResponse::Unauthorized().body("Authentication required (org login or master admin)"))
+        }
     }
-    Err(HttpResponse::Unauthorized().body("Authentication required (org login or master admin)"))
 }
 
 /// Extract org subdomain from Host header (`org1.example.com` → `org1`).
@@ -219,6 +322,7 @@ pub async fn org_login(
         member_id: member.id.clone(),
         username: member.username.clone(),
         role: member.role.clone(),
+        issued_at: now_unix(),
     };
     state.org_sessions.lock().await.insert(token.clone(), sess.clone());
     let ip = req.peer_addr().map(|a| a.ip().to_string());
@@ -255,9 +359,14 @@ pub async fn org_logout(
 ) -> impl Responder {
     let org_id = path.into_inner();
     if let Some(tok) = extract_org_token(&req) {
-        state.org_sessions.lock().await.remove(&tok);
+        let mut store = state.org_sessions.lock().await;
+        if let Some(sess) = store.get(&tok) {
+            if sess.org_id != org_id {
+                return HttpResponse::Forbidden().body("Token belongs to a different organization");
+            }
+        }
+        store.remove(&tok);
     }
-    let _ = org_id;
     HttpResponse::Ok().json(true)
 }
 
@@ -317,6 +426,7 @@ mod tests {
             member_id: String::new(),
             username: "master".into(),
             role: "owner".into(),
+            issued_at: 0,
         };
         assert_eq!(db_user_id(&master), None);
         let member = OrgSession { member_id: "some-uuid".into(), ..master };

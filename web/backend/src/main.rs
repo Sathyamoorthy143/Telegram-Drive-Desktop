@@ -46,6 +46,9 @@ pub struct AppState {
     pub premium_cache: Arc<Mutex<(Option<bool>, Option<std::time::Instant>)>>,
     /// In-memory org member sessions (token → session).
     pub org_sessions: auth_org::OrgTokenStore,
+    /// Cached master-admin verdict: (is_authorized, at). A live Telegram
+    /// probe on every privileged request is wasteful and flaps the pool.
+    pub master_cache: Arc<Mutex<(Option<bool>, Option<std::time::Instant>)>>,
     /// Caps concurrent Telegram media downloads. Each download already fans out
     /// to 24+ RPC workers; without this, a page of thumbnails stampedes the
     /// single shared connection into flood/disconnect (`dropped (cancelled)`).
@@ -97,6 +100,7 @@ async fn main() -> std::io::Result<()> {
         replicate_tx: replicate_tx.clone(),
         premium_cache: Arc::new(Mutex::new((None, None))),
         org_sessions: auth_org::new_token_store(),
+        master_cache: Arc::new(Mutex::new((None, None))),
         download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)),
     });
 

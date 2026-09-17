@@ -106,13 +106,24 @@ pub async fn connect(state: web::Data<AppState>, req: web::Json<ConnectRequest>)
 }
 
 pub async fn check_connection(state: web::Data<AppState>) -> impl Responder {
-    let c = state.client.lock().await.clone();
-    if let Some(client) = c {
-        if client.get_me().await.is_ok() {
-            return HttpResponse::Ok().json(true);
-        }
+    // Reason-aware shape; the frontend boolean wrapper maps `.connected`.
+    // `transport` (retry shortly) vs `unauthorized` (re-login) vs `no_client`.
+    match state.client.lock().await.clone() {
+        Some(client) => match client.get_me().await {
+            Ok(_) => {
+                HttpResponse::Ok().json(serde_json::json!({ "connected": true, "reason": "ok" }))
+            }
+            Err(e) => {
+                let m = e.to_string();
+                if is_transport_failure(&m) {
+                    HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "transport" }))
+                } else {
+                    HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "unauthorized" }))
+                }
+            }
+        },
+        None => HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "no_client" })),
     }
-    HttpResponse::Ok().json(false)
 }
 
 pub async fn request_code(
@@ -226,6 +237,9 @@ pub async fn sign_in(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
+    // Take-and-restore (tokens are not Clone): a wrong/expired code must not
+    // burn the token — the user retries with the same login session.
+    // Cleared only on success.
     let token = { state.login_token.lock().await.take() };
     let token = match token {
         Some(t) => t,
@@ -236,6 +250,8 @@ pub async fn sign_in(
     }
     match client.sign_in(&token, &req.code).await {
         Ok(_) => {
+            *state.login_token.lock().await = None;
+            crate::auth_org::clear_master_cache(&state);
             if let Ok(me) = client.get_me().await {
                 let uid = me.id().bare_id().unwrap_or(0) as i64;
                 let aid = *state.api_id.lock().await;
@@ -249,6 +265,9 @@ pub async fn sign_in(
         }
         Err(grammers_client::SignInError::PasswordRequired(t)) => {
             *state.password_token.lock().await = Some(t);
+            // Keep the login token too: a later wrong 2FA password must still
+            // allow recovery via re-entering the SMS code.
+            *state.login_token.lock().await = Some(token);
             HttpResponse::Ok().json(AuthResult {
                 success: false,
                 next_step: Some("password".into()),
@@ -256,6 +275,10 @@ pub async fn sign_in(
             })
         }
         Err(e) => {
+            // Restore the token: only a successful sign-in consumes it.
+            // (PasswordToken below can't be restored — grammers consumes it —
+            // but the retained login token makes recovery a re-code, not a restart.)
+            *state.login_token.lock().await = Some(token);
             let m = e.to_string();
             let friendly = if m.contains("SESSION_PASSWORD_NEEDED") || m.contains("PasswordRequired") {
                 "Two-factor authentication is enabled for this account.".into()
@@ -281,6 +304,9 @@ pub async fn check_password(
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
+    // NOTE: grammers consumes PasswordToken on check, so a wrong password
+    // still burns it — but the retained login token (above) reduces recovery
+    // to re-entering the SMS code instead of restarting from the phone number.
     let pw = { state.password_token.lock().await.take() };
     let pw = match pw {
         Some(t) => t,
@@ -291,6 +317,8 @@ pub async fn check_password(
     }
     match client.check_password(pw, &req.password).await {
         Ok(_) => {
+            *state.password_token.lock().await = None;
+            crate::auth_org::clear_master_cache(&state);
             if let Ok(me) = client.get_me().await {
                 let uid = me.id().bare_id().unwrap_or(0) as i64;
                 let aid = *state.api_id.lock().await;
@@ -350,18 +378,20 @@ pub async fn get_user_info(state: web::Data<AppState>) -> impl Responder {
 }
 
 pub async fn logout(state: web::Data<AppState>) -> impl Responder {
+    // Cleanup must not depend on a live pool: previously a dead client
+    // skipped the Supabase row delete (session resurrected on restart) and
+    // the persisted api_id re-seeded setup. Best-effort uid, then wipe all.
+    let mut uid: Option<i64> = None;
     if let Some(c) = state.client.lock().await.clone() {
         if let Ok(me) = c.get_me().await {
-            let uid = me.id().bare_id().unwrap_or(0) as i64;
-            let _ = c.sign_out().await;
-            if let Some((url, key)) = std::env::var("SUPABASE_URL").ok().zip(std::env::var("SUPABASE_SERVICE_KEY").ok().or_else(|| std::env::var("SUPABASE_SERVICE_ROLE_KEY").ok())) {
-                let client = reqwest::Client::new();
-                let _ = client.delete(format!("{}/rest/v1/telegram_sessions?user_id=eq.{}", url.trim_end_matches('/'), uid))
-                    .header("apikey", &key).header("Authorization", format!("Bearer {}", key)).send().await;
-            }
-        } else {
-            let _ = c.sign_out().await;
+            uid = Some(me.id().bare_id().unwrap_or(0) as i64);
         }
+        let _ = c.sign_out().await;
+    }
+    if let (Some(uid), Some((url, key))) = (uid, std::env::var("SUPABASE_URL").ok().zip(std::env::var("SUPABASE_SERVICE_KEY").ok().or_else(|| std::env::var("SUPABASE_SERVICE_ROLE_KEY").ok()))) {
+        let client = reqwest::Client::new();
+        let _ = client.delete(format!("{}/rest/v1/telegram_sessions?user_id=eq.{}", url.trim_end_matches('/'), uid))
+            .header("apikey", &key).header("Authorization", format!("Bearer {}", key)).send().await;
     }
     *state.client.lock().await = None;
     *state.login_token.lock().await = None;
@@ -369,6 +399,13 @@ pub async fn logout(state: web::Data<AppState>) -> impl Responder {
     *state.api_id.lock().await = None;
     crate::utils::clear_peer_cache(&state.peer_cache).await;
     clear_saved_session_files();
+    crate::auth_org::clear_master_cache(&state);
+    // Persisted api_id would resurrect setup on the next get_client.
+    {
+        let mut s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+        s.telegram_api_id = None;
+        crate::settings::save_settings(&s);
+    }
     HttpResponse::Ok().json(true)
 }
 

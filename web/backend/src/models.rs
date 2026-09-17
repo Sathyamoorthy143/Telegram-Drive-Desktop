@@ -113,6 +113,9 @@ pub struct OrgSession {
     pub member_id: String,
     pub username: String,
     pub role: String,
+    /// Unix timestamp of issuance; 0 = unknown (treated as expired).
+    #[serde(default)]
+    pub issued_at: i64,
 }
 
 #[derive(Deserialize)]

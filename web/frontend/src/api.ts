@@ -64,8 +64,24 @@ export async function api<T>(method: string, path: string, body?: any): Promise<
 export const connect = (api_id: number) =>
   api<boolean>('POST', '/api/connect', { api_id });
 
-export const checkConnection = () =>
-  api<boolean>('GET', '/api/check-connection');
+export interface ConnectionStatus {
+  connected: boolean;
+  reason: 'ok' | 'unauthorized' | 'transport' | 'no_client' | string;
+}
+
+export const checkConnectionDetail = () =>
+  api<ConnectionStatus>('GET', '/api/check-connection');
+
+export const checkConnection = async () => {
+  try {
+    const res = await checkConnectionDetail();
+    // Backwards compatible: older backends return a bare boolean.
+    if (typeof res === 'boolean') return res;
+    return res.connected;
+  } catch {
+    return false;
+  }
+};
 
 export const requestCode = (phone: string, api_id: number, api_hash: string) =>
   api<string>('POST', '/api/auth/request-code', { phone, api_id, api_hash });
