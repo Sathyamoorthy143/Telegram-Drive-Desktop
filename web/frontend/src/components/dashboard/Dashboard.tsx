@@ -22,10 +22,13 @@ import { VersionsModal } from './VersionsModal';
 // Heavy editors/viewers (univer, tiptap, mammoth, pdfjs) are code-split so the
 // initial bundle stays lean; they load on first preview/edit.
 const FrameViewer = lazy(() => import('./FrameViewer').then((m) => ({ default: m.FrameViewer })));
+const MediaPlayer = lazy(() => import('./MediaPlayer').then((m) => ({ default: m.MediaPlayer })));
+const PdfViewer = lazy(() => import('./PdfViewer').then((m) => ({ default: m.PdfViewer })));
 const SheetEditor = lazy(() => import('./SheetEditor').then((m) => ({ default: m.SheetEditor })));
 const DocEditor = lazy(() => import('./DocEditor').then((m) => ({ default: m.DocEditor })));
 const SlideEditor = lazy(() => import('./SlideEditor').then((m) => ({ default: m.SlideEditor })));
-import { getEditKind, getFileTypeCategory, EditKind } from '../../utils';
+import { getEditKind, getPreviewKind, getFileTypeCategory, EditKind } from '../../utils';
+import { splitRelativePath, buildFolderIndex, childFolderKey } from '../../orgUpload';
 import { useUploadEngine } from '../../hooks/useUploadEngine';
 // NOTE: queue list-transitions live in uploadQueue.ts via the engine;
 // Dashboard keeps only staging UI, selection handlers above delegate to it.
@@ -137,6 +140,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     const [showAllVersions, setShowAllVersions] = useState(false);
     const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
+    const uploadFolderByItemRef = useRef<Map<string, number | undefined>>(new Map());
     const [previewContextFiles, setPreviewContextFiles] = useState<TelegramFile[]>([]);
     const [previewContextIndex, setPreviewContextIndex] = useState(-1);
     const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
@@ -149,6 +153,9 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
       {
         uploadOne: async (item, file, ctx) => {
           const toastId = isLocked ? null : toast.loading(`Uploading ${file.name}...`);
+          const targetFolder = uploadFolderByItemRef.current.has(item.id)
+            ? uploadFolderByItemRef.current.get(item.id)
+            : (item.folderId ?? activeFolderId ?? undefined);
           try {
             let upFile: File = file;
             let encIv: string | undefined;
@@ -171,7 +178,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
               }
             } catch (e: any) { if (e?.message?.includes('cancelled')) throw e; }
             if (upFile.size > api.CHUNKED_UPLOAD_THRESHOLD) {
-              await api.uploadFileChunked(upFile, activeFolderId ?? undefined, {
+              await api.uploadFileChunked(upFile, targetFolder, {
                 signal: ctx.signal,
                 onProgress: (done, total) => ctx.onProgress(done, total),
                 onUploadId: (id) => ctx.onUploadId(id),
@@ -179,14 +186,14 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
                 isCancelled: ctx.isCancelled,
               });
             } else {
-              await api.uploadFile(upFile, activeFolderId ?? undefined, { signal: ctx.signal });
+              await api.uploadFile(upFile, targetFolder, { signal: ctx.signal });
             }
             if (encIv) {
               const m = JSON.parse(localStorage.getItem('enc_iv') || '{}');
-              m[`${activeFolderId ?? 'null'}:${upFile.name}`] = encIv;
+              m[`${targetFolder ?? 'null'}:${upFile.name}`] = encIv;
               try { localStorage.setItem('enc_iv', JSON.stringify(m)); } catch {}
             }
-            api.logActivity('upload', `folder:${activeFolderId ?? 'root'}`, file.name).catch(()=>{});
+            api.logActivity('upload', `folder:${targetFolder ?? 'root'}`, file.name).catch(()=>{});
           } finally {
             if (toastId) toast.dismiss(toastId);
           }
@@ -204,9 +211,11 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
           else toast.info(msg);
         },
         notifyCancel: (name) => toast.info(`${name} upload cancelled`),
-        onAuthError: (err) => handleAuthError(err),
-        onItemDone: () => queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] }),
-        onManualStart: () => { batchPinRef.current = { pin: undefined }; },
+         onAuthError: (err) => handleAuthError(err),
+         onItemDone: () => {
+           queryClient.invalidateQueries({ queryKey: ['files'] });
+         },
+         onManualStart: () => { batchPinRef.current = { pin: undefined }; },
         setBusy,
       },
       { maxParallel: 4 },
@@ -649,24 +658,90 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
     const stageFilesForUpload = useCallback((fileList: File[], pathFn?: (f: File) => string) => {
         if (fileList.length === 0) return [] as string[];
         const ids = up.stage(
-          fileList.map((f) => ({
-            file: f,
-            meta: {
-              path: pathFn ? pathFn(f) : f.name,
-              name: f.name,
-              size: f.size,
-              folderId: activeFolderId,
-              selected: true,
-            },
-          })),
+          fileList.map((f) => {
+            const rel = pathFn ? pathFn(f) : ((f as any).webkitRelativePath || f.name);
+            const { dirs, fileName } = splitRelativePath(rel);
+            return {
+              file: f,
+              meta: {
+                path: rel,
+                name: fileName || f.name,
+                size: f.size,
+                folderId: activeFolderId,
+                dirs,
+                selected: true,
+              },
+            };
+          }),
         );
         toast.info(`${fileList.length} file(s) staged — tick checkboxes, then hit Upload`);
         return ids;
     }, [up, activeFolderId]);
 
-    const handleStartSelectedUploads = useCallback((onlyIds?: string[]) => {
+    const handleStartSelectedUploads = useCallback(async (onlyIds?: string[]) => {
+        const pending = up.queue.filter((x) =>
+          (x.status === 'staged' || x.status === 'pending' || x.status === 'paused' || x.status === 'error')
+          && x.selected !== false
+          && (!onlyIds || onlyIds.includes(x.id)),
+        );
+        const folderIndex = new Map<string, number>();
+        try {
+          const fresh = await api.scanFolders();
+          for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
+          setFolders(fresh);
+        } catch {}
+        const createdDirs = new Map<string, number>();
+        const dirBase = activeFolderId ?? 0;
+        const resolveUploadFolder = async (dirs: string[]): Promise<number | undefined> => {
+          if (!dirs || dirs.length === 0) return activeFolderId ?? undefined;
+          let parent: number | undefined = activeFolderId ?? undefined;
+          let path = `${dirBase}`;
+          for (const dir of dirs) {
+            path = `${path}/${dir}`;
+            const cached = createdDirs.get(path);
+            if (cached !== undefined) { parent = cached; continue; }
+            const key = childFolderKey(parent, dir);
+            let id = folderIndex.get(key);
+            if (id === undefined) {
+              try {
+                const created: any = await api.createFolder(dir, parent);
+                id = created?.id;
+                if (typeof id === 'number') {
+                  const createdId = id;
+                  folderIndex.set(key, createdId);
+                  setFolders((prev) => (prev.some((f) => f.id === createdId) ? prev : [...prev, {
+                    id: createdId,
+                    name: created?.name || dir,
+                    parent_id: created?.parent_id ?? parent,
+                  }]));
+                }
+              } catch {
+                try {
+                  const fresh = await api.scanFolders();
+                  for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
+                  setFolders(fresh);
+                  id = folderIndex.get(key);
+                } catch {}
+              }
+            }
+            if (id === undefined) {
+              toast.error(`Could not create folder "${path}" — uploading to current folder`);
+              return activeFolderId ?? undefined;
+            }
+            createdDirs.set(path, id);
+            parent = id;
+          }
+          return parent;
+        };
+        uploadFolderByItemRef.current = new Map();
+        for (const item of pending) {
+          const dirs = (item.dirs && item.dirs.length > 0)
+            ? item.dirs
+            : splitRelativePath(item.path || item.name || '').dirs;
+          uploadFolderByItemRef.current.set(item.id, await resolveUploadFolder(dirs));
+        }
         up.start(onlyIds);
-    }, [up]);
+    }, [up, activeFolderId]);
 
     // Checkbox works LIVE: staged/pending flips selection; unchecking a
     // RUNNING upload pauses it (frees a slot); checking a paused one queues it.
@@ -769,19 +844,28 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         setSelectedIds(ids => ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id]);
     }, []);
 
-    // Preview — everything goes through the unified iframe FrameViewer
+    const openBuiltInPreview = useCallback((file: TelegramFile) => {
+        const kind = getPreviewKind(file);
+        setPreviewFile(null);
+        setPlayingFile(null);
+        setPdfFile(null);
+        if (kind === 'video' || kind === 'audio') setPlayingFile(file);
+        else if (kind === 'pdf') setPdfFile(file);
+        else setPreviewFile(file);
+    }, []);
+
     const handlePreview = useCallback((file: TelegramFile, orderedFiles?: TelegramFile[]) => {
         const contextFiles = (orderedFiles || displayedFiles).filter(f => f.type !== 'folder');
         const contextIndex = contextFiles.findIndex(f => f.id === file.id);
         setPreviewContextFiles(contextFiles);
         setPreviewContextIndex(contextIndex);
         api.touchRecent(file.id, (file as any).folder_id ?? activeFolderId ?? undefined, file.name, (file as any).size).catch(()=>{});
-        setPreviewFile(file); setPlayingFile(null); setPdfFile(null);
-    }, [displayedFiles, activeFolderId]);
+        openBuiltInPreview(file);
+    }, [displayedFiles, activeFolderId, openBuiltInPreview]);
 
     const navigatePreview = useCallback((step: 1 | -1) => {
         if (previewContextFiles.length === 0) return;
-        const currentFileId = previewFile?.id;
+        const currentFileId = previewFile?.id ?? playingFile?.id ?? pdfFile?.id;
         if (!currentFileId) return;
         const currentIndex = previewContextFiles.findIndex(f => f.id === currentFileId);
         if (currentIndex === -1) return;
@@ -789,8 +873,8 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
         const nextFile = previewContextFiles[nextIndex];
         if (!nextFile) return;
         setPreviewContextIndex(nextIndex);
-        setPreviewFile(nextFile); setPlayingFile(null); setPdfFile(null);
-    }, [previewContextFiles, previewFile]);
+        openBuiltInPreview(nextFile);
+    }, [previewContextFiles, previewFile, playingFile, pdfFile, openBuiltInPreview]);
     const handleNextPreview = useCallback(() => navigatePreview(1), [navigatePreview]);
     const handlePrevPreview = useCallback(() => navigatePreview(-1), [navigatePreview]);
 
@@ -1069,6 +1153,16 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
             {previewFile && (
                 <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading preview…</div>}>
                     <FrameViewer file={previewFile} activeFolderId={activeFolderId} onClose={() => setPreviewFile(null)} onNext={handleNextPreview} onPrev={handlePrevPreview} onEdit={() => previewFile && handleEdit(previewFile)} currentIndex={previewContextIndex} totalItems={previewContextFiles.length} />
+                </Suspense>
+            )}
+            {playingFile && (
+                <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading media…</div>}>
+                    <MediaPlayer file={playingFile} activeFolderId={(playingFile as any).folder_id ?? activeFolderId} onClose={() => setPlayingFile(null)} onNext={handleNextPreview} onPrev={handlePrevPreview} currentIndex={previewContextIndex} totalItems={previewContextFiles.length} />
+                </Suspense>
+            )}
+            {pdfFile && (
+                <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 text-sm text-white">Loading PDF…</div>}>
+                    <PdfViewer file={pdfFile} activeFolderId={(pdfFile as any).folder_id ?? activeFolderId} onClose={() => setPdfFile(null)} onNext={handleNextPreview} onPrev={handlePrevPreview} currentIndex={previewContextIndex} totalItems={previewContextFiles.length} />
                 </Suspense>
             )}
 

@@ -29,6 +29,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
     useEffect(() => {
         if (isEncrypted) { setLoading(false); return; }
         let cancelled = false;
+        let objectUrl: string | null = null;
         setLoading(true);
         setError(null);
         setFrameSrc(null);
@@ -36,8 +37,6 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
         const build = async () => {
             try {
                 if (kind === 'office') {
-                    // Office docs need a public URL for the external viewer.
-                    // Create a short-lived (1 day) share link; revocable anytime.
                     const res: any = await api.createShare(
                         file.id,
                         (file as any).folder_id ?? activeFolderId ?? undefined,
@@ -46,14 +45,28 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                     if (cancelled) return;
                     const publicUrl = res.url || api.getShareUrl(res.token);
                     setFrameSrc(`${OFFICE_EMBED}${encodeURIComponent(publicUrl)}`);
-                } else if (kind === 'video' || kind === 'audio') {
-                    // stream endpoint supports range requests for seeking
-                    setFrameSrc(api.getStreamUrl(activeFolderId ?? 'home', file.id));
-                } else if (kind === 'none') {
-                    setError('Preview not available for this file type.');
-                } else {
-                    setFrameSrc(api.getPreviewUrl(activeFolderId ?? 'home', file.id));
+                    return;
                 }
+                if (kind === 'none' || kind === 'unknown') {
+                    setError('Preview not available for this file type.');
+                    return;
+                }
+                if (kind === 'image' || kind === 'text' || kind === 'code') {
+                    try {
+                        const blob = await api.downloadFile(
+                            ((file as any).folder_id ?? activeFolderId ?? 0) as number,
+                            file.id,
+                        );
+                        if (cancelled) return;
+                        objectUrl = URL.createObjectURL(blob);
+                        setFrameSrc(objectUrl);
+                        return;
+                    } catch {
+                        setFrameSrc(api.getPreviewUrl(activeFolderId ?? 'home', file.id));
+                        return;
+                    }
+                }
+                setFrameSrc(api.getPreviewUrl(activeFolderId ?? 'home', file.id));
             } catch (e: any) {
                 if (!cancelled) setError(e?.message || 'Failed to load preview');
             } finally {
@@ -61,7 +74,10 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
             }
         };
         build();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
     }, [file.id, activeFolderId, kind, isEncrypted, (file as any).folder_id]);
 
     useEffect(() => {
@@ -150,7 +166,26 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                             </button>
                         </div>
                     )}
-                    {frameSrc && !error && (
+                    {frameSrc && !error && kind === 'image' && (
+                        <img
+                            key={`${file.id}-${activeFolderId}`}
+                            src={frameSrc}
+                            alt={file.name}
+                            className="w-full h-full object-contain bg-black"
+                            onLoad={() => setLoading(false)}
+                            onError={() => setError('Failed to render image preview')}
+                        />
+                    )}
+                    {frameSrc && !error && (kind === 'text' || kind === 'code') && (
+                        <iframe
+                            key={`${file.id}-${activeFolderId}`}
+                            src={frameSrc}
+                            title={file.name}
+                            className="w-full h-full border-0 bg-white"
+                            onLoad={() => setLoading(false)}
+                        />
+                    )}
+                    {frameSrc && !error && kind !== 'image' && kind !== 'text' && kind !== 'code' && (
                         <iframe
                             key={`${file.id}-${activeFolderId}`}
                             src={frameSrc}

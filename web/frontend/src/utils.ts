@@ -96,34 +96,40 @@ export function getFileTypeCategory(name: string): string {
 
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'unknown' | 'none' | 'office';
 
-export function getPreviewKind(file: { name: string; mime_type?: string; file_ext?: string }): PreviewKind {
-    const ext = getFileExtension(file.name);
-    const mime = (file.mime_type || '').toLowerCase();
+function fileNameOf(file: { name: string; mime_type?: string; file_ext?: string } | string): string {
+    return typeof file === 'string' ? file : (file?.name || '');
+}
 
-    if (mime.startsWith('image/') || isImageFile(file.name)) return 'image';
-    if (mime.startsWith('video/') || isVideoFile(file.name)) return 'video';
-    if (mime.startsWith('audio/') || isAudioFile(file.name)) return 'audio';
-    if (mime === 'application/pdf' || isPdfFile(file.name)) return 'pdf';
-    if (isOfficeFile(file.name)) return 'office';
+export function getPreviewKind(file: { name: string; mime_type?: string; file_ext?: string } | string): PreviewKind {
+    const name = fileNameOf(file);
+    const ext = getFileExtension(name);
+    const mime = (typeof file === 'string' ? '' : (file.mime_type || '')).toLowerCase();
+
+    if (mime.startsWith('image/') || isImageFile(name)) return 'image';
+    if (mime.startsWith('video/') || isVideoFile(name)) return 'video';
+    if (mime.startsWith('audio/') || isAudioFile(name)) return 'audio';
+    if (mime === 'application/pdf' || isPdfFile(name)) return 'pdf';
+    if (isOfficeFile(name)) return 'office';
     if (['js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'html', 'json', 'xml', 'yaml', 'yml', 'toml', 'md', 'sh', 'bat', 'sql', 'rb', 'php'].includes(ext)) return 'code';
-    if (isTextFile(file.name)) return 'text';
+    if (isTextFile(name)) return 'text';
 
     return 'unknown';
 }
 
 export type EditKind = 'doc' | 'sheet' | 'slide' | 'pdf' | 'image' | 'video' | 'audio' | 'archive' | 'code' | 'text' | 'unknown';
 
-export function getEditKind(file: { name: string; mime_type?: string; file_ext?: string }): EditKind {
-    const ext = getFileExtension(file.name);
+export function getEditKind(file: { name: string; mime_type?: string; file_ext?: string } | string): EditKind {
+    const name = fileNameOf(file);
+    const ext = getFileExtension(name);
 
     if (['doc', 'docx', 'odt', 'rtf', 'txt', 'md'].includes(ext)) return 'doc';
     if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) return 'sheet';
     if (['ppt', 'pptx', 'odp'].includes(ext)) return 'slide';
     if (ext === 'pdf') return 'pdf';
-    if (isImageFile(file.name)) return 'image';
-    if (isVideoFile(file.name)) return 'video';
-    if (isAudioFile(file.name)) return 'audio';
-    if (isArchiveFile(file.name)) return 'archive';
+    if (isImageFile(name)) return 'image';
+    if (isVideoFile(name)) return 'video';
+    if (isAudioFile(name)) return 'audio';
+    if (isArchiveFile(name)) return 'archive';
     if (['js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'html', 'json', 'xml', 'sql', 'rb', 'php', 'sh', 'yaml', 'yml', 'toml'].includes(ext)) return 'code';
 
     return 'unknown';

@@ -64,6 +64,7 @@ export interface QueueItem {
     name?: string;
     size: number;
     folderId: number | null;
+    dirs?: string[];
     status: 'staged' | 'pending' | 'uploading' | 'success' | 'error' | 'cancelled' | 'paused';
     error?: string;
     progress?: number;

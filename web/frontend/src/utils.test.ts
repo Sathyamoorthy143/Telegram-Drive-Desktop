@@ -115,5 +115,10 @@ describe('file type detection', () => {
     expect(getPreviewKind({ name: 'file.pdf' })).toBe('pdf');
     expect(getPreviewKind({ name: 'script.ts' })).toBe('code');
     expect(getPreviewKind({ name: 'unknown.xyz' })).toBe('unknown');
+    expect(getPreviewKind('photo.jpg')).toBe('image');
+    expect(getPreviewKind('clip.mp4')).toBe('video');
+    expect(getPreviewKind('song.mp3')).toBe('audio');
+    expect(getPreviewKind('file.pdf')).toBe('pdf');
+    expect(getPreviewKind('report.docx')).toBe('office');
   });
 });
