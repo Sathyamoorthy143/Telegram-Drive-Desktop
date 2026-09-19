@@ -16,6 +16,8 @@ vi.mock('../../api', () => ({
   updateOrgSettings: vi.fn(),
   downloadOrgFileBlob: vi.fn(),
   orgLogout: vi.fn(async () => true),
+  orgMe: vi.fn(async () => ({ org_id: 'org-1', member_id: 'm1', username: 'v', role: 'viewer' })),
+  isOrgAuthError: vi.fn(() => false),
   setOrgToken: vi.fn(),
   setOrgId: vi.fn(),
 }));

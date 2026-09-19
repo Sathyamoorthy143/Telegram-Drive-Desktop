@@ -52,13 +52,13 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
   };
 
   return (
-    <div className="h-full w-full flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm bg-telegram-surface border border-telegram-border rounded-2xl p-6 shadow-xl">
+    <div className="h-full w-full flex items-center justify-center p-6 bg-zinc-200">
+      <form onSubmit={submit} className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-zinc-900">
         <div className="flex items-center gap-3 mb-1">
-          <span className="p-2 rounded-xl bg-telegram-primary/15 text-telegram-primary">
+          <span className="p-2 rounded-xl bg-blue-900 text-amber-50">
             <Building2 className="w-5 h-5" />
           </span>
-          <h1 className="text-lg font-semibold">{orgName}</h1>
+          <h1 className="text-lg font-black uppercase">{orgName}</h1>
         </div>
         <p className="text-sm text-telegram-subtext mb-5">Sign in with your organization account.</p>
         {inactive && (
@@ -87,7 +87,7 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
         <button
           type="submit"
           disabled={busy || inactive}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-telegram-primary text-white font-medium disabled:opacity-50 hover:opacity-90"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-900 text-amber-50 font-bold disabled:opacity-50 hover:bg-blue-950"
         >
           <LogIn className="w-4 h-4" />
           {busy ? 'Signing in…' : 'Sign in'}
@@ -100,7 +100,7 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
           ← Back to master dashboard
         </button>
         <p className="text-xs text-telegram-subtext mt-3 text-center">
-          Organization accounts are created by your org admin. No Telegram login needed.
+          Organization accounts are created by your org admin. No Telegram login needed. Signing in here ends any other session for this account.
         </p>
       </form>
     </div>

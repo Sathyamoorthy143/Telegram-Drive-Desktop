@@ -245,11 +245,13 @@ export function Sidebar({
             <div className="p-4 flex items-center gap-3">
                 <div className="relative">
                     {userInfo ? (
-                        <div className="w-10 h-10 rounded-full bg-telegram-primary/20 flex items-center justify-center text-telegram-primary font-bold border border-telegram-primary/30">
+                        <div className="w-10 h-10 rounded-full bg-blue-900 flex items-center justify-center text-amber-50 font-bold border border-blue-800">
                             {userInfo.first_name.charAt(0).toUpperCase()}
                         </div>
                     ) : (
-                        <img src="/logo.svg" className="w-10 h-10 drop-shadow-lg" alt="Logo" />
+                        <div className="w-10 h-10 rounded-xl bg-blue-900 flex items-center justify-center">
+                            <HardDrive className="w-5 h-5 text-amber-50" />
+                        </div>
                     )}
                     <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-telegram-surface ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 </div>
