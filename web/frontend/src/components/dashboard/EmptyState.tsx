@@ -65,7 +65,7 @@ export function EmptyState({ onUpload }: EmptyStateProps) {
                 onClick={onUpload}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.96 }}
-                className="inline-flex items-center gap-2 px-6 py-3 btn-primary-glow text-black font-medium rounded-xl"
+                className="inline-flex items-center gap-2 px-6 py-3 btn-primary-glow text-amber-50 font-medium rounded-xl"
             >
                 <Upload className="w-5 h-5" />
                 Upload Files

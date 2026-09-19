@@ -2,7 +2,7 @@ import { createContext, useContext, useState, ReactNode, useLayoutEffect } from 
 type Theme = 'light' | 'dark';
 interface ThemeContextType { theme: Theme; toggleTheme: () => void; setTheme: (t: Theme) => void; }
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-function getInitialTheme(): Theme { if (typeof window !== 'undefined') { const s = localStorage.getItem('theme') as Theme; if (s === 'light' || s === 'dark') return s; if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light'; } return 'dark'; }
+function getInitialTheme(): Theme { if (typeof window !== 'undefined') { const s = localStorage.getItem('theme') as Theme; if (s === 'light' || s === 'dark') return s; if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light'; } return 'light'; }
 function applyTheme(t: Theme) { const r = document.documentElement; if (t === 'light') { r.classList.add('light'); r.classList.remove('dark'); } else { r.classList.add('dark'); r.classList.remove('light'); } }
 if (typeof window !== 'undefined') applyTheme(getInitialTheme());
 export function ThemeProvider({ children }: { children: ReactNode }) {

@@ -13,6 +13,7 @@ import { LockProvider } from "./context/LockContext";
 import { OrgLogin } from "./components/org/OrgLogin";
 import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
 import { OrgAdminDashboard } from "./components/org/OrgAdminDashboard";
+import { Landing } from "./components/landing/Landing";
 import * as api from "./api";
 import { orgSlugFromPath } from './orgRouting';
 
@@ -55,6 +56,7 @@ type BootState =
 
 export function AppContent() {
   const [boot, setBoot] = useState<BootState>({ kind: "checking" });
+  const [showLanding, setShowLanding] = useState(true);
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -185,12 +187,21 @@ export function AppContent() {
 
   if (boot.kind === "checking") {
     return (
-      <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative flex items-center justify-center">
+      <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative flex items-center justify-center bg-zinc-200">
         <Toaster theme={theme} position="bottom-center" />
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-telegram-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-telegram-subtext">Restoring session...</p>
+          <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-zinc-600 font-medium">Restoring session...</p>
         </div>
+      </main>
+    );
+  }
+
+  if (boot.kind === "master-auth" && showLanding) {
+    return (
+      <main className="h-screen w-screen overflow-hidden relative">
+        <Toaster theme={theme} position="bottom-center" />
+        <Landing onSignIn={() => setShowLanding(false)} />
       </main>
     );
   }
@@ -199,11 +210,11 @@ export function AppContent() {
     <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative">
       <Toaster theme={theme} position="bottom-center" />
       {boot.kind === "master-auth" && (
-        <AuthWizard onLogin={() => setBoot({ kind: "master-drive" })} />
+        <AuthWizard onLogin={() => setBoot({ kind: "master-drive" })} onBack={() => setShowLanding(true)} />
       )}
       {boot.kind === "master-drive" && (
         <Dashboard
-          onLogout={() => setBoot({ kind: "master-auth" })}
+          onLogout={() => { setShowLanding(true); setBoot({ kind: "master-auth" }); }}
           topBanner={
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
               <button

@@ -1,38 +1,36 @@
 @import "tailwindcss";
 
 /* stylelint-disable at-rule-no-unknown */
-/* Dark Theme (Default) - Using Tailwind v4 @theme directive */
+/* CloudSphere theme — zinc canvas, navy CTAs, amber hover (Tailwind v4 @theme) */
 @theme {
-  /* Core Telegram Brand Colors - Enhanced Vibrancy */
-  --color-telegram-bg: #0a1020;
-  --color-telegram-surface: #151b2a;
-  --color-telegram-surface-dark: #0f172a;
-  --color-telegram-primary: #ffbb00;
-  --color-telegram-primary-bright: #ffd700;
-  --color-telegram-secondary: #00a3ff;
-  --color-telegram-secondary-bright: #40cfff;
-  --color-telegram-tertiary: #e83e8c;
+  --font-poppins: "Poppins", ui-sans-serif, system-ui, sans-serif;
+
+  --color-telegram-bg: #18181b;
+  --color-telegram-surface: #27272a;
+  --color-telegram-surface-dark: #09090b;
+  --color-telegram-primary: #1e3a8a;
+  --color-telegram-primary-bright: #2563eb;
+  --color-telegram-secondary: #fbbf24;
+  --color-telegram-secondary-bright: #fcd34d;
+  --color-telegram-tertiary: #1e40af;
   --color-telegram-success: #10b981;
   --color-telegram-success-bright: #34d399;
   --color-telegram-warning: #f59e0b;
   --color-telegram-warning-bright: #fbbf24;
   --color-telegram-error: #ef4444;
   --color-telegram-error-bright: #f87171;
-  
-  /* Text Colors */
-  --color-telegram-text: #e2e8f0;
-  --color-telegram-subtext: #94a3b8;
-  --color-telegram-muted: #64748b;
+
+  --color-telegram-text: #f4f4f5;
+  --color-telegram-subtext: #a1a1aa;
+  --color-telegram-muted: #71717a;
   --color-telegram-contrast: #ffffff;
-  
-  /* Border and Interaction */
+
   --color-telegram-border: rgba(255, 255, 255, 0.12);
   --color-telegram-border-light: rgba(255, 255, 255, 0.06);
   --color-telegram-hover: rgba(255, 255, 255, 0.08);
-  --color-telegram-active: rgba(255, 174, 0, 0.25);
-  --color-telegram-selected: rgba(59, 130, 246, 0.3);
-  
-  /* Semantic Color Mapping */
+  --color-telegram-active: rgba(30, 58, 138, 0.35);
+  --color-telegram-selected: rgba(30, 58, 138, 0.4);
+
   --color-info: #3b82f6;
   --color-info-bright: #60a5fa;
   --color-warning: #f59e0b;
@@ -41,47 +39,46 @@
   --color-danger-bright: #f87171;
   --color-success: #10b981;
   --color-success-bright: #34d399;
-  --color-highlight: #ff6b6b;
-  --color-telegram-brand: #ffbb00;
-  --color-telegram-brand-secondary: #00a3ff;
+  --color-highlight: #fbbf24;
+  --color-telegram-brand: #1e3a8a;
+  --color-telegram-brand-secondary: #fbbf24;
 }
 
-/* Light Theme Overrides - Vibrant */
 :root.light {
-  --color-telegram-bg: #f0f2f5;
+  --color-telegram-bg: #e4e4e7;
   --color-telegram-surface: #ffffff;
-  --color-telegram-surface-dark: #eef2ff;
-  --color-telegram-primary: #e69500;
-  --color-telegram-primary-bright: #ffb700;
-  --color-telegram-secondary: #2563eb;
-  --color-telegram-secondary-bright: #38bdf8;
-  --color-telegram-tertiary: #db2777;
+  --color-telegram-surface-dark: #f4f4f5;
+  --color-telegram-primary: #1e3a8a;
+  --color-telegram-primary-bright: #1d4ed8;
+  --color-telegram-secondary: #fbbf24;
+  --color-telegram-secondary-bright: #f59e0b;
+  --color-telegram-tertiary: #1e40af;
   --color-telegram-success: #059669;
   --color-telegram-success-bright: #10b981;
   --color-telegram-warning: #d97706;
   --color-telegram-warning-bright: #f59e0b;
   --color-telegram-error: #dc2626;
   --color-telegram-error-bright: #ef4444;
-  --color-telegram-text: #1a1a1a;
-  --color-telegram-subtext: #65676b;
-  --color-telegram-muted: #94a3b8;
-  --color-telegram-contrast: #0f172a;
-  --color-telegram-border: rgba(0, 0, 0, 0.08);
-  --color-telegram-border-light: rgba(0, 0, 0, 0.04);
-  --color-telegram-hover: rgba(0, 0, 0, 0.04);
-  --color-telegram-active: rgba(230, 149, 0, 0.18);
-  --color-telegram-selected: rgba(37, 99, 235, 0.15);
-  --color-info: #2563eb;
-  --color-info-bright: #38bdf8;
+  --color-telegram-text: #18181b;
+  --color-telegram-subtext: #52525b;
+  --color-telegram-muted: #71717a;
+  --color-telegram-contrast: #09090b;
+  --color-telegram-border: rgba(24, 24, 27, 0.1);
+  --color-telegram-border-light: rgba(24, 24, 27, 0.05);
+  --color-telegram-hover: rgba(30, 58, 138, 0.06);
+  --color-telegram-active: rgba(30, 58, 138, 0.14);
+  --color-telegram-selected: rgba(30, 58, 138, 0.12);
+  --color-info: #1e3a8a;
+  --color-info-bright: #2563eb;
   --color-warning: #d97706;
   --color-warning-bright: #f59e0b;
   --color-danger: #dc2626;
   --color-danger-bright: #ef4444;
   --color-success: #059669;
   --color-success-bright: #10b981;
-  --color-highlight: #ec4899;
-  --color-telegram-brand: #e69500;
-  --color-telegram-brand-secondary: #2563eb;
+  --color-highlight: #f59e0b;
+  --color-telegram-brand: #1e3a8a;
+  --color-telegram-brand-secondary: #fbbf24;
 }
 
 body,
@@ -91,41 +88,46 @@ body,
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Poppins', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   background: var(--color-telegram-bg);
   color: var(--color-telegram-text);
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Auth screen gradient background */
+/* Auth screen — CloudSphere zinc canvas */
 .auth-gradient {
-  background: radial-gradient(120% 120% at 0% 0%, #3ca5ff 0%, #007aff 100%);
+  background: #e4e4e7;
 }
 
 :root.light .auth-gradient {
-  background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  background: #e4e4e7;
+}
+
+:root:not(.light) .auth-gradient {
+  background: #18181b;
 }
 
 /* Glassmorphism Utilities - Dark */
 .glass {
-  background: rgba(23, 33, 43, 0.7);
+  background: rgba(39, 39, 42, 0.82);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 :root.light .glass {
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(24, 24, 27, 0.1);
 }
 
 /* Auth-specific glass - works on gradient backgrounds in both themes */
 .auth-glass {
-  background: rgba(23, 33, 43, 0.85);
+  background: #27272a;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
 }
 
 :root.light .auth-glass {
@@ -177,7 +179,7 @@ body,
 }
 
 .glass-input {
-  background: rgba(14, 22, 33, 0.6);
+  background: rgba(24, 24, 27, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
 }
@@ -203,7 +205,7 @@ body,
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(36, 129, 204, 0.6);
+  background: rgba(30, 58, 138, 0.65);
 }
 
 /* Custom Scrollbar - Light */
@@ -212,7 +214,7 @@ body,
 }
 
 :root.light ::-webkit-scrollbar-thumb:hover {
-  background: rgba(36, 129, 204, 0.5);
+  background: rgba(30, 58, 138, 0.55);
 }
 
 /* Progress Animation */
@@ -312,18 +314,18 @@ body,
 }
 
 .bg-dynamic-mesh {
-  background: linear-gradient(-45deg, #0e1621, #17212b, #2481cc, #17212b);
+  background: linear-gradient(-45deg, #18181b, #27272a, #1e3a8a, #27272a);
   background-size: 400% 400%;
   animation: gradientShift 20s ease infinite;
 }
 
 /* Glassmorphism for Modals */
 .glass-modal {
-  background: rgba(23, 33, 43, 0.85);
+  background: rgba(39, 39, 42, 0.92);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
 }
 
 :root.light .glass-modal {
@@ -383,11 +385,11 @@ body,
 
 /* Stronger glass for cards + modals */
 .glass-strong {
-  background: rgba(23, 33, 43, 0.8);
+  background: rgba(39, 39, 42, 0.88);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 40px -18px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px -18px rgba(0, 0, 0, 0.45);
 }
 :root.light .glass-strong {
   background: rgba(255, 255, 255, 0.88);
@@ -401,7 +403,7 @@ body,
 }
 .glass-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 20px 44px -16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 174, 0, 0.15);
+  box-shadow: 0 20px 44px -16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(30, 58, 138, 0.2);
 }
 
 /* Light sweep across a card on hover */
@@ -453,21 +455,21 @@ body,
 
 /* ================= Polish layer ================= */
 /* Themed thin scrollbars (the `custom-scrollbar` class is used but was undefined) */
-.custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255, 174, 0, 0.35) transparent; }
+.custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(30, 58, 138, 0.4) transparent; }
 .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 174, 0, 0.3);
+  background: rgba(30, 58, 138, 0.4);
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 174, 0, 0.55); background-clip: content-box; }
-:root.light .custom-scrollbar { scrollbar-color: rgba(230, 149, 0, 0.4) transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(30, 58, 138, 0.65); background-clip: content-box; }
+:root.light .custom-scrollbar { scrollbar-color: rgba(30, 58, 138, 0.45) transparent; }
 
 /* Animated gradient text for headings */
 .text-gradient {
-  background: linear-gradient(90deg, #ffae00, #ff6b35, #e69500, #ffae00);
+  background: linear-gradient(90deg, #1e3a8a, #2563eb, #1e40af, #1e3a8a);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -480,20 +482,22 @@ body,
   border: 1px solid transparent;
   background:
     linear-gradient(var(--color-telegram-surface), var(--color-telegram-surface)) padding-box,
-    linear-gradient(135deg, rgba(255, 174, 0, 0.6), rgba(36, 129, 204, 0.6), rgba(255, 174, 0, 0.6)) border-box;
+    linear-gradient(135deg, rgba(30, 58, 138, 0.7), rgba(251, 191, 36, 0.5), rgba(30, 58, 138, 0.7)) border-box;
   background-size: auto, 200% 200%;
   animation: gradient-pan 7s ease infinite;
 }
 
 /* Primary CTA with glow */
 .btn-primary-glow {
-  background: linear-gradient(135deg, #ffae00, #ff8a00);
-  box-shadow: 0 8px 24px -8px rgba(255, 174, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.2s ease;
+  background: #1e3a8a;
+  color: #fffbeb;
+  box-shadow: 0 8px 24px -8px rgba(30, 58, 138, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.2s ease, background-color 0.2s ease;
 }
 .btn-primary-glow:hover {
   filter: brightness(1.08);
-  box-shadow: 0 12px 32px -8px rgba(255, 174, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: #1e40af;
+  box-shadow: 0 12px 32px -8px rgba(30, 58, 138, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   transform: translateY(-1px);
 }
 .btn-primary-glow:active { transform: translateY(0) scale(0.98); }
@@ -539,91 +543,43 @@ body,
   border: 1px solid transparent;
   background:
     linear-gradient(var(--color-telegram-surface), var(--color-telegram-surface)) padding-box,
-    conic-gradient(from var(--beam-angle), rgba(255, 174, 0, 0.7), rgba(36, 129, 204, 0.7), rgba(232, 121, 249, 0.6), rgba(255, 174, 0, 0.7)) border-box;
+    conic-gradient(from var(--beam-angle), rgba(30, 58, 138, 0.75), rgba(251, 191, 36, 0.65), rgba(37, 99, 235, 0.55), rgba(30, 58, 138, 0.75)) border-box;
   animation: beam-spin 5s linear infinite;
 }
 @keyframes beam-spin {
   to { --beam-angle: 360deg; }
 }
 
-/* ================= VIBRANT GLOSSY RAINBOW LAYER ================= */
-@keyframes rainbow-flow {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-@keyframes rainbow-text {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
 @keyframes holographic-scan {
   0% { transform: translateX(-110%); }
   100% { transform: translateX(110%); }
 }
 @keyframes electric-pulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(0,163,255,0.45); }
-  50% { box-shadow: 0 0 28px rgba(0,163,255,0.9), 0 0 48px rgba(0,163,255,0.55); }
-}
-@keyframes shimmer-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0%, 100% { box-shadow: 0 0 10px rgba(30, 58, 138, 0.35); }
+  50% { box-shadow: 0 0 22px rgba(30, 58, 138, 0.7), 0 0 36px rgba(251, 191, 36, 0.25); }
 }
 
-/* Animated mesh background - apply to body for instant color */
-body {
-  background: linear-gradient(135deg, #0a1020 0%, #1a1033 20%, #0f172a 40%, #1e1b4b 60%, #172554 80%, #0a1020 100%) !important;
-  background-size: 400% 400% !important;
-  animation: rainbow-flow 18s ease infinite !important;
+:root.light body {
+  background: #e4e4e7;
 }
 
-/* Glossy rainbow glass - overrides .glass */
-.glass {
-  background: linear-gradient(135deg, rgba(0,163,255,0.14), rgba(232,30,140,0.08), rgba(255,187,0,0.07)) !important;
-  backdrop-filter: blur(28px) saturate(150%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(150%) !important;
-  border: 1px solid rgba(255,255,255,0.18) !important;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 0 24px rgba(0,163,255,0.15), inset 0 1px 0 rgba(255,255,255,0.22) !important;
-  position: relative;
-  overflow: hidden;
-}
-.glass::before {
-  content: '';
-  position: absolute;
-  top: 0; left: -100%; width: 100%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
-  animation: shimmer-sweep 2.8s ease-in-out infinite;
-}
-.glass-card {
-  background: linear-gradient(135deg, rgba(0,163,255,0.12), rgba(255,187,0,0.07)) !important;
-  border-color: rgba(255,255,255,0.22) !important;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 32px rgba(255,187,0,0.12) !important;
-}
-.glass-card:hover {
-  transform: translateY(-6px) scale(1.015) !important;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.6), 0 0 40px rgba(0,163,255,0.25) !important;
-  border-color: rgba(255,187,0,0.35) !important;
-}
-
-/* Vivid gradient utilities */
 .text-gradient-rainbow {
-  background: linear-gradient(90deg, #ffbb00, #ff3b6e, #00a3ff, #10b981, #ffbb00) !important;
-  background-size: 200% auto !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  color: transparent !important;
-  animation: rainbow-text 3.5s linear infinite !important;
-  font-weight: 800 !important;
+  background: linear-gradient(90deg, #1e3a8a, #2563eb, #1e40af, #1e3a8a);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 6s ease infinite;
+  font-weight: 800;
 }
 .rainbow-border {
-  border: 2px solid transparent !important;
+  border: 2px solid transparent;
   background: linear-gradient(var(--color-telegram-surface), var(--color-telegram-surface)) padding-box,
-              linear-gradient(90deg, #ffbb00, #ff3b6e, #00a3ff, #8b5cf6, #ffbb00) border-box !important;
-  background-size: auto, 200% 200% !important;
-  animation: rainbow-flow 4s linear infinite !important;
+              linear-gradient(90deg, #1e3a8a, #fbbf24, #2563eb, #1e3a8a) border-box;
+  background-size: auto, 200% 200%;
+  animation: gradient-pan 8s ease infinite;
 }
 
-/* Holographic overlay helper */
 .holographic {
   position: relative;
   overflow: hidden;
@@ -632,37 +588,49 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.14) 50%, transparent 70%);
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%);
   transform: translateX(-110%);
   animation: holographic-scan 3.2s ease-in-out infinite;
   pointer-events: none;
 }
 
-/* Electric glow */
 .electric-glow {
   animation: electric-pulse 2.6s ease-in-out infinite;
-  border-color: rgba(0,163,255,0.5) !important;
+  border-color: rgba(30, 58, 138, 0.45);
 }
 
-/* Vibrant scrollbar */
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #ffbb00, #ff3b6e, #00a3ff) !important;
-  border-radius: 9999px !important;
-}
-:root.light ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #e69500, #db2777, #2563eb) !important;
-}
-
-/* Auth gradient more colorful */
-.auth-gradient {
-  background: radial-gradient(120% 120% at 20% 20%, #00a3ff 0%, #7c3aed 35%, #ff3b6e 70%, #ffbb00 100%) !important;
-}
-:root.light .auth-gradient {
-  background: linear-gradient(135deg, #00a3ff 0%, #7c3aed 35%, #ec4899 65%, #f59e0b 100%) !important;
+.cs-landing {
+  font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  background: #e4e4e7;
+  color: #18181b;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  width: 100%;
 }
 
-/* Glossy primary button override */
-.btn-primary-glow {
-  background: linear-gradient(135deg, #ffbb00 0%, #ff8a00 50%, #ff3b6e 100%) !important;
-  box-shadow: 0 10px 28px -8px rgba(255,59,110,0.55), 0 0 18px rgba(255,187,0,0.35), inset 0 1px 0 rgba(255,255,255,0.4) !important;
+.cs-nav-link {
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
 }
+
+.cs-btn-navy {
+  background: #1e3a8a;
+  color: #fffbeb;
+  border-radius: 4px;
+  font-weight: 600;
+  transition: background-color 0.3s ease, transform 0.15s ease;
+}
+.cs-btn-navy:hover { background: #172554; }
+.cs-btn-navy:active { transform: scale(0.98); }
+
+.cs-btn-ghost {
+  background: transparent;
+  color: #1e3a8a;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 14px;
+  transition: background-color 0.5s ease;
+}
+.cs-btn-ghost:hover { background: #fbbf24; }

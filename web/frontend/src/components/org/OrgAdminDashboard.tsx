@@ -127,6 +127,14 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     x.status === 'staged' || x.status === 'pending' || x.status === 'uploading' || x.status === 'paused',
   );
 
+  const kickIfAuth = (e: unknown) => {
+    if (!session || !api.isOrgAuthError(e)) return false;
+    toast.error('Signed in on another device. Please sign in again.');
+    api.setOrgToken(null, org.id);
+    onLogout();
+    return true;
+  };
+
   const loadFiles = async (folderId?: number) => {
     setFilesLoading(true);
     setFilesError(null);
@@ -135,6 +143,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
       setFiles(f);
       setFolders(fl);
     } catch (e: any) {
+      if (kickIfAuth(e)) return;
       setFilesError(e.message || 'Failed to load files');
     } finally {
       setFilesLoading(false);
@@ -308,6 +317,25 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
     if (tab === 'activity') loadActivity();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const probe = async () => {
+      try {
+        await api.orgMe(org.id);
+      } catch (e) {
+        if (!cancelled) kickIfAuth(e);
+      }
+    };
+    probe();
+    const t = window.setInterval(probe, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org.id, session?.member_id]);
 
   const logout = async () => {
     try { await api.orgLogout(org.id); } catch {}

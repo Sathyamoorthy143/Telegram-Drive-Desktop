@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   setOrgContext, setOrgToken, getOrgToken, setOrgSlug, getOrgSlug,
   moveFiles, searchFiles, getTrash, starFile,
-  getSettings, createShare, searchFilesAdvanced,
+  getSettings, createShare, searchFilesAdvanced, isOrgAuthError,
 } from './api';
 
 describe('org-context guards', () => {
@@ -44,6 +44,14 @@ describe('org-context guards', () => {
     } finally {
       setOrgContext(null);
     }
+  });
+
+  it('detects org auth failures from status or message', () => {
+    expect(isOrgAuthError({ status: 401, message: 'nope' })).toBe(true);
+    expect(isOrgAuthError({ status: 403, message: 'Forbidden' })).toBe(false);
+    expect(isOrgAuthError(new Error('Authentication required (org login or master admin)'))).toBe(true);
+    expect(isOrgAuthError(new Error('Unauthorized'))).toBe(true);
+    expect(isOrgAuthError(new Error('folder access denied'))).toBe(false);
   });
 
   it('namespace-sensitive wrappers refuse under org context', () => {

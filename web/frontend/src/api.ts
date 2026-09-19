@@ -94,7 +94,9 @@ export async function api<T>(method: string, path: string, body?: any, options?:
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `API Error ${res.status}`);
+    const err = new Error(text || `API Error ${res.status}`) as Error & { status: number };
+    err.status = res.status;
+    throw err;
   }
 
   return res.json();
@@ -726,6 +728,13 @@ export const restoreOrgTrash = (orgId: string, message_id: number, folder_id?: n
 
 export const purgeOrgTrash = (orgId: string, message_id: number, folder_id?: number) =>
   api<boolean>('POST', `/api/org/${orgId}/trash/purge`, { message_id, folder_id });
+
+export function isOrgAuthError(err: unknown): boolean {
+  const e = err as { status?: number; message?: string } | null;
+  if (e?.status === 401) return true;
+  const m = String(e?.message || '').toLowerCase();
+  return m.includes('unauthorized') || m.includes('authentication required') || m.includes('api error 401');
+}
 
 export const orgLogin = (orgId: string, username: string, password: string) =>
   api<{ token: string; org_id: string; member_id: string; username: string; role: string }>(

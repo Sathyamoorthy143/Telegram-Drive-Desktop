@@ -3,7 +3,8 @@
 //! Issues opaque bearer tokens kept in memory (`AppState::org_sessions`).
 //! Clients send `X-Org-Token: <token>` (or `Authorization: Bearer org_<token>`).
 //! The master admin (Telegram-authenticated) bypasses org tokens and acts as
-//! `owner` in any org.
+//! `owner` in any org. Each org member may hold only one live token: a new
+//! login revokes that member's previous sessions in the same organization.
 
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use std::collections::HashMap;
@@ -79,6 +80,21 @@ pub fn is_token_expired(issued_at: i64, now: i64) -> bool {
 /// sessions survive without a store write on every request.
 pub fn should_slide_issued_at(issued_at: i64, now: i64) -> bool {
     !is_token_expired(issued_at, now) && now - issued_at > ORG_TOKEN_TTL_SECS / 2
+}
+
+/// One live login per org member: drop every in-memory session that matches
+/// this `(org_id, member_id)`. Empty `member_id` (master-bypass) is ignored.
+pub fn revoke_sessions_for_member(
+    store: &mut HashMap<String, OrgSession>,
+    org_id: &str,
+    member_id: &str,
+) -> usize {
+    if member_id.trim().is_empty() {
+        return 0;
+    }
+    let before = store.len();
+    store.retain(|_, sess| !(sess.org_id == org_id && sess.member_id == member_id));
+    before.saturating_sub(store.len())
 }
 
 pub async fn session_from_token(state: &AppState, token: &str) -> Option<OrgSession> {
@@ -423,7 +439,12 @@ pub async fn org_login(
         issued_at: now,
         role_checked_at: now,
     };
-    state.org_sessions.lock().await.insert(token.clone(), sess.clone());
+    let replaced = {
+        let mut store = state.org_sessions.lock().await;
+        let n = revoke_sessions_for_member(&mut store, &org_id, &member.id);
+        store.insert(token.clone(), sess.clone());
+        n
+    };
     let ip = req.peer_addr().map(|a| a.ip().to_string());
     let ua = req
         .headers()
@@ -436,7 +457,7 @@ pub async fn org_login(
         "login",
         "org_member",
         &member.id,
-        serde_json::json!({ "username": member.username }),
+        serde_json::json!({ "username": member.username, "replaced_sessions": replaced }),
         ip,
         ua,
     )
@@ -562,5 +583,40 @@ mod tests {
         // Expired sessions slide nowhere — they are dropped instead.
         assert!(!should_slide_issued_at(0, now));
         assert!(!should_slide_issued_at(now - ORG_TOKEN_TTL_SECS - 1, now));
+    }
+
+    fn sample_session(token: &str, org_id: &str, member_id: &str) -> OrgSession {
+        OrgSession {
+            token: token.into(),
+            org_id: org_id.into(),
+            member_id: member_id.into(),
+            username: member_id.into(),
+            role: "viewer".into(),
+            issued_at: 1,
+            role_checked_at: 1,
+        }
+    }
+
+    #[test]
+    fn revoke_keeps_one_session_per_org_member() {
+        let mut store = HashMap::new();
+        store.insert("t1".into(), sample_session("t1", "org-a", "alice"));
+        store.insert("t2".into(), sample_session("t2", "org-a", "alice"));
+        store.insert("t3".into(), sample_session("t3", "org-a", "bob"));
+        store.insert("t4".into(), sample_session("t4", "org-b", "alice"));
+        let dropped = revoke_sessions_for_member(&mut store, "org-a", "alice");
+        assert_eq!(dropped, 2);
+        assert!(!store.contains_key("t1"));
+        assert!(!store.contains_key("t2"));
+        assert!(store.contains_key("t3"));
+        assert!(store.contains_key("t4"));
+    }
+
+    #[test]
+    fn revoke_ignores_empty_master_bypass_member_id() {
+        let mut store = HashMap::new();
+        store.insert("m".into(), sample_session("m", "org-a", ""));
+        assert_eq!(revoke_sessions_for_member(&mut store, "org-a", ""), 0);
+        assert!(store.contains_key("m"));
     }
 }

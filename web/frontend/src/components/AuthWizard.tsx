@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Phone, Key, Lock, ArrowRight, Settings, ShieldCheck, Sun, Moon, HelpCircle, ExternalLink, X, Heart, Eye, EyeOff } from "lucide-react";
+import { Phone, Key, Lock, ArrowRight, Settings, Sun, Moon, HelpCircle, ExternalLink, X, Heart, Eye, EyeOff, Cloud } from "lucide-react";
 import { useTheme } from '../context/ThemeContext';
 import { requestCode, signIn, checkPassword, getStore } from '../api';
 
@@ -11,19 +11,19 @@ function AuthThemeToggle() {
     return (
         <button
             onClick={toggleTheme}
-            className="absolute top-4 right-4 p-3 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
+            className="absolute top-4 right-4 p-3 rounded-full bg-white/80 hover:bg-amber-400 transition-colors z-10 shadow"
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
             {theme === 'dark' ? (
-                <Sun className="w-5 h-5 text-white" />
+                <Sun className="w-5 h-5 text-blue-900" />
             ) : (
-                <Moon className="w-5 h-5 text-white" />
+                <Moon className="w-5 h-5 text-blue-900" />
             )}
         </button>
     );
 }
 
-export function AuthWizard({ onLogin }: { onLogin: () => void }) {
+export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: () => void }) {
     const [step, setStep] = useState<Step>("setup");
     const [loading, setLoading] = useState(false);
 
@@ -167,22 +167,20 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
 
     return (
         <div className="h-full w-full auth-gradient flex items-center justify-center p-6 relative overflow-hidden">
-            <div className="orb w-80 h-80 bg-white/20 -top-16 -left-16 animate-float-slow" />
-            <div className="orb w-[28rem] h-[28rem] bg-telegram-secondary/50 bottom-[-6rem] right-[-6rem] animate-float-slow" style={{ animationDelay: '-3.5s' }} />
             <AuthThemeToggle />
 
             <motion.div
                 initial={{ opacity: 0, scale: 0.94, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 240, damping: 24 }}
-                className="auth-glass relative p-8 rounded-3xl shadow-2xl w-full max-w-md"
+                className="relative p-8 rounded-2xl shadow-xl w-full max-w-md bg-zinc-800 border border-zinc-700"
             >
                 <div className="text-center mb-8">
-                    <div className="w-20 h-20 mb-6 mx-auto flex items-center justify-center filter drop-shadow-lg">
-                        <img src="/logo.svg" alt="Logo" className="w-full h-full" />
+                    <div className="w-16 h-16 mb-6 mx-auto flex items-center justify-center rounded-2xl bg-blue-900 shadow-lg">
+                        <Cloud className="w-9 h-9 text-white" />
                     </div>
-                    <h1 className="text-2xl font-bold text-white mb-1 tracking-tight">Cloudsphere Space</h1>
-                    <p className="text-sm text-white/60 font-medium">Self-Hosted Secure Storage</p>
+                    <h1 className="text-2xl font-black text-white mb-1 tracking-tight uppercase">Cloudsphere</h1>
+                    <p className="text-sm text-zinc-400 font-medium">Self-Hosted Secure Storage</p>
                 </div>
 
                 <AnimatePresence mode="wait">
@@ -264,7 +262,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
 
                                     <button
                                         type="submit"
-                                        className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
+                                        className="w-full bg-blue-900 hover:bg-blue-950 text-amber-50 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]"
                                     >
                                         Configure <Settings className="w-4 h-4" />
                                     </button>
@@ -316,7 +314,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                         <button
                                             type="submit"
                                             disabled={loading}
-                                            className="w-full bg-white text-black hover:bg-gray-100 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="w-full bg-white text-blue-900 hover:bg-amber-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {loading ? "Connecting..." : <>Continue <ArrowRight className="w-5 h-5" /></>}
                                         </button>
@@ -353,7 +351,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                         <button
                                             type="submit"
                                             disabled={loading}
-                                            className="w-full bg-white text-black hover:bg-gray-100 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]"
+                                            className="w-full bg-white text-blue-900 hover:bg-amber-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]"
                                         >
                                             {loading ? "Verifying..." : "Sign In"}
                                         </button>
@@ -397,7 +395,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                         <button
                                             type="submit"
                                             disabled={loading || !password}
-                                            className="w-full bg-white text-black hover:bg-gray-100 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="w-full bg-white text-blue-900 hover:bg-amber-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {loading ? "Verifying..." : "Unlock"}
                                         </button>
@@ -422,7 +420,16 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                     </motion.div>
                 )}
 
-                <div className="mt-8 pt-4 border-t border-white/5 text-center">
+                <div className="mt-8 pt-4 border-t border-white/5 text-center space-y-3">
+                    {onBack && (
+                        <button
+                            type="button"
+                            onClick={onBack}
+                            className="text-xs text-zinc-400 hover:text-amber-400 transition-colors"
+                        >
+                            Back to Cloudsphere
+                        </button>
+                    )}
                     <button
                         onClick={() => setShowDonate(true)}
                         className="text-xs text-white/40 hover:text-white transition-colors flex items-center justify-center gap-1.5 mx-auto"
@@ -547,8 +554,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                 )}
             </AnimatePresence>
 
-            <div className="fixed top-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none -z-10" />
-            <div className="fixed bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
+            <div className="fixed top-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none -z-10" />
+            <div className="fixed bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-amber-400/10 rounded-full blur-[100px] pointer-events-none -z-10" />
         </div>
     );
 }
