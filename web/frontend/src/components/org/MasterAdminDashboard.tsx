@@ -34,21 +34,59 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [alerts, setAlerts] = useState<OrgAlertRow[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
 
+  const toRow = (o: any): OrgOverviewEntry => ({
+    id: o.id,
+    name: o.name,
+    subdomain: o.subdomain,
+    active: o.active !== false,
+    created_at: o.created_at,
+    member_count: o.member_count ?? 0,
+    trash_count: o.trash_count ?? 0,
+    has_audit: o.has_audit ?? false,
+    provisioned: o.provisioned ?? Boolean(o.channel_id),
+    channel_id: o.channel_id,
+    backup_channel_id: o.backup_channel_id,
+    partial: o.partial,
+    errors: o.errors,
+  });
+
   const refresh = async () => {
     try {
-      // Capability probe: an outdated backend has no /api/version or no
-      // org_platform flag — provisioning cannot work until it redeploys.
       try {
         const caps = await api.getBackendCaps();
-        setBackendStale(!caps || caps.org_platform !== true);
+        setBackendStale(caps?.org_platform !== true);
       } catch {
-        setBackendStale(true);
+        setBackendStale(false);
       }
-      const res = await api.getAdminOverview();
-      setOrgs(res.orgs);
-      setOverviewPartial(res.partial === true);
+      try {
+        const res = await api.getAdminOverview();
+        const list = Array.isArray(res?.orgs) ? res.orgs : Array.isArray(res) ? res : [];
+        if (list.length === 0) {
+          try {
+            const fallback = await api.getOrganizations();
+            const fb = Array.isArray(fallback) ? fallback : [];
+            if (fb.length > 0) {
+              setOrgs(fb.map(toRow));
+              setOverviewPartial(true);
+              return;
+            }
+          } catch { /* keep any optimistic rows */ }
+          setOrgs((prev) => prev);
+          setOverviewPartial(true);
+          return;
+        }
+        setOrgs(list.map(toRow));
+        setOverviewPartial(res?.partial === true);
+      } catch {
+        const list = await api.getOrganizations();
+        const fb = Array.isArray(list) ? list : [];
+        if (fb.length > 0) setOrgs(fb.map(toRow));
+        else setOrgs((prev) => prev);
+        setOverviewPartial(true);
+      }
     } catch (e: any) {
       toast.error(`Failed to load organizations: ${e.message}`);
+      setOrgs((prev) => prev || []);
     } finally {
       setLoading(false);
     }
@@ -103,10 +141,13 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
     }
     setCreating(true);
     try {
-      await api.createOrganization(name.trim(), subdomain.trim().toLowerCase());
+      const created = await api.createOrganization(name.trim(), subdomain.trim().toLowerCase());
       toast.success(`Organization "${name.trim()}" created`);
       setName('');
       setSubdomain('');
+      if (created?.id) {
+        setOrgs((prev) => (prev.some((o) => o.id === created.id) ? prev : [toRow(created), ...prev]));
+      }
       await refresh();
     } catch (e: any) {
       toast.error(e.message);

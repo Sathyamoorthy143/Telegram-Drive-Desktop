@@ -48,7 +48,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
         setPdf(null);
         setNumPages(0);
 
-        const streamUrl = api.getStreamUrl(activeFolderId ?? 'home', file.id);
+        const streamUrl = api.getStreamUrl(activeFolderId ?? 'home', file.id, streamToken);
 
         const loadingTask = pdfjsLib.getDocument(streamUrl);
 

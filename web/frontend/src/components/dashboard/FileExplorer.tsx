@@ -235,7 +235,7 @@ export function FileExplorer({
     if (files.length === 0) {
         return (
             <div className="flex-1 p-6 overflow-auto">
-                <EmptyState onUpload={onManualUpload} />
+                    <EmptyState onUpload={onManualUpload} onFolderUpload={onFolderUpload} />
             </div>
         );
     }
@@ -322,9 +322,7 @@ export function FileExplorer({
                     </div>
                 ))}
 
-                {/* Upload Buttons for root */}
-                {activeFolderId === null && (
-                    <div className="mt-8 flex gap-4">
+                <div className="mt-8 flex gap-4">
                         <button onClick={onManualUpload} className="flex-1 h-24 border-2 border-dashed border-telegram-border rounded-xl flex flex-col items-center justify-center text-telegram-subtext hover:border-telegram-primary hover:text-telegram-primary transition-all group bg-telegram-surface/50">
                             <Plus className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" />
                             <span className="text-xs font-bold uppercase tracking-widest">Upload File</span>
@@ -334,7 +332,6 @@ export function FileExplorer({
                             <span className="text-xs font-bold uppercase tracking-widest">Upload Folder</span>
                         </button>
                     </div>
-                )}
             </div>
 
             {viewSettings.showPreviewPane && (
