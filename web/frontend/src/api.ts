@@ -668,8 +668,37 @@ export const getAdminOverview = () =>
 export const getOrganizations = () =>
   api<any[]>('GET', '/api/admin/organizations');
 
-export const createOrganization = (name: string, subdomain: string) =>
-  api<any>('POST', '/api/admin/organizations', { name, subdomain });
+export interface MyOrg {
+  id: string;
+  name: string;
+  subdomain: string;
+  active?: boolean;
+  created_at?: string;
+  master_admin_id?: string | null;
+  has_entry_password: boolean;
+}
+
+export const getMasterUnlockStatus = () =>
+  api<{ has_master_password: boolean }>('GET', '/api/admin/master-unlock-status');
+
+export const setMasterPassword = (password: string) =>
+  api<{ ok: boolean }>('POST', '/api/admin/master-password', { password });
+
+export const unlockMaster = (password: string) =>
+  api<{ ok: boolean }>('POST', '/api/admin/master-unlock', { password });
+
+export const getMyOrgs = () =>
+  api<{ orgs: MyOrg[] }>('GET', '/api/admin/my-orgs');
+
+export const unlockOrganization = (id: string, password: string) =>
+  api<{ ok: boolean; org: { id: string; name: string; subdomain: string } }>(
+    'POST', `/api/admin/organizations/${id}/unlock`, { password });
+
+export const resetOrgEntryPassword = (id: string, new_password: string) =>
+  api<{ ok: boolean }>('POST', `/api/admin/organizations/${id}/reset-entry-password`, { new_password });
+
+export const createOrganization = (name: string, subdomain: string, entry_password: string) =>
+  api<any>('POST', '/api/admin/organizations', { name, subdomain, entry_password });
 
 export const updateOrganization = (id: string, patch: { name?: string; active?: boolean }) =>
   api<boolean>('PUT', `/api/admin/organizations/${id}`, patch);
