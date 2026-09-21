@@ -55,6 +55,8 @@ pub struct Organization {
     pub master_admin_id: Option<String>,
     pub created_at: Option<String>,
     pub active: Option<bool>,
+    #[serde(default, skip_serializing)]
+    pub entry_password_hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -125,6 +127,17 @@ pub struct OrgSession {
 pub struct CreateOrgRequest {
     pub name: String,
     pub subdomain: String,
+    pub entry_password: String,
+}
+
+#[derive(Deserialize)]
+pub struct PasswordBody {
+    pub password: String,
+}
+
+#[derive(Deserialize)]
+pub struct NewPasswordBody {
+    pub new_password: String,
 }
 
 /// Folder-scoped permission grant (see 002_folder_grants.sql).

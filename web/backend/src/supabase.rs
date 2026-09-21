@@ -14,6 +14,8 @@ pub struct SettingsRow {
     pub lock_pin_hash: Option<String>,
     pub lock_interval_ms: Option<i64>,
     pub notification_mode: Option<String>,
+    #[serde(default)]
+    pub master_password_hash: Option<String>,
 }
 
 fn supabase_config() -> Option<(String, String)> {
@@ -242,4 +244,60 @@ pub fn hash_pin(pin: &str) -> String {
     hasher.update(pin.as_bytes());
     hasher.update(b"telegram-drive-salt");
     format!("{:x}", hasher.finalize())
+}
+
+pub fn hash_master_password(password: &str, telegram_user_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(password.as_bytes());
+    hasher.update(b"::telegram-drive-master-entry::");
+    hasher.update(telegram_user_id.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+pub fn verify_master_password(password: &str, telegram_user_id: &str, hash: &str) -> bool {
+    hash_master_password(password, telegram_user_id) == hash
+}
+
+pub async fn set_master_password_hash(user_id: i64, hash: String) -> Result<(), String> {
+    let (url, key) = match supabase_config() {
+        Some(c) => c,
+        None => return Ok(()),
+    };
+    let row = serde_json::json!({
+        "user_id": user_id,
+        "master_password_hash": hash,
+    });
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/rest/v1/user_settings", url))
+        .header("apikey", &key)
+        .header("Authorization", format!("Bearer {}", key))
+        .header("Content-Type", "application/json")
+        .header("Prefer", "resolution=merge-duplicates")
+        .query(&[("on_conflict", "user_id")])
+        .json(&row)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(txt);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn master_password_hash_is_stable_and_user_scoped() {
+        let a = hash_master_password("secret", "123");
+        assert_eq!(a, hash_master_password("secret", "123"));
+        assert_ne!(a, hash_master_password("secret", "456"));
+        assert_ne!(a, hash_pin("secret"));
+        assert!(verify_master_password("secret", "123", &a));
+        assert!(!verify_master_password("wrong", "123", &a));
+    }
 }

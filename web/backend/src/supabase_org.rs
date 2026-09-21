@@ -98,8 +98,19 @@ fn urlencoding(s: &str) -> String {
         .replace('/', "%2F")
 }
 
-pub async fn create_organization(name: &str, subdomain: &str) -> Result<Organization, String> {
-    let row = serde_json::json!({ "name": name, "subdomain": subdomain.to_lowercase() });
+pub async fn create_organization(
+    name: &str,
+    subdomain: &str,
+    master_admin_id: Option<&str>,
+    entry_password_hash: Option<&str>,
+) -> Result<Organization, String> {
+    let mut row = serde_json::json!({ "name": name, "subdomain": subdomain.to_lowercase() });
+    if let Some(id) = master_admin_id {
+        row["master_admin_id"] = serde_json::Value::String(id.to_string());
+    }
+    if let Some(h) = entry_password_hash {
+        row["entry_password_hash"] = serde_json::Value::String(h.to_string());
+    }
     let resp = sb_req("POST", "organizations", Some(row)).await?;
     if !resp.status().is_success() {
         let txt = resp.text().await.unwrap_or_default();
@@ -375,6 +386,35 @@ pub fn verify_org_password(password: &str, username: &str, hash: &str) -> bool {
     hash_org_password(password, username) == hash
 }
 
+pub fn hash_org_entry_password(password: &str, org_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(password.as_bytes());
+    h.update(b"::telegram-drive-org-entry::");
+    h.update(org_id.as_bytes());
+    format!("{:x}", h.finalize())
+}
+
+pub fn verify_org_entry_password(password: &str, org_id: &str, hash: &str) -> bool {
+    hash_org_entry_password(password, org_id) == hash
+}
+
+pub fn org_owned_by(org: &Organization, telegram_id: &str) -> bool {
+    org.master_admin_id.as_deref() == Some(telegram_id)
+}
+
+pub fn strip_entry_hash_fields(org: &Organization) -> serde_json::Value {
+    serde_json::json!({
+        "id": org.id,
+        "name": org.name,
+        "subdomain": org.subdomain,
+        "active": org.active,
+        "created_at": org.created_at,
+        "master_admin_id": org.master_admin_id,
+        "has_entry_password": org.entry_password_hash.as_ref().map(|h| !h.is_empty()).unwrap_or(false),
+    })
+}
+
 /// Role hierarchy: viewer < editor < admin < owner. Master admin bypasses.
 pub fn role_rank(role: &str) -> u8 {
     match role {
@@ -410,5 +450,32 @@ mod tests {
         assert!(role_satisfies("owner", "admin"));
         assert!(!role_satisfies("viewer", "editor"));
         assert!(!role_satisfies("editor", "admin"));
+    }
+
+    #[test]
+    fn org_entry_password_hash_is_stable_and_org_scoped() {
+        let a = hash_org_entry_password("secret", "org-1");
+        assert_eq!(a, hash_org_entry_password("secret", "org-1"));
+        assert_ne!(a, hash_org_entry_password("secret", "org-2"));
+        assert_ne!(a, hash_org_password("secret", "alice"));
+        assert!(verify_org_entry_password("secret", "org-1", &a));
+        assert!(!verify_org_entry_password("wrong", "org-1", &a));
+    }
+
+    #[test]
+    fn org_owned_by_matches_telegram_id() {
+        let org = Organization {
+            id: "o1".into(),
+            name: "Acme".into(),
+            subdomain: "acme".into(),
+            master_admin_id: Some("99".into()),
+            created_at: None,
+            active: Some(true),
+            entry_password_hash: None,
+        };
+        assert!(org_owned_by(&org, "99"));
+        assert!(!org_owned_by(&org, "1"));
+        let orphan = Organization { master_admin_id: None, ..org.clone() };
+        assert!(!org_owned_by(&orphan, "99"));
     }
 }
