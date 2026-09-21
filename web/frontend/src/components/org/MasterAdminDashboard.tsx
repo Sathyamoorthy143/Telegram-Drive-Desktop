@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, Building2, Plus, Trash2, Power, Database, Users, Activity, FolderOpen, Bell } from 'lucide-react';
+import { Building2, Plus, Trash2, Power, Database, Users, Activity, FolderOpen, Bell } from 'lucide-react';
+import { OrgShell, PageHeader, Banner, OrgCard } from './ui';
 import * as api from '../../api';
 import { runParallelPool } from '../../uploadQueue';
 import type { OrgOverviewEntry, OrgMember, AuditEntry } from '../../types';
@@ -237,25 +238,22 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   };
 
   return (
-    <div className="h-full w-full overflow-y-auto p-6">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={onBack} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Back to My Drive">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <Building2 className="w-6 h-6 text-telegram-primary" />
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold">Organizations</h1>
-            <p className="text-sm text-telegram-subtext">Master admin — create orgs, provision Telegram channels, manage admins.</p>
-          </div>
-          <button
-            onClick={() => (showAlerts ? setShowAlerts(false) : loadAlertsOverview())}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover"
-            title="Recent activity across all organizations"
-          >
-            <Bell className="w-3.5 h-3.5" /> {showAlerts ? 'Hide alerts' : 'Alerts overview'}
-          </button>
-        </div>
+    <OrgShell>
+        <PageHeader
+          icon={<Building2 className="w-6 h-6 text-telegram-primary" />}
+          title="Organizations"
+          subtitle="Master admin — create orgs, provision Telegram channels, manage admins."
+          onBack={onBack}
+          actions={
+            <button
+              onClick={() => (showAlerts ? setShowAlerts(false) : loadAlertsOverview())}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover"
+              title="Recent activity across all organizations"
+            >
+              <Bell className="w-3.5 h-3.5" /> {showAlerts ? 'Hide alerts' : 'Alerts overview'}
+            </button>
+          }
+        />
 
         {showAlerts && (
           <div className="mb-4 p-3 rounded-xl bg-telegram-surface border border-telegram-border">
@@ -279,16 +277,16 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
         )}
 
         {backendStale && (
-          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/40 text-sm text-red-500">
+          <Banner variant="error">
             Backend is outdated (no org-platform support). Redeploy the backend from the latest <span className="font-mono">main</span> and refresh —
             creating orgs and provisioning will not work until then.
-          </div>
+          </Banner>
         )}
 
         {overviewPartial && (
-          <div className="mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/40 text-sm text-yellow-600">
+          <Banner variant="warning">
             Some org stats failed to load — affected rows are marked and counts may read 0. Refresh to retry.
-          </div>
+          </Banner>
         )}
 
         <form onSubmit={createOrg} className="flex flex-wrap gap-2 mb-6 p-4 bg-telegram-surface border border-telegram-border rounded-xl">
@@ -317,7 +315,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
         ) : (
           <div className="grid gap-3">
             {orgs.map((org) => (
-              <div key={org.id} className={`p-4 bg-telegram-surface border border-telegram-border rounded-xl ${org.active === false ? 'opacity-60' : ''}`}>
+              <OrgCard key={org.id} dimmed={org.active === false}>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex-1 min-w-52">
                     <div className="font-semibold flex items-center gap-2">
@@ -442,11 +440,10 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                     )}
                   </div>
                 )}
-              </div>
+              </OrgCard>
             ))}
           </div>
         )}
-      </div>
-    </div>
+    </OrgShell>
   );
 }
