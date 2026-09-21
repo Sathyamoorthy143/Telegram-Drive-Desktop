@@ -208,6 +208,7 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                         {isImageFile(file.name) ? (
                             <img
                                 src={src}
+                                decoding="async"
                                 className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-black"
                                 alt="Preview"
                                 onError={() => {

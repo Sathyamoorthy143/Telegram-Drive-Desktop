@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Plus, Folder, ArrowUp, ArrowDown } from 'lucide-react';
 import { FileCard } from './FileCard';
 import { EmptyState } from './EmptyState';
@@ -109,21 +110,6 @@ export function FileExplorer({
     onSelectionClear, onToggleSelection, onDrop, onDragStart, onDragEnd,
     onRename, onCut, onCopy, onMove, onShare, onEdit, onVersions, onStar, starredIds, onTags, onPaste, canPaste, onProperties, onOpenFolder, folders
 }: FileExplorerProps) {
-    if (viewSettings.viewMode === 'tree' && folders) {
-        return (
-            <div className="flex-1 flex overflow-hidden relative">
-                <TreeExplorer
-                    folders={folders}
-                    activeFolderId={activeFolderId}
-                    selectedIds={selectedIds}
-                    onOpenFolder={(id) => onOpenFolder?.(id as any)}
-                    onPreview={(f) => onPreview(f)}
-                    onToggleSelection={onToggleSelection}
-                    onFileClick={onFileClick}
-                />
-            </div>
-        );
-    }
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file?: TelegramFile; isFolder?: boolean } | null>(null);
     const [isOSDragging, setIsOSDragging] = useState(false);
 
@@ -208,6 +194,58 @@ export function FileExplorer({
         }
     }, [handleDroppedFiles]);
 
+    // ---------- Grid virtualization ----------
+    // Flatten grouped grid rows into one virtual list so thousand-file folders
+    // only mount the visible slice of cards. Sizes are deterministic because
+    // every card shares the same computed height (cardHeight, above).
+    const GRID_HEADER_HEIGHT = 56;
+    const GRID_ROW_GAP = 8;
+    const gridRowHeight = cardHeight + GRID_ROW_GAP;
+
+    type GridRow =
+        | { kind: 'header'; title: string }
+        | { kind: 'cards'; items: TelegramFile[] };
+
+    const gridRows = useMemo<GridRow[]>(() => {
+        if (viewSettings.viewMode !== 'grid') return [];
+        const rows: GridRow[] = [];
+        groupedItems.forEach((group) => {
+            if (group.title) rows.push({ kind: 'header', title: group.title });
+            for (let i = 0; i < group.items.length; i += columns) {
+                rows.push({ kind: 'cards', items: group.items.slice(i, i + columns) });
+            }
+        });
+        return rows;
+    }, [groupedItems, columns, viewSettings.viewMode]);
+
+    const gridVirtualizer = useVirtualizer({
+        count: gridRows.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: (index) => {
+            const row = gridRows[index];
+            return row && row.kind === 'header' ? GRID_HEADER_HEIGHT : gridRowHeight;
+        },
+        overscan: 4,
+    });
+
+    // Tree mode renders before anything scroll-dependent (hooks above stay in
+    // stable order across mode switches).
+    if (viewSettings.viewMode === 'tree' && folders) {
+        return (
+            <div className="flex-1 flex overflow-hidden relative">
+                <TreeExplorer
+                    folders={folders}
+                    activeFolderId={activeFolderId}
+                    selectedIds={selectedIds}
+                    onOpenFolder={(id) => onOpenFolder?.(id as any)}
+                    onPreview={(f) => onPreview(f)}
+                    onToggleSelection={onToggleSelection}
+                    onFileClick={onFileClick}
+                />
+            </div>
+        );
+    }
+
     if (loading) {
         return (
             <div className="flex-1 p-4 overflow-auto">
@@ -256,52 +294,88 @@ export function FileExplorer({
                 onDragLeave={() => setIsOSDragging(false)}
                 onDrop={handleOSDrop}
             >
-                {groupedItems.map((group, groupIdx) => (
-                    <div key={group.title || 'root'} className={groupIdx > 0 ? 'mt-8' : ''}>
-                        {group.title && (
+                {viewSettings.viewMode === 'grid' ? (
+                    <div
+                        style={{
+                            height: `${gridVirtualizer.getTotalSize()}px`,
+                            width: '100%',
+                            position: 'relative',
+                        }}
+                    >
+                        {gridVirtualizer.getVirtualItems().map((virtualRow) => {
+                                    const row = gridRows[virtualRow.index];
+                                    if (!row) return null;
+                                    if (row.kind === 'header') {
+                                        return (
+                                            <div
+                                                key={`header-${virtualRow.index}`}
+                                                data-index={virtualRow.index}
+                                                ref={gridVirtualizer.measureElement}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 0,
+                                                    left: 0,
+                                                    width: '100%',
+                                                    transform: `translateY(${virtualRow.start}px)`,
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-2 mb-3 px-2 pt-4">
+                                                    <span className="text-xs font-bold text-telegram-subtext uppercase tracking-widest">{row.title}</span>
+                                                    <div className="flex-1 h-px bg-telegram-border"></div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div
+                                            key={`cards-${virtualRow.index}`}
+                                            data-index={virtualRow.index}
+                                            ref={gridVirtualizer.measureElement}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                transform: `translateY(${virtualRow.start}px)`,
+                                            }}
+                                        >
+                                            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+                                                {row.items.map((file) => (
+                                                    <div key={file.id} className="stagger-in">
+                                                        <FileCard
+                                                            file={file}
+                                                            isSelected={selectedIds.includes(file.id)}
+                                                            onClick={(e) => onFileClick(e, file.id)}
+                                                            onContextMenu={(e) => handleContextMenu(e, file)}
+                                                            onDelete={() => onDelete(file.id)}
+                                                            onDownload={() => onDownload(file.id, file.name, file.size)}
+                                                            onPreview={() => handlePreviewRequest(file)}
+                                                            onDrop={onDrop}
+                                                            onDragStart={onDragStart}
+                                                            onDragEnd={onDragEnd}
+                                                            activeFolderId={activeFolderId}
+                                                            height={cardHeight}
+                                                            onToggleSelection={() => onToggleSelection(file.id)}
+                                                            onDoubleClick={file.type === 'folder' ? () => onOpenFolder?.(file.id) : () => handlePreviewRequest(file)}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <>
+                            {groupedItems.map((group, groupIdx) => (
+                            <div key={group.title || 'root'} className={groupIdx > 0 ? 'mt-8' : ''} style={{ width: '100%' }}>
+                            {group.title && (
                             <div className="flex items-center gap-2 mb-3 px-2">
                                 <span className="text-xs font-bold text-telegram-subtext uppercase tracking-widest">{group.title}</span>
                                 <div className="flex-1 h-px bg-telegram-border"></div>
                             </div>
-                        )}
-
-                        {viewSettings.viewMode === 'grid' ? (
-                            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
-                                {group.items.map((file, i) => (
-                                    <div
-                                        key={file.id}
-                                        className="stagger-in"
-                                        style={{ animationDelay: `${Math.min(i, 24) * 25}ms` }}
-                                    >
-                                    <FileCard
-                                        file={file}
-                                        isSelected={selectedIds.includes(file.id)}
-                                        onClick={(e) => onFileClick(e, file.id)}
-                                        onContextMenu={(e) => handleContextMenu(e, file)}
-                                        onDelete={() => onDelete(file.id)}
-                                        onDownload={() => onDownload(file.id, file.name, file.size)}
-                                        onPreview={() => handlePreviewRequest(file)}
-                                        onDrop={onDrop}
-                                        onDragStart={onDragStart}
-                                        onDragEnd={onDragEnd}
-                                        activeFolderId={activeFolderId}
-                                        height={cardHeight}
-                                        onToggleSelection={() => onToggleSelection(file.id)}
-                                        onDoubleClick={file.type === 'folder' ? () => onOpenFolder?.(file.id) : () => handlePreviewRequest(file)}
-                                    />
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
+                            )}
                             <div className="flex flex-col gap-0.5">
-                                {groupIdx === 0 && (
-                                    <div className="grid grid-cols-[2rem_2fr_6rem_8rem] gap-4 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-telegram-subtext border-b border-telegram-border mb-2 select-none items-center">
-                                        <div className="text-center">#</div>
-                                        <SortHeader label="Name" field="name" align="left" viewSettings={viewSettings} onUpdateViewSettings={onUpdateViewSettings} />
-                                        <SortHeader label="Size" field="size" align="right" viewSettings={viewSettings} onUpdateViewSettings={onUpdateViewSettings} />
-                                        <SortHeader label="Modified" field="date" align="right" viewSettings={viewSettings} onUpdateViewSettings={onUpdateViewSettings} />
-                                    </div>
-                                )}
                                 {group.items.map((file) => (
                                     <FileListItem
                                         key={file.id}
@@ -318,9 +392,10 @@ export function FileExplorer({
                                     />
                                 ))}
                             </div>
+                            </div>
+                            ))}
+                            </>
                         )}
-                    </div>
-                ))}
 
                 <div className="mt-8 flex gap-4">
                         <button onClick={onManualUpload} className="flex-1 h-24 border-2 border-dashed border-telegram-border rounded-xl flex flex-col items-center justify-center text-telegram-subtext hover:border-telegram-primary hover:text-telegram-primary transition-all group bg-telegram-surface/50">

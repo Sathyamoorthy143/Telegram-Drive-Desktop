@@ -174,6 +174,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                             key={`${file.id}-${activeFolderId}`}
                             src={frameSrc}
                             alt={file.name}
+                            decoding="async"
                             className="w-full h-full object-contain bg-black"
                             onLoad={() => setLoading(false)}
                             onError={() => setError('Failed to render image preview')}

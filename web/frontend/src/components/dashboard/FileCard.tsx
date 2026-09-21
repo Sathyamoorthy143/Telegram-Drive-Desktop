@@ -5,6 +5,7 @@ import * as api from '../../api';
 import { TelegramFile } from '../../types';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { fileAccent } from '../../accents';
+import { getCachedThumb, loadThumb, thumbKey } from '../../lib/thumbnailCache';
 
 interface FileCardProps {
     file: TelegramFile;
@@ -73,23 +74,23 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
         return () => io.disconnect();
     }, [visible]);
 
-    // Lazy load thumbnail for image files
+    // Lazy load thumbnail for image files (cached across folder visits)
     useEffect(() => {
         if (!visible || isFolder || !isImageFile(file.name)) return;
 
         let cancelled = false;
-        setThumbnailLoading(true);
-
-        try {
-            const thumbUrl = api.getThumbnailUrl(activeFolderId ?? 'home', file.id);
-            const img = new window.Image();
-            img.onload = () => { if (!cancelled) setThumbnail(thumbUrl); };
-            img.src = thumbUrl;
-        } catch {
-            // Silently fail
-        } finally {
-            if (!cancelled) setThumbnailLoading(false);
+        const key = thumbKey(activeFolderId, file.id);
+        const cached = getCachedThumb(key);
+        if (cached) {
+            setThumbnail(cached);
+            return;
         }
+
+        setThumbnailLoading(true);
+        loadThumb(key, api.getThumbnailUrl(activeFolderId ?? 'home', file.id))
+            .then((url) => { if (!cancelled) setThumbnail(url); })
+            .catch(() => { /* silently fail */ })
+            .finally(() => { if (!cancelled) setThumbnailLoading(false); });
 
         return () => { cancelled = true; };
     }, [visible, file.id, file.name, activeFolderId, isFolder]);
@@ -165,6 +166,8 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
                         <img
                             src={thumbnail}
                             alt={file.name}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover"
                         />
                         {/* Gradient overlay for text readability */}

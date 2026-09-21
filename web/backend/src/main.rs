@@ -28,6 +28,7 @@ mod utils;
 mod entry_unlock;
 
 use actix_cors::Cors;
+use actix_web::middleware::Compression;
 use actix_web::{web, App, HttpServer, HttpResponse};
 use grammers_client::client::LoginToken;
 use std::collections::HashMap;
@@ -145,6 +146,11 @@ async fn main() -> std::io::Result<()> {
             .app_data(state.clone())
             .app_data(web::PayloadConfig::new(5 * 1024 * 1024 * 1024))
             .wrap(cors)
+            // Brotli/gzip JSON responses (~60-80% smaller file lists and
+            // activity feeds). actix's Compression skips already-compressed
+            // media (image/video/audio) and 206 partial content, so streaming
+            // and range requests are unaffected.
+            .wrap(Compression::default())
             .route("/api/health", web::get().to(keep_alive::health_check))
             .route("/health", web::get().to(keep_alive::health_check))
             .route("/api/debug/upload-probe", web::get().to(debug::upload_probe))

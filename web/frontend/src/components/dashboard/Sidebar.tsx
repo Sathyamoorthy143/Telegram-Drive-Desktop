@@ -34,10 +34,12 @@ interface SidebarProps {
     stats?: { count: number; fileCount: number; folderCount: number; bytes: number; byType?: Record<string, number> } | null;
     onActivityLog: () => void;
     onAllVersions: () => void;
+    /** Prefetch a folder's file list (hover-to-load). */
+    onPrefetchFolder?: (id: number | null) => void;
 }
 
 function RecursiveTree({
-    nodes, activeId, setActiveId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate, depth = 0
+    nodes, activeId, setActiveId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate, onPrefetch, depth = 0
 }: {
     nodes: FolderNode[];
     activeId: number | null;
@@ -51,6 +53,7 @@ function RecursiveTree({
     canPaste: boolean;
     onProperties: (id: number) => void;
     onCreate: (name: string, parentId?: number) => Promise<void>;
+    onPrefetch?: (id: number) => void;
     depth?: number;
 }) {
     const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -105,6 +108,7 @@ function RecursiveTree({
                                 onClick={() => setActiveId(node.id)}
                                 onDrop={(e: React.DragEvent) => onDrop(e, node.id)}
                                 onContextMenu={(e) => handleContextMenu(e, node.id, node.name)}
+                                onPrefetch={() => onPrefetch?.(node.id)}
                                 folderId={node.id}
                             />
                         </div>
@@ -147,6 +151,7 @@ function RecursiveTree({
                                 canPaste={canPaste}
                                 onProperties={onProperties}
                                 onCreate={onCreate}
+                                onPrefetch={onPrefetch}
                                 depth={depth + 1}
                             />
                         </div>
@@ -198,7 +203,7 @@ function formatBytesShort(n: number): string {
 
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate,
-    isSyncing, isConnected, onSync, onRefresh, onLogout, onSwitchOrganization, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions
+    isSyncing, isConnected, onSync, onRefresh, onLogout, onSwitchOrganization, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions, onPrefetchFolder
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -353,6 +358,7 @@ export function Sidebar({
                     canPaste={canPaste}
                     onProperties={onProperties}
                     onCreate={onCreate}
+                    onPrefetch={(id) => onPrefetchFolder?.(id)}
                 />
             </nav>
 

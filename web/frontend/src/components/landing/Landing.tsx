@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import {
   Cloud, Menu, X, Database, Send, Server, Upload,
   Phone, ArrowRight, Globe, Cpu, Check,
   Facebook, Github, Twitch, Twitter, Instagram,
 } from 'lucide-react';
 import teamBg from '../../assets/Team.png';
-import { CloudHero3D } from '../three/CloudHero3D';
-import { Scene3D } from '../three/Scene3D';
 import { TiltCard } from '../three/TiltCard';
+
+// WebGL scenes carry three.js (~700KB gz) — keep them out of the main bundle
+// and render the rest of the page immediately.
+const CloudHero3D = lazy(() => import('../three/CloudHero3D').then((m) => ({ default: m.CloudHero3D })));
+const Scene3D = lazy(() => import('../three/Scene3D').then((m) => ({ default: m.Scene3D })));
 
 interface LandingProps {
   onSignIn: () => void;
@@ -118,7 +121,9 @@ export function Landing({ onSignIn }: LandingProps) {
           </div>
           <div className="flex justify-center items-center mt-6 md:mt-0">
             {/* Interactive 3D hero cloud — parallax-follows the pointer */}
-            <CloudHero3D className="w-full aspect-square max-w-[300px] md:max-w-[500px]" />
+            <Suspense fallback={<div className="w-full aspect-square max-w-[300px] md:max-w-[500px]" />}>
+              <CloudHero3D className="w-full aspect-square max-w-[300px] md:max-w-[500px]" />
+            </Suspense>
           </div>
         </div>
 
@@ -236,7 +241,9 @@ export function Landing({ onSignIn }: LandingProps) {
       <section id="pricing" className="w-full my-24 relative">
         <div className="absolute w-full h-[520px] bg-slate-900 top-0 left-0 overflow-hidden">
           {/* Floating 3D shapes behind the pricing header */}
-          <Scene3D variant="dark" className="absolute inset-0 opacity-60" particleCount={90} />
+          <Suspense fallback={null}>
+            <Scene3D variant="dark" className="absolute inset-0 opacity-60" particleCount={90} />
+          </Suspense>
         </div>
         <div className="max-w-[1024px] mx-auto py-12 relative">
           <div className="text-center py-8 text-slate-300">

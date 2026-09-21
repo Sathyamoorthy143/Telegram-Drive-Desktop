@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { History } from 'lucide-react';
 
@@ -85,6 +85,25 @@ async function poolCount<T>(items: T[], limit: number, fn: (item: T) => Promise<
         ok += rs.filter(Boolean).length;
     }
     return ok;
+}
+
+/**
+ * Fetch + normalize one folder's rows, shared by the live folder query and
+ * the sidebar hover prefetcher (same cache key, same shape).
+ */
+async function fetchFolderFiles(folderId: number | null): Promise<any[]> {
+    const cacheKey = `files_cache:${folderId ?? 'root'}`;
+    const res = await api.getFiles(folderId ?? undefined);
+    const mapped = res.map((f: any) => ({
+        ...f, sizeStr: formatBytes(f.size), type: f.icon_type || 'file'
+    }));
+    // Offline cache is a fallback, not an archive: skip huge lists
+    // (multi-MB synchronous localStorage writes jank every fetch).
+    try {
+        if (mapped.length <= 500) localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), files: mapped }));
+        else localStorage.removeItem(cacheKey);
+    } catch {}
+    return mapped;
 }
 
 export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLogout: () => void; onSwitchOrganization?: () => void; topBanner?: React.ReactNode }) {
@@ -282,19 +301,13 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     // File query with offline cache fallback (P1-4)
     const { data: allFiles = [], isLoading, error } = useQuery({
         queryKey: ['files', activeFolderId],
+        // Keep the previous folder's list visible while the next one loads —
+        // no full-page skeleton flash when navigating.
+        placeholderData: keepPreviousData,
         queryFn: async () => {
             const cacheKey = `files_cache:${activeFolderId ?? 'root'}`;
             try {
-                const res = await api.getFiles(activeFolderId ?? undefined);
-                const mapped = res.map((f: any) => ({
-                    ...f, sizeStr: formatBytes(f.size), type: f.icon_type || 'file'
-                }));
-                // Offline cache is a fallback, not an archive: skip huge lists
-                // (multi-MB synchronous localStorage writes jank every fetch).
-                try {
-                    if (mapped.length <= 500) localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), files: mapped }));
-                    else localStorage.removeItem(cacheKey);
-                } catch {}
+                const mapped = await fetchFolderFiles(activeFolderId);
                 setIsOffline(false);
                 return mapped;
             } catch (e) {
@@ -675,13 +688,31 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     }, [activeFolderId, askPrompt]);
 
     const handleStar = useCallback(async (file: any) => {
+        const isFav = (favRows as any[]).some((x: any) => (x.message_id ?? x.id) === file.id && (x.folder_id ?? null) === (file.folder_id ?? null));
+        // Optimistic: flip the cached favorites list immediately so the star
+        // icon and the Starred view respond instantly; roll back on failure.
+        queryClient.setQueryData(['favorites'], (old: any) => {
+            const rows: any[] = Array.isArray(old) ? old : [];
+            if (isFav) {
+                return rows.filter((x: any) => !((x.message_id ?? x.id) === file.id && (x.folder_id ?? null) === (file.folder_id ?? null)));
+            }
+            return [...rows, {
+                message_id: file.id,
+                id: file.id,
+                folder_id: file.folder_id ?? activeFolderId ?? null,
+                name: file.name,
+                size: file.size,
+            }];
+        });
+        toast.success(isFav ? 'Removed from Starred' : 'Starred');
         try {
-            const isFav = (favRows as any[]).some((x: any) => (x.message_id ?? x.id) === file.id && (x.folder_id ?? null) === (file.folder_id ?? null));
             await api.starFile(file.id, file.folder_id ?? activeFolderId ?? undefined, !isFav);
-            toast.success(isFav ? 'Removed from Starred' : 'Starred');
-            refetchFav(); queryClient.invalidateQueries({ queryKey: ['favorites'] });
+            refetchFav();
             api.logActivity(isFav ? 'unstar' : 'star', undefined, file.name).catch(()=>{});
-        } catch (e: any) { toast.error(`Star failed: ${e.message}`); }
+        } catch (e: any) {
+            toast.error(`Star failed: ${e.message}`);
+            queryClient.invalidateQueries({ queryKey: ['favorites'] });
+        }
     }, [activeFolderId, favRows, refetchFav, queryClient]);
 
     // Per-file transfer lives in the shared engine adapter (see the
@@ -898,6 +929,15 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         else setPreviewFile(file);
     }, []);
 
+    const prefetchFolder = useCallback((id: number | null) => {
+        if (id === activeFolderId || id === -1 || id === -2 || id === -3) return;
+        queryClient.prefetchQuery({
+            queryKey: ['files', id],
+            queryFn: () => fetchFolderFiles(id),
+            staleTime: 15000,
+        }).catch(() => { /* fire-and-forget: navigation fetches for real */ });
+    }, [activeFolderId, queryClient]);
+
     const handlePreview = useCallback((file: TelegramFile, orderedFiles?: TelegramFile[]) => {
         const contextFiles = (orderedFiles || displayedFiles).filter(f => f.type !== 'folder');
         const contextIndex = contextFiles.findIndex(f => f.id === file.id);
@@ -1041,6 +1081,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
 
 <Sidebar
         folders={folders} activeFolderId={activeFolderId} setActiveFolderId={setActiveFolderId} stats={folderStats}
+        onPrefetchFolder={prefetchFolder}
         onDrop={handleDropOnFolder} onDelete={handleFolderDelete} onCreate={handleCreateFolder}
         onRename={(id, name) => handleRename(id, name, true)}
         onCut={(id) => { setClipboard({ type: 'cut', messageIds: [], folderIds: [id], sourceFolderId: activeFolderId, canPaste: true }); toast.info('Folder cut to clipboard.'); }}

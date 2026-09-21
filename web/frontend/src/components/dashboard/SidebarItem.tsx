@@ -11,9 +11,11 @@ interface SidebarItemProps {
     onDelete?: () => void;
     onContextMenu?: (e: React.MouseEvent) => void;
     folderId: number | null;
+    /** Fire-and-forget data prefetch (e.g. folder contents on hover). */
+    onPrefetch?: () => void;
 }
 
-export function SidebarItem({ icon: Icon, label, active = false, onClick, onDrop, onDelete, onContextMenu }: SidebarItemProps) {
+export function SidebarItem({ icon: Icon, label, active = false, onClick, onDrop, onDelete, onContextMenu, onPrefetch }: SidebarItemProps) {
     const [isOver, setIsOver] = useState(false);
 
     return (
@@ -21,6 +23,8 @@ export function SidebarItem({ icon: Icon, label, active = false, onClick, onDrop
             whileHover={{ x: 2 }}
             whileTap={{ scale: 0.98 }}
             onClick={onClick}
+            onMouseEnter={onPrefetch}
+            onFocus={onPrefetch}
             onDragEnter={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

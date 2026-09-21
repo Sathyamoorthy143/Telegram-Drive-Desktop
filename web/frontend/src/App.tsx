@@ -19,7 +19,19 @@ import { Landing } from "./components/landing/Landing";
 import * as api from "./api";
 import { orgSlugFromPath } from './orgRouting';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Drive listings change rarely minute-to-minute: 30s of freshness kills
+      // redundant refetches when navigating folders, and caching is retained
+      // for 5 minutes so back-and-forth navigation is instant.
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 interface OrgInfo {
   id: string;

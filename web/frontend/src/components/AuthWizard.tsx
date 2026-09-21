@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, Key, Lock, ArrowRight, Settings, Sun, Moon, HelpCircle, ExternalLink, X, Heart, Eye, EyeOff, Cloud } from "lucide-react";
 import { useTheme } from '../context/ThemeContext';
 import { requestCode, signIn, checkPassword, getStore } from '../api';
-import { Scene3D } from './three/Scene3D';
 import { TiltCard } from './three/TiltCard';
+
+// The WebGL scene pulls in three.js (~700KB) — load it after first paint so
+// the login form is interactive immediately on slow connections.
+const Scene3D = lazy(() => import('./three/Scene3D').then((m) => ({ default: m.Scene3D })));
 
 type Step = "setup" | "phone" | "code" | "password";
 
@@ -170,7 +173,9 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
     return (
         <div className="h-full w-full auth-gradient flex items-center justify-center p-6 relative overflow-hidden">
             {/* Interactive 3D backdrop — floats behind the login card */}
-            <Scene3D variant="light" className="absolute inset-0 z-0" />
+            <Suspense fallback={null}>
+                <Scene3D variant="light" className="absolute inset-0 z-0" />
+            </Suspense>
             <AuthThemeToggle />
 
             <TiltCard className="relative z-10 w-full max-w-md" intensity={4}>

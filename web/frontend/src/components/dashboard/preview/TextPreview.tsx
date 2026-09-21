@@ -4,7 +4,7 @@ import * as api from '../../../api';
 import { TelegramFile } from '../../../types';
 import { PreviewError, PreviewSpinner } from './shared';
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB — plenty for a text preview
+const MAX_PREVIEW_BYTES = 256 * 1024; // first 256KB via Range — instant previews
 const MAX_LINES = 10_000;
 
 interface TextPreviewProps {
@@ -17,21 +17,23 @@ export function TextPreview({ file, activeFolderId }: TextPreviewProps) {
     const [text, setText] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [wrap, setWrap] = useState(true);
+    const [byteTruncated, setByteTruncated] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
         setText(null);
         setError(null);
+        setByteTruncated(false);
 
-        api.downloadFile(((file as any).folder_id ?? activeFolderId ?? 0) as number, file.id)
-            .then(async (blob) => {
+        api.fetchFileSlice(
+            ((file as any).folder_id ?? activeFolderId ?? 0) as number,
+            file.id,
+            MAX_PREVIEW_BYTES,
+        )
+            .then(({ text: content, truncated }) => {
                 if (cancelled) return;
-                if (blob.size > MAX_BYTES) {
-                    setError('File too large to preview (>5MB). Download it to view.');
-                    return;
-                }
-                const content = await blob.text();
-                if (!cancelled) setText(content);
+                setText(content);
+                setByteTruncated(truncated);
             })
             .catch((e) => {
                 if (!cancelled) setError(e?.message || 'Failed to load file');
@@ -44,15 +46,21 @@ export function TextPreview({ file, activeFolderId }: TextPreviewProps) {
     if (text === null) return <PreviewSpinner label="Downloading from Telegram..." />;
 
     const allLines = text.split('\n');
-    const truncated = allLines.length > MAX_LINES;
-    const lines = truncated ? allLines.slice(0, MAX_LINES) : allLines;
+    const lineCapped = allLines.length > MAX_LINES;
+    const lines = lineCapped ? allLines.slice(0, MAX_LINES) : allLines;
+    const sizeLabel = Math.round(MAX_PREVIEW_BYTES / 1024);
 
     return (
         <div className="absolute inset-0 flex flex-col bg-[#0d1117] overflow-hidden">
             <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-white/10 shrink-0">
-                {truncated && (
-                    <span className="text-xs text-yellow-500 mr-auto">
-                        Showing first {MAX_LINES.toLocaleString()} lines
+                {byteTruncated && (
+                    <span className="text-xs text-yellow-500 mr-auto" title="Preview streams only the first part of the file">
+                        Showing first {sizeLabel} KB — download the file to see everything
+                    </span>
+                )}
+                {lineCapped && (
+                    <span className="text-xs text-yellow-500">
+                        {byteTruncated ? '· ' : ''}capped at {MAX_LINES.toLocaleString()} lines
                     </span>
                 )}
                 <button

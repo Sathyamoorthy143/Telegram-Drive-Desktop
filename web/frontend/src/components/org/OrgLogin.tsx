@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Building2, LogIn } from 'lucide-react';
 import * as api from '../../api';
-import { Scene3D } from '../three/Scene3D';
 import { TiltCard } from '../three/TiltCard';
+
+// Lazy WebGL backdrop — keeps three.js out of the main bundle.
+const Scene3D = lazy(() => import('../three/Scene3D').then((m) => ({ default: m.Scene3D })));
 
 interface Props {
   orgId: string;
@@ -56,7 +58,9 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
   return (
     <div className="h-full w-full flex items-center justify-center p-6 bg-zinc-200 relative overflow-hidden">
       {/* Interactive 3D backdrop — floats behind the org login card */}
-      <Scene3D variant="light" className="absolute inset-0 z-0" />
+      <Suspense fallback={null}>
+        <Scene3D variant="light" className="absolute inset-0 z-0" />
+      </Suspense>
       <TiltCard className="relative z-10 w-full max-w-sm" intensity={5}>
       <form onSubmit={submit} className="w-full bg-white/90 backdrop-blur-md border border-slate-200 rounded-2xl p-6 shadow-xl text-zinc-900">
         <div className="flex items-center gap-3 mb-1">

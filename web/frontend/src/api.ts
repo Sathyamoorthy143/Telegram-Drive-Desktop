@@ -197,6 +197,42 @@ export const downloadFile = async (
   return res.blob();
 };
 
+/** Direct (range-capable) download URL for the master drive. */
+export const getDownloadUrl = (folder_id: number | string, message_id: number) =>
+  `${API_BASE}/api/files/${folder_id}/${message_id}/download`;
+
+export const getOrgDownloadUrl = (orgId: string, folder_id: number | string, message_id: number) =>
+  `${API_BASE}/api/org/${orgId}/files/${folder_id}/${message_id}/download`;
+
+/**
+ * Fetch only the first `maxBytes` of a file via an HTTP Range request.
+ * The backend streams 206 partial content, so text previews appear
+ * instantly instead of waiting for a full Telegram download.
+ */
+export const fetchFileSlice = async (
+  folder_id: number,
+  message_id: number,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean }> => {
+  const orgId = getOrgContext();
+  const url = orgId
+    ? getOrgDownloadUrl(orgId, folder_id, message_id)
+    : getDownloadUrl(folder_id, message_id);
+  const headers: Record<string, string> = { Range: `bytes=0-${maxBytes - 1}` };
+  if (orgId) {
+    const token = getOrgToken(orgId);
+    if (token) headers['X-Org-Token'] = token;
+  }
+  const res = await fetch(url, { headers });
+  if (!res.ok && res.status !== 206) throw new Error(`Preview failed: ${res.status}`);
+  const buf = await res.arrayBuffer();
+  let text = new TextDecoder('utf-8').decode(buf);
+  // The range boundary can split a multi-byte UTF-8 sequence — drop the
+  // dangling replacement character.
+  if (res.status === 206 && text.endsWith('\uFFFD')) text = text.slice(0, -1);
+  return { text, truncated: res.status === 206 };
+};
+
 export const deleteFile = (message_id: number, folder_id?: number) => {
   const orgId = getOrgContext();
   if (orgId) return deleteOrgFile(orgId, message_id, folder_id);
