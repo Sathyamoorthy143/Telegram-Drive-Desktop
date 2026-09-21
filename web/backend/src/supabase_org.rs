@@ -125,10 +125,34 @@ pub async fn create_organization(
     let resp = sb_req("POST", "organizations", Some(row)).await?;
     if !resp.status().is_success() {
         let txt = resp.text().await.unwrap_or_default();
+        // Deployments that never ran the master_admin_id text migration type
+        // the column as uuid, which rejects a numeric Telegram id. Retry
+        // without the owner column so org creation still works; ownership is
+        // claimed later via /api/admin/my-orgs.
+        if master_admin_id.is_some() && is_uuid_type_error(&txt) {
+            let mut retry_row = serde_json::json!({ "name": name, "subdomain": subdomain.to_lowercase() });
+            if let Some(h) = entry_password_hash {
+                retry_row["entry_password_hash"] = serde_json::Value::String(h.to_string());
+            }
+            let resp2 = sb_req("POST", "organizations", Some(retry_row)).await?;
+            if !resp2.status().is_success() {
+                let txt2 = resp2.text().await.unwrap_or_default();
+                return Err(format!("create organization failed: {}", txt2));
+            }
+            let rows2: Vec<Organization> = resp2.json().await.map_err(|e| e.to_string())?;
+            return rows2.into_iter().next().ok_or_else(|| "create returned no row".into());
+        }
         return Err(format!("create organization failed: {}", txt));
     }
     let rows: Vec<Organization> = resp.json().await.map_err(|e| e.to_string())?;
     rows.into_iter().next().ok_or_else(|| "create returned no row".into())
+}
+
+/// True when Postgres rejected a value because the target column is
+/// uuid-typed (SQLSTATE 22P02) — e.g. a numeric Telegram id written to
+/// `master_admin_id` on deployments missing the text-conversion migration.
+pub fn is_uuid_type_error(msg: &str) -> bool {
+    msg.contains("22P02") || msg.to_lowercase().contains("invalid input syntax for type uuid")
 }
 
 // ---- Org settings ----
@@ -520,5 +544,15 @@ mod tests {
         let orphan = Organization { master_admin_id: None, ..org.clone() };
         assert!(org_visible_to(&orphan, "99"));
         assert!(org_visible_to(&orphan, "1"));
+    }
+
+    #[test]
+    fn uuid_type_error_detection() {
+        assert!(is_uuid_type_error(
+            "{\"code\":\"22P02\",\"message\":\"invalid input syntax for type uuid: \\\"8646965285\\\"\"}"
+        ));
+        assert!(is_uuid_type_error("invalid input syntax for type uuid: \"123\""));
+        assert!(!is_uuid_type_error("duplicate key value violates unique constraint"));
+        assert!(!is_uuid_type_error(""));
     }
 }

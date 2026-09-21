@@ -283,10 +283,18 @@ pub async fn reset_entry_password(
         _ => {}
     }
     let hash = supabase_org::hash_org_entry_password(new_password, &org.id);
-    let mut patch = serde_json::json!({ "entry_password_hash": hash });
+    // Legacy org without an owner: claim it best-effort, but never let the
+    // claim break the password reset. Old deployments type `master_admin_id`
+    // as uuid, where a numeric Telegram id is rejected (SQLSTATE 22P02).
     if org.master_admin_id.is_none() {
-        patch["master_admin_id"] = serde_json::Value::String(uid_s);
+        let _ = supabase_org::sb_req(
+            "PATCH",
+            &format!("organizations?id=eq.{}", org.id),
+            Some(serde_json::json!({ "master_admin_id": uid_s })),
+        )
+        .await;
     }
+    let patch = serde_json::json!({ "entry_password_hash": hash });
     match supabase_org::sb_req("PATCH", &format!("organizations?id=eq.{}", org.id), Some(patch)).await {
         Ok(resp) if resp.status().is_success() => {
             let ip = req.peer_addr().map(|a| a.ip().to_string());
