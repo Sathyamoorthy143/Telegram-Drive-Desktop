@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen, HardDrive, X } from 'lucide-react';
-import { OrgShell, PageHeader, Banner, OrgCard, TabBar } from './ui';
+import { OrgShell, PageHeader, Banner, OrgCard, EmptyState, TabBar } from './ui';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
@@ -567,10 +567,9 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
         </>}
       />
 
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="max-w-4xl mx-auto">
-          {tab === 'files' && (
+      {tab === 'files' && (
             <div>
+              <OrgCard>
               {storage && !storage.provisioned && (
                 <Banner variant="warning">Organization not provisioned yet — ask the master admin to provision Telegram channels before files appear.</Banner>
               )}
@@ -687,7 +686,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
                   <button onClick={() => loadFiles(activeFolderId)} className="px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">Retry</button>
                 </div>
               ) : files.length === 0 ? (
-                <p className="text-sm text-telegram-subtext">No files yet.</p>
+                <EmptyState>No files yet.</EmptyState>
               ) : (
                 <ul className="grid gap-1">
                   {files.map((f: any) => (
@@ -710,11 +709,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
                   ))}
                 </ul>
               )}
+              </OrgCard>
             </div>
           )}
 
           {tab === 'trash' && (
             <div>
+              <OrgCard>
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Org trash (separate from Telegram recycle bin)</h2>
               {trashLoading ? (
                 <p className="text-sm text-telegram-subtext">Loading trash…</p>
@@ -724,7 +725,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
                   <button onClick={loadTrash} className="px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover">Retry</button>
                 </div>
               ) : trash.length === 0 ? (
-                <p className="text-sm text-telegram-subtext">Trash is empty.</p>
+                <EmptyState>Trash is empty.</EmptyState>
               ) : (
                 <ul className="grid gap-1">
                   {trash.map((t: any, i: number) => (
@@ -744,6 +745,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
                   ))}
                 </ul>
               )}
+              </OrgCard>
             </div>
           )}
 
@@ -934,8 +936,6 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
               </OrgCard>
             </div>
           )}
-        </div>
-      </div>
     </OrgShell>
   );
 }
