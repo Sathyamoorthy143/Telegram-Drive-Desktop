@@ -1,4 +1,10 @@
-# Tier 1 — Performance
+# 📍 LIVE STATUS
+> **Currently working on:** 🔵 TIER 2 — Experience — IN PROGRESS (order: #8 ⌘K palette → #14 view memory → #11 shift-select/status bar → #10 ZIP download → #12 PDF dark mode → #9/#15 as capacity allows)
+> **Tier 1:** ✅ COMPLETE (7/7 done, pushed `2db4c53`)
+
+---
+
+# Tier 2 — Experience 🔵 IN PROGRESS
 
 - [x] #1 Bundle diet — export libs already dynamic (`docx`, `pptxgenjs`); lazy-load 3D scenes; expanded manualChunks (react/motion/query/three/pdf/office/editor/icons)
 - [x] #2 Thumbnails — backend immutable cache headers already set; added frontend LRU thumbnail cache + `loading="lazy"`/`decoding="async"` on images

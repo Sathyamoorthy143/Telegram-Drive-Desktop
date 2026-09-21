@@ -27,6 +27,7 @@ const PdfViewer = lazy(() => import('./PdfViewer').then((m) => ({ default: m.Pdf
 const SheetEditor = lazy(() => import('./SheetEditor').then((m) => ({ default: m.SheetEditor })));
 const DocEditor = lazy(() => import('./DocEditor').then((m) => ({ default: m.DocEditor })));
 const SlideEditor = lazy(() => import('./SlideEditor').then((m) => ({ default: m.SlideEditor })));
+const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 import { getEditKind, getPreviewKind, getFileTypeCategory, EditKind } from '../../utils';
 import { splitRelativePath, buildFolderIndex, childFolderKey } from '../../orgUpload';
 import { useUploadEngine } from '../../hooks/useUploadEngine';
@@ -185,6 +186,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showActivityLog, setShowActivityLog] = useState(false);
     const [showAllVersions, setShowAllVersions] = useState(false);
+    const [showCommandPalette, setShowCommandPalette] = useState(false);
     const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
     const uploadFolderByItemRef = useRef<Map<string, number | undefined>>(new Map());
@@ -279,8 +281,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     useEffect(() => {
         const s = localStorage.getItem('viewSettings');
         if (s) { try { setViewSettings(JSON.parse(s)); } catch {} }
-    }, []);
-    useEffect(() => { localStorage.setItem('viewSettings', JSON.stringify(viewSettings)); }, [viewSettings]);
+        // Per-folder view memory: restore this folder's saved sort/group/mode
+        const perFolder = localStorage.getItem(`td_view:${activeFolderId ?? 'root'}`);
+        if (perFolder) { try { setViewSettings((prev) => ({ ...prev, ...JSON.parse(perFolder) })); } catch {} }
+    }, [activeFolderId]);
+    useEffect(() => {
+        localStorage.setItem('viewSettings', JSON.stringify(viewSettings));
+        // Persist the view-specific subset per folder (excluding transient pane flag)
+        const { showPreviewPane, ...viewPrefs } = viewSettings;
+        try { localStorage.setItem(`td_view:${activeFolderId ?? 'root'}`, JSON.stringify(viewPrefs)); } catch {}
+    }, [viewSettings, activeFolderId]);
 
     // Load user info
     useEffect(() => { api.getUserInfo().then(setUserInfo).catch(() => {}); }, []);
@@ -907,14 +917,28 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     const handleSelectAll = useCallback(() => {
         setSelectedIds(displayedFiles.map(f => f.id));
     }, [displayedFiles]);
+    const lastClickedId = useRef<number | null>(null);
     const handleFileClick = useCallback((e: React.MouseEvent, id: number) => {
         e.stopPropagation();
         if (e.metaKey || e.ctrlKey) {
             setSelectedIds(ids => ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id]);
+            lastClickedId.current = id;
+        } else if (e.shiftKey) {
+            // Shift+click: range-select between the last anchor and this file
+            const anchor = lastClickedId.current ?? id;
+            const a = displayedFiles.findIndex(f => f.id === anchor);
+            const b = displayedFiles.findIndex(f => f.id === id);
+            if (a !== -1 && b !== -1) {
+                const [lo, hi] = a <= b ? [a, b] : [b, a];
+                setSelectedIds(displayedFiles.slice(lo, hi + 1).map(f => f.id));
+            } else {
+                setSelectedIds([id]);
+            }
         } else {
             setSelectedIds([id]);
+            lastClickedId.current = id;
         }
-    }, []);
+    }, [displayedFiles]);
     const handleToggleSelection = useCallback((id: number) => {
         setSelectedIds(ids => ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id]);
     }, []);
@@ -1033,6 +1057,68 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         enabled: !previewFile && !playingFile && !pdfFile && !showMoveModal
     });
 
+    // Global ⌘K / Ctrl+K toggles the command palette
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setShowCommandPalette((v) => !v);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // Batch download selected files as one ZIP (client-side, capped)
+    const handleDownloadSelectedZip = useCallback(async () => {
+        const targets = displayedFiles.filter((f) => selectedIds.includes(f.id) && f.type !== 'folder');
+        if (targets.length === 0) return;
+        if (targets.length > 25) { toast.error('ZIP download is capped at 25 files — select fewer.'); return; }
+        const totalBytes = targets.reduce((s, f) => s + (f.size || 0), 0);
+        if (totalBytes > 100 * 1024 * 1024) { toast.error('ZIP download is capped at 100 MB total — select smaller files.'); return; }
+        const toastId = toast.loading(`Preparing ZIP 0/${targets.length}…`);
+        try {
+            const JSZip = (await import('jszip')).default;
+            const zip = new JSZip();
+            const used = new Set<string>();
+            for (let i = 0; i < targets.length; i++) {
+                const f = targets[i];
+                toast.loading(`Preparing ZIP ${i + 1}/${targets.length} — ${f.name}`, { id: toastId });
+                let blob: Blob;
+                try {
+                    blob = await api.downloadFile(((f as any).folder_id ?? activeFolderId ?? 0) as number, f.id);
+                } catch {
+                    blob = await fetch(api.getPreviewUrl(((f as any).folder_id ?? activeFolderId ?? 0), f.id)).then((r) => {
+                        if (!r.ok) throw new Error('fetch failed');
+                        return r.blob();
+                    });
+                }
+                let name = f.name || `file-${f.id}`;
+                if (used.has(name)) {
+                    const dot = name.lastIndexOf('.');
+                    const base = dot > 0 ? name.slice(0, dot) : name;
+                    const ext = dot > 0 ? name.slice(dot) : '';
+                    let n = 2;
+                    while (used.has(`${base} (${n})${ext}`)) n++;
+                    name = `${base} (${n})${ext}`;
+                }
+                used.add(name);
+                zip.file(name, blob);
+            }
+            toast.loading('Compressing…', { id: toastId });
+            const out = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(out);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cloudsphere-files-${new Date().toISOString().slice(0, 10)}.zip`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 8000);
+            toast.success(`ZIP downloaded (${targets.length} files, ${formatBytes(out.size)})`, { id: toastId });
+        } catch (e: any) {
+            toast.error(`ZIP failed: ${e?.message || e}`, { id: toastId });
+        }
+    }, [displayedFiles, selectedIds, activeFolderId]);
+
     const isDragging = false; // simplified for web
     const currentFolderName = activeFolderId === null ? "Saved Messages" : folders.find(f => f.id === activeFolderId)?.name || "Folder";
     const previewNeighbors = previewNeighborFiles();
@@ -1074,6 +1160,25 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                     />
                 )}
                 {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} key="settings-modal" />}
+                <Suspense fallback={null}>
+                    <CommandPalette
+                        open={showCommandPalette}
+                        onClose={() => setShowCommandPalette(false)}
+                        folders={folders}
+                        selectedCount={selectedIds.length}
+                        onOpenFolder={(id) => setActiveFolderId(id)}
+                        onPreviewFile={(f) => handlePreview(f, displayedFiles)}
+                        onManualUpload={handleManualUpload}
+                        onFolderUpload={handleFolderUpload}
+                        onSettings={() => setShowSettingsModal(true)}
+                        onStarred={() => setActiveFolderId(-2)}
+                        onRecent={() => setActiveFolderId(-3)}
+                        onTrash={() => setActiveFolderId(-1)}
+                        onActivity={() => setShowActivityLog(true)}
+                        onVersions={() => setShowAllVersions(true)}
+                        onDownloadSelectedZip={handleDownloadSelectedZip}
+                    />
+                </Suspense>
                 {showActivityLog && <TransferLogs onClose={() => setShowActivityLog(false)} key="activity-modal" />}
                 {showAllVersions && <AllVersionsModal onClose={() => setShowAllVersions(false)} key="all-versions-modal" />}
                 {propertyFile && <PropertiesModal file={propertyFile} onClose={() => setPropertyFile(null)} key="props-modal" />}

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize, Moon } from 'lucide-react';
 import * as api from '../../api';
 // Use the legacy build — the modern build uses Map.getOrInsertComputed()
 // which isn't available in Tauri's WebKit WebView
@@ -22,6 +22,7 @@ interface PdfViewerProps {
 
 export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalItems, activeFolderId }: PdfViewerProps) {
     const [streamToken, setStreamToken] = useState<string | null>(null);
+    const [darkMode, setDarkMode] = useState(false);
     const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
     const [numPages, setNumPages] = useState<number>(0);
     const [scale, setScale] = useState<number>(1.2);
@@ -186,6 +187,10 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                     <button onClick={handleFitWidth} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Fit Width">
                         <Maximize className="w-4 h-4" />
                     </button>
+                    <div className="w-px h-4 bg-white/20 mx-1"></div>
+                    <button onClick={() => setDarkMode((d) => !d)} className={`p-2 rounded-full transition-colors ${darkMode ? 'text-amber-300 bg-white/10' : 'text-white/70 hover:text-white hover:bg-white/10'}`} title="Toggle dark mode (invert white pages)">
+                        <Moon className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 
@@ -235,7 +240,10 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                 )}
 
                 {pdf && numPages > 0 && (
-                    <div className="flex flex-col gap-4 w-full items-center">
+                    <div
+                        className="flex flex-col gap-4 w-full items-center"
+                        style={darkMode ? { filter: 'invert(0.92) hue-rotate(180deg)' } : undefined}
+                    >
                         {Array.from({ length: numPages }, (_, index) => (
                             <PdfPage
                                 key={`${file.id}_page_${index + 1}`}
