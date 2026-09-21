@@ -193,6 +193,52 @@ pub async fn org_download_file(
     .await
 }
 
+/// `GET /api/org/{id}/files/{fid}/{mid}/thumbnail` — viewer+ (grant `view`).
+/// Same bytes as download, but: no per-hit audit row (a page of thumbnails
+/// must not write N audit rows), and long immutable cache headers so the
+/// browser serves repeat views from HTTP cache instead of re-downloading.
+/// Thumbnails stream via `<img src>` — never fetch-to-blob (blob object URLs
+/// bypass the HTTP cache entirely).
+pub async fn org_thumbnail(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    path: web::Path<(String, i64, i32)>,
+) -> impl Responder {
+    let (org_id, fid, mid) = path.into_inner();
+    let sess = match require_org_role(&state, &req, &org_id, "viewer").await {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    if let Err(e) = crate::auth_org::check_folder_access(
+        &state,
+        &org_id,
+        &sess,
+        if fid == 0 { None } else { Some(fid) },
+        "view",
+    )
+    .await
+    {
+        return e;
+    }
+    let org_main = match org_main_or_400(&state, &org_id).await {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    let fid_opt = if fid == 0 { None } else { Some(fid) };
+    // Same rationale as download: small fixed workers + global semaphore.
+    crate::serve_media::serve_media(
+        &state,
+        &req,
+        fid_opt,
+        Some(org_main),
+        mid,
+        4usize,
+        None,
+        "public, max-age=31536000, immutable",
+    )
+    .await
+}
+
 #[derive(serde::Deserialize)]
 pub struct OrgDeleteRequest {
     pub message_id: i32,

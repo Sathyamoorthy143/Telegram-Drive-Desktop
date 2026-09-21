@@ -5,6 +5,14 @@ import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
 
+/**
+ * Session thumbnail blob cache: key `${orgId}:${folderId}:${messageId}`.
+ * Remounts and folder switches reuse object URLs instead of re-downloading.
+ * Entries are added only for small (≤2MB) thumbs and evicted past 200, so
+ * videos can't bloat memory.
+ */
+const thumbCache = new Map<string, string>();
+
 function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; folderId?: number; messageId: number; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -33,13 +41,29 @@ function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; fo
   }, []);
   useEffect(() => {
     if (!visible) return;
+    // Session blob cache: remounts/folder switches reuse the object URL
+    // instead of re-downloading. Bounded (small thumbs only) so videos
+    // can't blow up memory.
+    const key = `${orgId}:${folderId ?? 0}:${messageId}`;
+    const hit = thumbCache.get(key);
+    if (hit) { setUrl(hit); return; }
     const ctrl = new AbortController();
     let cancelled = false;
     let objectUrl: string | null = null;
+    let cacheable = false;
     setFailed(false);
-    api.downloadOrgFileBlob(orgId, folderId, messageId, { signal: ctrl.signal }).then((blob) => {
+    api.fetchOrgThumbnail(orgId, folderId, messageId, { signal: ctrl.signal }).then((blob) => {
       if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
+      // Cache small thumbs only (≤2MB); evict oldest past 200 entries.
+      if (blob.size <= 2 * 1024 * 1024) {
+        if (thumbCache.size >= 200) {
+          const oldest = thumbCache.keys().next().value;
+          if (oldest !== undefined) { URL.revokeObjectURL(thumbCache.get(oldest)!); thumbCache.delete(oldest); }
+        }
+        thumbCache.set(key, objectUrl);
+        cacheable = true;
+      }
       setUrl(objectUrl);
     }).catch((e: any) => {
       if (cancelled || e?.name === 'AbortError') return;
@@ -48,7 +72,7 @@ function OrgImageThumb({ orgId, folderId, messageId, name }: { orgId: string; fo
     return () => {
       cancelled = true;
       ctrl.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (objectUrl && !cacheable) URL.revokeObjectURL(objectUrl);
     };
   }, [orgId, folderId, messageId, visible, attempt]);
   if (failed) {

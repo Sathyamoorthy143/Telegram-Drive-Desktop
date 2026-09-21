@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen, HardDrive, Eye, Loader2, Search } from 'lucide-react';
 import { FolderMetadata, TelegramFile } from '../../types';
 import { buildFolderTree, FolderNode } from '../../utils/treeUtils';
@@ -31,14 +31,20 @@ export function TreeExplorer({
     const [expanded, setExpanded] = useState<Record<string, boolean>>({ [ROOT_KEY]: true });
     const [cache, setCache] = useState<Record<string, FolderFiles>>({});
     const [filter, setFilter] = useState('');
+    // In-flight guard + cache mirror: rapid expand/collapse and
+    // render-triggered loads must not fire duplicate fetches for the same
+    // folder (the old setCache check couldn't dedupe in-flight requests).
+    const inFlight = useRef<Set<string>>(new Set());
+    const cachedKeys = useRef<Set<string>>(new Set());
 
     const loadFolder = useCallback(async (folderId: number | null) => {
         const key = keyOf(folderId);
+        if (cachedKeys.current.has(key) || inFlight.current.has(key)) return;
+        inFlight.current.add(key);
         setCache(prev => {
             if (prev[key]) return prev;
             return { ...prev, [key]: { files: [], loading: true } };
         });
-        // skip if already cached (check inside updater above isn't readable; re-check)
         try {
             const res = await api.getFiles(folderId ?? undefined);
             const mapped: TelegramFile[] = res.map((f: any) => ({
@@ -47,12 +53,18 @@ export function TreeExplorer({
                 sizeStr: formatBytes(f.size),
                 type: f.icon_type || 'file',
             }));
+            cachedKeys.current.add(key);
             setCache(prev => ({ ...prev, [key]: { files: mapped, loading: false } }));
         } catch (e: any) {
             setCache(prev => {
-                if (prev[key]?.files?.length) return { ...prev, [key]: { ...prev[key], loading: false } };
+                if (prev[key]?.files?.length) {
+                    cachedKeys.current.add(key);
+                    return { ...prev, [key]: { ...prev[key], loading: false } };
+                }
                 return { ...prev, [key]: { files: [], loading: false, error: e?.message || 'Failed to load' } };
             });
+        } finally {
+            inFlight.current.delete(key);
         }
     }, []);
 

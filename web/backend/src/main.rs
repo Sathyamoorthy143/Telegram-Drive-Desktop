@@ -147,10 +147,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::PayloadConfig::new(5 * 1024 * 1024 * 1024))
             .wrap(cors)
             // Brotli/gzip JSON responses (~60-80% smaller file lists and
-            // activity feeds). actix's Compression skips already-compressed
+            // activity feeds). Compress skips already-compressed
             // media (image/video/audio) and 206 partial content, so streaming
             // and range requests are unaffected.
-            .wrap(Compression::default())
+            .wrap(Compress::default())
             .route("/api/health", web::get().to(keep_alive::health_check))
             .route("/health", web::get().to(keep_alive::health_check))
             .route("/api/debug/upload-probe", web::get().to(debug::upload_probe))
@@ -258,6 +258,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/org/{id}/grants/delete", web::post().to(orgs::delete_grant_hdl))
                     .route("/org/{id}/files", web::get().to(org_files::org_get_files))
                     .route("/org/{id}/files/{fid}/{mid}/download", web::get().to(org_files::org_download_file))
+                    .route("/org/{id}/files/{fid}/{mid}/thumbnail", web::get().to(org_files::org_thumbnail))
                     .route("/org/{id}/files/upload", web::post().to(org_files::org_upload_file))
                     .route("/org/{id}/files/upload/init", web::post().to(chunked::org_init_upload))
                     .route("/org/{id}/files/upload/chunk", web::put().to(chunked::org_put_chunk))

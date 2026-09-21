@@ -859,6 +859,26 @@ export const downloadOrgFileBlob = async (
   return res.blob();
 };
 
+/**
+ * Org thumbnail fetch (viewer+ `view` grant, no audit row per view).
+ * Separate from download: thumbnails must not cost an audit write each.
+ */
+export const fetchOrgThumbnail = async (
+  orgId: string,
+  folder_id: number | undefined,
+  message_id: number,
+  options?: { signal?: AbortSignal },
+): Promise<Blob> => {
+  const fid = folder_id ?? 0;
+  const orgToken = getOrgToken(orgId);
+  const res = await fetch(`${API_BASE}/api/org/${orgId}/files/${fid}/${message_id}/thumbnail`, {
+    headers: orgToken ? { 'X-Org-Token': orgToken } : {},
+    signal: options?.signal,
+  });
+  if (!res.ok) throw new Error(`Thumbnail failed: ${res.status}`);
+  return res.blob();
+};
+
 export const uploadOrgFile = (orgId: string, file: File, folder_id?: number, options?: { signal?: AbortSignal }) => {
   const formData = new FormData();
   formData.append('file', file);
