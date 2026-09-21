@@ -50,9 +50,26 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
 
         const streamUrl = api.getStreamUrl(activeFolderId ?? 'home', file.id, streamToken);
 
-        const loadingTask = pdfjsLib.getDocument(streamUrl);
+        let loadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;
+        const loadDocument = async () => {
+            try {
+                loadingTask = pdfjsLib.getDocument(streamUrl);
+                return await loadingTask.promise;
+            } catch (streamErr) {
+                if (cancelled) throw streamErr;
+                // Stream endpoint unreachable — fall back to a full blob download.
+                console.warn('PDF stream failed, falling back to blob download:', streamErr);
+                const blob = await api.downloadFile(
+                    ((file as any).folder_id ?? activeFolderId ?? 0) as number,
+                    file.id,
+                );
+                const data = await blob.arrayBuffer();
+                loadingTask = pdfjsLib.getDocument({ data });
+                return await loadingTask.promise;
+            }
+        };
 
-        loadingTask.promise.then(
+        loadDocument().then(
             (pdfDoc) => {
                 if (cancelled) {
                     pdfDoc.destroy();
@@ -77,7 +94,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
 
         return () => {
             cancelled = true;
-            loadingTask.destroy();
+            loadingTask?.destroy();
         };
     }, [streamToken, activeFolderId, file.id]);
 

@@ -634,3 +634,29 @@ body,
   transition: background-color 0.5s ease;
 }
 .cs-btn-ghost:hover { background: #fbbf24; }
+
+/* ---- Built-in office preview renderers ---- */
+.office-doc img { max-width: 100%; height: auto; }
+.office-doc h1, .office-doc h2, .office-doc h3, .office-doc h4 {
+  margin: 1em 0 0.4em;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.office-doc p { margin: 0 0 0.75em; }
+.office-doc ul, .office-doc ol { margin: 0 0 0.75em 1.5em; }
+.office-doc table { border-collapse: collapse; margin: 0 0 1em; width: 100%; }
+.office-doc td, .office-doc th { border: 1px solid #d4d4d8; padding: 6px 10px; }
+.office-doc a { color: #2563eb; text-decoration: underline; }
+
+.office-sheet table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.office-sheet td, .office-sheet th {
+  border: 1px solid #e4e4e7;
+  padding: 5px 10px;
+  white-space: nowrap;
+  color: #18181b;
+}
+.office-sheet tr:first-child td, .office-sheet th {
+  background: #f4f4f5;
+  font-weight: 700;
+  color: #1e3a8a;
+}

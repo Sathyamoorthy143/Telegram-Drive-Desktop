@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Download, ExternalLink, FileWarning, Lock, PenLine } from 'lucide-react';
 import * as api from '../../api';
 import { TelegramFile } from '../../types';
-import { getPreviewKind, getEditKind, PreviewKind } from '../../utils';
+import { getPreviewKind, getEditKind, getFileExtension, PreviewKind } from '../../utils';
+import { TextPreview } from './preview/TextPreview';
+import { OfficePreview, OfficeVariant } from './preview/OfficePreview';
 
 interface FrameViewerProps {
     file: TelegramFile;
@@ -15,11 +17,21 @@ interface FrameViewerProps {
     activeFolderId: number | null;
 }
 
-const OFFICE_EMBED = 'https://view.officeapps.live.com/op/embed.aspx?src=';
-
 export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentIndex, totalItems, activeFolderId }: FrameViewerProps) {
     const isEncrypted = file.name.endsWith('.enc');
     const kind: PreviewKind = isEncrypted ? 'none' : getPreviewKind({ name: file.name, mime_type: file.mime_type, file_ext: file.file_ext });
+    const ext = getFileExtension(file.name);
+    // Office docs split into doc / sheet / slide sub-renderers (all client-side).
+    const officeVariant: OfficeVariant | null =
+        kind === 'office'
+            ? ['xls', 'xlsx', 'ods'].includes(ext)
+                ? 'sheet'
+                : ['ppt', 'pptx', 'odp'].includes(ext)
+                    ? 'slide'
+                    : 'doc'
+            : ext === 'csv' && kind === 'text'
+                ? 'sheet'
+                : null;
     const [frameSrc, setFrameSrc] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(
@@ -36,22 +48,13 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
 
         const build = async () => {
             try {
-                if (kind === 'office') {
-                    const res: any = await api.createShare(
-                        file.id,
-                        (file as any).folder_id ?? activeFolderId ?? undefined,
-                        1
-                    );
-                    if (cancelled) return;
-                    const publicUrl = res.url || api.getShareUrl(res.token);
-                    setFrameSrc(`${OFFICE_EMBED}${encodeURIComponent(publicUrl)}`);
-                    return;
-                }
+                // Text / code / office files are rendered by dedicated
+                // client-side viewers below — nothing to fetch here.
                 if (kind === 'none' || kind === 'unknown') {
                     setError('Preview not available for this file type.');
                     return;
                 }
-                if (kind === 'image' || kind === 'text' || kind === 'code') {
+                if (kind === 'image') {
                     try {
                         const blob = await api.downloadFile(
                             ((file as any).folder_id ?? activeFolderId ?? 0) as number,
@@ -66,7 +69,6 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                         return;
                     }
                 }
-                setFrameSrc(api.getPreviewUrl(activeFolderId ?? 'home', file.id));
             } catch (e: any) {
                 if (!cancelled) setError(e?.message || 'Failed to load preview');
             } finally {
@@ -112,6 +114,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
         kind === 'audio' ? 'Audio' :
         kind === 'pdf' ? 'PDF' :
         kind === 'text' ? 'Text' :
+        kind === 'code' ? 'Code' :
         kind === 'image' ? 'Image' : 'File';
 
     return (
@@ -126,7 +129,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                             {typeof currentIndex === 'number' && typeof totalItems === 'number' && totalItems > 0 && (
                                 <span className="ml-2">{currentIndex + 1}/{totalItems}</span>
                             )}
-                            {kind === 'office' && <span className="ml-2 text-white/30">via Office viewer • link expires in 1 day</span>}
+                            {kind === 'office' && <span className="ml-2 text-white/30">rendered locally</span>}
                         </p>
                     </div>
                     {onEdit && getEditKind(file) && !isEncrypted && (
@@ -153,7 +156,7 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#1c1c1c] text-white z-10">
                             <div className="w-10 h-10 border-4 border-telegram-primary border-t-transparent rounded-full animate-spin" />
                             <p>Loading preview...</p>
-                            <p className="text-xs text-white/50">{kind === 'office' ? 'Creating secure link...' : 'Downloading from Telegram...'}</p>
+                            <p className="text-xs text-white/50">Downloading from Telegram...</p>
                         </div>
                     )}
                     {error && !loading && (
@@ -176,24 +179,11 @@ export function FrameViewer({ file, onClose, onNext, onPrev, onEdit, currentInde
                             onError={() => setError('Failed to render image preview')}
                         />
                     )}
-                    {frameSrc && !error && (kind === 'text' || kind === 'code') && (
-                        <iframe
-                            key={`${file.id}-${activeFolderId}`}
-                            src={frameSrc}
-                            title={file.name}
-                            className="w-full h-full border-0 bg-white"
-                            onLoad={() => setLoading(false)}
-                        />
+                    {!error && (kind === 'text' || kind === 'code') && !officeVariant && (
+                        <TextPreview file={file} activeFolderId={activeFolderId} />
                     )}
-                    {frameSrc && !error && kind !== 'image' && kind !== 'text' && kind !== 'code' && (
-                        <iframe
-                            key={`${file.id}-${activeFolderId}`}
-                            src={frameSrc}
-                            title={file.name}
-                            className="w-full h-full border-0 bg-white"
-                            allow="fullscreen"
-                            onLoad={() => setLoading(false)}
-                        />
+                    {!error && officeVariant && (
+                        <OfficePreview file={file} activeFolderId={activeFolderId} variant={officeVariant} />
                     )}
                     {/* prev / next */}
                     <button onClick={onPrev} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/70 rounded-full transition-all" title="Previous">
