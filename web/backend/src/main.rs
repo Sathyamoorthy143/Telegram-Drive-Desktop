@@ -1,4 +1,4 @@
-mod auth;
+﻿mod auth;
 mod auth_org;
 mod admin;
 mod chunked;
@@ -28,7 +28,7 @@ mod utils;
 mod entry_unlock;
 
 use actix_cors::Cors;
-use actix_web::middleware::Compression;
+use actix_web::middleware::Compress;
 use actix_web::{web, App, HttpServer, HttpResponse};
 use grammers_client::client::LoginToken;
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ pub struct AppState {
     pub replicate_tx: replicate::ReplicateSender,
     /// Cached (premium, at) verdict, refreshed at most every TIER_CACHE_TTL.
     pub premium_cache: Arc<Mutex<(Option<bool>, Option<std::time::Instant>)>>,
-    /// In-memory org member sessions (token → session).
+    /// In-memory org member sessions (token â†’ session).
     pub org_sessions: auth_org::OrgTokenStore,
     /// Cached master-admin verdict: (is_authorized, at). A live Telegram
     /// probe on every privileged request is wasteful and flaps the pool.
@@ -61,7 +61,7 @@ pub struct AppState {
 /// Max simultaneous Telegram media downloads per backend instance.
 pub const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 
-/// `GET /api/version` — lets frontends detect backend capabilities.
+/// `GET /api/version` â€” lets frontends detect backend capabilities.
 /// `org_platform: true` means all `/api/admin/*` + `/api/org/*` routes exist.
 async fn version() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({
@@ -107,7 +107,7 @@ async fn main() -> std::io::Result<()> {
         download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)),
     });
 
-    // Background MAIN → BACKUP replication worker + MAIN channel watcher.
+    // Background MAIN â†’ BACKUP replication worker + MAIN channel watcher.
     // Both are self-healing loops; they idle until storage is provisioned.
     {
         let worker_state = state.clone();
