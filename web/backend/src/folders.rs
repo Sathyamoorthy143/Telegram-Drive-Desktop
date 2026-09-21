@@ -11,59 +11,78 @@ pub async fn scan_folders(state: web::Data<AppState>) -> impl Responder {
         Ok(c) => c,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
-    let mut folders = Vec::new();
+    // Walk dialogs sequentially (the iterator requires it), collecting cache
+    // entries and [TD] candidates — but hold NO lock and fire NO RPCs here.
+    // The old code held `peer_cache.write()` across the whole walk plus one
+    // sequential GetFullChannel RPC per channel, serializing every page load
+    // behind the scan and every channel behind the previous one.
+    let mut cache_entries: Vec<(i64, Peer)> = Vec::new();
+    // (peer id, title, channel_id, access_hash) for [TD] channels only.
+    let mut candidates: Vec<(i64, String, i64, i64)> = Vec::new();
     let mut dialogs = client.iter_dialogs();
-    let mut cache = state.peer_cache.write().await;
     while let Ok(Some(dialog)) = dialogs.next().await {
         if let Peer::Channel(c) = &dialog.peer {
             let id = peer_bare_id(&dialog.peer).unwrap_or(0);
-            cache.insert(id, dialog.peer.clone());
-
+            cache_entries.push((id, dialog.peer.clone()));
             let title = c.title();
-            if !title.to_lowercase().contains("[td]") {
-                continue;
+            if title.to_lowercase().contains("[td]") {
+                candidates.push((id, title.to_string(), c.raw.id, c.raw.access_hash.unwrap_or(0)));
             }
-            let display = title
-                .replace(" [TD]", "")
-                .replace(" [td]", "")
-                .replace("[TD]", "")
-                .replace("[td]", "")
-                .trim()
-                .to_string();
-
-            let mut parent_id = None;
-            let raw = &c.raw;
-            let input_chan = tl::enums::InputChannel::Channel(tl::types::InputChannel {
-                channel_id: raw.id,
-                access_hash: raw.access_hash.unwrap_or(0),
-            });
-            if let Ok(tl::enums::messages::ChatFull::Full(full)) = client
-                .invoke(&tl::functions::channels::GetFullChannel {
-                    channel: input_chan,
-                })
-                .await
-            {
-                if let tl::enums::ChatFull::ChannelFull(cf) = full.full_chat {
-                    if cf.about.contains("[telegram-drive-folder]") {
-                        parent_id = cf
-                            .about
-                            .lines()
-                            .find(|l| l.starts_with("parent_id:"))
-                            .and_then(|l| l.split(':').nth(1))
-                            .and_then(|s| s.parse::<i64>().ok());
-                    }
-                }
-            }
-            folders.push(FolderMetadata {
-                id,
-                name: display,
-                parent_id,
-            });
         } else if let Peer::User(_u) = &dialog.peer {
             let id = peer_bare_id(&dialog.peer).unwrap_or(0);
-            cache.insert(id, dialog.peer.clone());
+            cache_entries.push((id, dialog.peer.clone()));
         }
     }
+    // Bulk cache insert under one short write lock — no awaits inside.
+    {
+        let mut cache = state.peer_cache.write().await;
+        for (id, peer) in cache_entries {
+            cache.insert(id, peer);
+        }
+    }
+    // Resolve folder parents concurrently (bounded): N channels cost ~1 slow
+    // RPC instead of N sequential ones.
+    let folders: Vec<FolderMetadata> =
+        futures::future::join_all(candidates.into_iter().map(|(id, title, channel_id, access_hash)| {
+            let client = client.clone();
+            async move {
+                let display = title
+                    .replace(" [TD]", "")
+                    .replace(" [td]", "")
+                    .replace("[TD]", "")
+                    .replace("[td]", "")
+                    .trim()
+                    .to_string();
+                let mut parent_id = None;
+                let input_chan = tl::enums::InputChannel::Channel(tl::types::InputChannel {
+                    channel_id,
+                    access_hash,
+                });
+                if let Ok(tl::enums::messages::ChatFull::Full(full)) = client
+                    .invoke(&tl::functions::channels::GetFullChannel {
+                        channel: input_chan,
+                    })
+                    .await
+                {
+                    if let tl::enums::ChatFull::ChannelFull(cf) = full.full_chat {
+                        if cf.about.contains("[telegram-drive-folder]") {
+                            parent_id = cf
+                                .about
+                                .lines()
+                                .find(|l| l.starts_with("parent_id:"))
+                                .and_then(|l| l.split(':').nth(1))
+                                .and_then(|s| s.parse::<i64>().ok());
+                        }
+                    }
+                }
+                FolderMetadata {
+                    id,
+                    name: display,
+                    parent_id,
+                }
+            }
+        }))
+        .await;
     HttpResponse::Ok().json(folders)
 }
 

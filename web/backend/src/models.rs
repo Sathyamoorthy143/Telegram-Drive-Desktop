@@ -230,6 +230,41 @@ pub struct CheckPasswordRequest {
 #[derive(Deserialize)]
 pub struct GetFilesRequest {
     pub folder_id: Option<i64>,
+    /// Max messages to walk in the channel (newest-first). None = unbounded
+    /// (legacy behavior). Bounded walks are what make large folders load fast.
+    pub limit: Option<i64>,
+    /// Messages to skip before collecting (paired with `limit` for paging).
+    pub offset: Option<i64>,
+}
+
+/// Clamp pagination params to sane bounds. Non-positive values are ignored
+/// (treated as absent) so legacy callers are unaffected.
+pub fn files_page_limit(limit: Option<i64>) -> Option<usize> {
+    match limit {
+        Some(n) if n > 0 => Some((n as usize).min(2000)),
+        _ => None,
+    }
+}
+
+pub fn files_page_offset(offset: Option<i64>) -> usize {
+    match offset {
+        Some(n) if n > 0 => n as usize,
+        _ => 0,
+    }
+}
+
+/// Optional `?limit=` for Supabase-backed list endpoints. Absent/invalid =
+/// `default`, so legacy callers keep working (same array shape, just capped).
+#[derive(Deserialize)]
+pub struct LimitQuery {
+    pub limit: Option<i64>,
+}
+
+pub fn clamp_limit(limit: Option<i64>, default: i64) -> i64 {
+    match limit {
+        Some(n) if n > 0 => n.min(2000),
+        _ => default,
+    }
 }
 
 #[derive(Deserialize)]

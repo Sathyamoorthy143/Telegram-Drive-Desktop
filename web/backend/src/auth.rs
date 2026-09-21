@@ -389,7 +389,7 @@ pub async fn logout(state: web::Data<AppState>) -> impl Responder {
         let _ = c.sign_out().await;
     }
     if let (Some(uid), Some((url, key))) = (uid, std::env::var("SUPABASE_URL").ok().zip(std::env::var("SUPABASE_SERVICE_KEY").ok().or_else(|| std::env::var("SUPABASE_SERVICE_ROLE_KEY").ok()))) {
-        let client = reqwest::Client::new();
+        let client = crate::supabase_org::http_client();
         let _ = client.delete(format!("{}/rest/v1/telegram_sessions?user_id=eq.{}", url.trim_end_matches('/'), uid))
             .header("apikey", &key).header("Authorization", format!("Bearer {}", key)).send().await;
     }

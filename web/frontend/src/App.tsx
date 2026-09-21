@@ -91,39 +91,42 @@ export function AppContent() {
       const pathSlug = orgSlugFromPath(window.location.pathname);
       // 2. Org context from subdomain (backward compat).
       const sub = orgOverride || subdomainFromHostname();
-      let org: OrgInfo | null = null;
-      let orgSource: 'path' | 'subdomain' | null = null;
-      if (pathSlug) {
-        try {
-          const res = await api.getCurrentOrg(pathSlug);
-          if (cancelled) return;
-          if (res.org) {
-            org = res.org;
-            orgSource = 'path';
+      // checkConnection is independent of org resolution: resolve both in
+      // parallel instead of paying the round trips back-to-back before
+      // first paint (master auto-login path drops from ~5 serial hops).
+      const resolveOrg = (async (): Promise<{ org: OrgInfo; source: 'path' | 'subdomain' } | { notFound: string } | null> => {
+        if (pathSlug) {
+          try {
+            const res = await api.getCurrentOrg(pathSlug);
+            if (res.org) return { org: res.org, source: 'path' as const };
+          } catch {
+            // Explicit slug that fails to resolve -> not-found below.
           }
-        } catch {
-          org = null;
-        }
-        if (!org) {
           // Explicit path slug that resolves to nothing: show not-found
           // instead of silently falling back to subdomain/master.
-          setBoot({ kind: "org-not-found", slug: pathSlug });
-          return;
+          return { notFound: pathSlug };
         }
-      }
-      if (!org && sub) {
-        try {
-          const res = await api.getCurrentOrg(sub);
-          if (cancelled) return;
-          if (res.org) {
-            org = res.org;
-            orgSource = 'subdomain';
+        if (sub) {
+          try {
+            const res = await api.getCurrentOrg(sub);
+            if (res.org) return { org: res.org, source: 'subdomain' as const };
+          } catch {
+            // Unknown subdomain is normal (e.g. apex label): fall through.
           }
-        } catch {
-          org = null;
         }
-        if (cancelled) return;
+        return null;
+      })();
+      const [orgOutcome, masterConnected] = await Promise.all([
+        resolveOrg,
+        api.checkConnection().catch(() => false as boolean),
+      ]);
+      if (cancelled) return;
+      if (orgOutcome && 'notFound' in orgOutcome) {
+        setBoot({ kind: "org-not-found", slug: orgOutcome.notFound });
+        return;
       }
+      const org: OrgInfo | null = orgOutcome && 'org' in orgOutcome ? orgOutcome.org : null;
+      const orgSource: 'path' | 'subdomain' | null = orgOutcome && 'org' in orgOutcome ? orgOutcome.source : null;
       if (cancelled) return;
 
       if (org && org.active === false) {
@@ -137,9 +140,6 @@ export function AppContent() {
         api.setOrgContext(org.id);
         api.setOrgSlug(orgSource === 'path' ? pathSlug : sub);
       }
-
-      const masterConnected = await api.checkConnection().catch(() => false);
-      if (cancelled) return;
 
       if (org) {
         // 2. Org mode: prefer this org's stored member token (other orgs'

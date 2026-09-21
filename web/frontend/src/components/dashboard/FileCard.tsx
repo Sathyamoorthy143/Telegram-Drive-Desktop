@@ -52,10 +52,30 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
     const [isDragOver, setIsDragOver] = useState(false);
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [thumbnailLoading, setThumbnailLoading] = useState(false);
+    // Viewport gating: only cards near the viewport may fetch thumbnails,
+    // so opening a big image folder no longer fires N requests at once.
+    const wrapRef = useRef<HTMLDivElement | null>(null);
+    const [visible, setVisible] = useState(false);
+    useEffect(() => {
+        const el = wrapRef.current;
+        if (!el || visible) return;
+        if (typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
+        const io = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((e) => e.isIntersecting)) {
+                    setVisible(true);
+                    io.disconnect();
+                }
+            },
+            { rootMargin: '200px' },
+        );
+        io.observe(el);
+        return () => io.disconnect();
+    }, [visible]);
 
     // Lazy load thumbnail for image files
     useEffect(() => {
-        if (isFolder || !isImageFile(file.name)) return;
+        if (!visible || isFolder || !isImageFile(file.name)) return;
 
         let cancelled = false;
         setThumbnailLoading(true);
@@ -72,10 +92,11 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
         }
 
         return () => { cancelled = true; };
-    }, [file.id, file.name, activeFolderId, isFolder]);
+    }, [visible, file.id, file.name, activeFolderId, isFolder]);
 
     return (
         <div
+            ref={wrapRef}
             className="relative"
             onContextMenu={onContextMenu}
             onClick={onClick}

@@ -26,7 +26,7 @@ pub async fn get_files(
         if url.is_empty() || key.is_empty() {
             std::collections::HashSet::new()
         } else {
-            let client = reqwest::Client::new();
+            let client = crate::supabase_org::http_client();
             let resp = client.get(format!("{}/rest/v1/trash_items?select=message_id,folder_id", url.trim_end_matches('/')))
                 .header("apikey", &key).header("Authorization", format!("Bearer {}", key))
                 .query(&[("folder_id", query.folder_id.map(|v| format!("eq.{}", v)).unwrap_or("is.null".into()))])
@@ -35,8 +35,23 @@ pub async fn get_files(
         }
     };
     let mut files = Vec::new();
+    // Bounded channel walk: `?limit=` caps walked messages (newest-first),
+    // `?offset=` skips first. Absent params = legacy unbounded full scan.
+    let page_limit = crate::models::files_page_limit(query.limit);
+    let page_offset = crate::models::files_page_offset(query.offset);
+    let mut walked: usize = 0;
     let mut msgs = client.iter_messages(peer);
     while let Ok(Some(msg)) = msgs.next().await {
+        if walked < page_offset {
+            walked += 1;
+            continue;
+        }
+        if let Some(n) = page_limit {
+            if walked >= page_offset + n {
+                break;
+            }
+        }
+        walked += 1;
         if trashed.contains(&(msg.id() as i64)) { continue; }
         if let Some(doc) = msg.media() {
             let (name, size, mime, ext) = match doc {

@@ -56,7 +56,7 @@ pub async fn upsert_session(user_id: i64, api_id: Option<i32>) -> Result<(), Str
         "api_id": api_id
     });
 
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let resp = client
         .post(format!("{}/rest/v1/telegram_sessions", url))
         .header("apikey", &key)
@@ -80,7 +80,7 @@ pub async fn upsert_session(user_id: i64, api_id: Option<i32>) -> Result<(), Str
 
 pub async fn get_session(user_id: i64) -> Option<Vec<u8>> {
     let (url, key) = supabase_config()?;
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let resp = client
         .get(format!("{}/rest/v1/telegram_sessions", url))
         .header("apikey", &key)
@@ -122,7 +122,7 @@ pub async fn restore_session_if_needed(user_id: Option<i64>) -> bool {
                 Some(c) => c,
                 None => return false,
             };
-            let client = reqwest::Client::new();
+            let client = crate::supabase_org::http_client();
             let resp = match client
                 .get(format!("{}/rest/v1/telegram_sessions", url))
                 .header("apikey", &key)
@@ -195,7 +195,7 @@ pub async fn upsert_user_settings(
         row["notification_mode"] = serde_json::Value::String(m);
     }
 
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let resp = client
         .post(format!("{}/rest/v1/user_settings", url))
         .header("apikey", &key)
@@ -218,7 +218,7 @@ pub async fn upsert_user_settings(
 
 pub async fn get_user_settings(user_id: i64) -> Option<SettingsRow> {
     let (url, key) = supabase_config()?;
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let resp = client
         .get(format!("{}/rest/v1/user_settings", url))
         .header("apikey", &key)

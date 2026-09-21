@@ -20,7 +20,7 @@ pub fn start_keep_alive(server_url: String) {
         let mut ticker = interval(Duration::from_secs(240)); // 4 minutes
         loop {
             ticker.tick().await;
-            match reqwest::get(&url).await {
+            match crate::supabase_org::http_client().get(&url).send().await {
                 Ok(resp) => {
                     log::debug!(
                         "Keep-alive ping: {} (status: {})",

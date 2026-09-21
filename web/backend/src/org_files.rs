@@ -36,7 +36,7 @@ async fn org_main_or_400(
 
 async fn org_trashed_set(org_id: &str, folder_id: Option<i64>) -> std::collections::HashSet<i64> {
     let fid = folder_id.unwrap_or(0);
-    match supabase_org::list_org_trash(org_id).await {
+    match supabase_org::list_org_trash(org_id, None).await {
         Ok(rows) => rows
             .into_iter()
             .filter(|r| r.get("folder_id").and_then(|v| v.as_i64()).unwrap_or(0) == fid)
@@ -81,8 +81,22 @@ pub async fn org_get_files(
     };
     let trashed = org_trashed_set(&org_id, query.folder_id).await;
     let mut files = Vec::new();
+    // Bounded channel walk, same semantics as global get_files.
+    let page_limit = crate::models::files_page_limit(query.limit);
+    let page_offset = crate::models::files_page_offset(query.offset);
+    let mut walked: usize = 0;
     let mut msgs = client.iter_messages(peer);
     while let Ok(Some(msg)) = msgs.next().await {
+        if walked < page_offset {
+            walked += 1;
+            continue;
+        }
+        if let Some(n) = page_limit {
+            if walked >= page_offset + n {
+                break;
+            }
+        }
+        walked += 1;
         if trashed.contains(&(msg.id() as i64)) {
             continue;
         }
@@ -279,61 +293,82 @@ pub async fn org_scan_folders(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     let want_line = storage::org_folder_line(&org_id);
-    let mut folders = Vec::new();
+    // Same split as global scan_folders: sequential dialog walk with no lock
+    // held and no RPCs, one bulk cache insert, then concurrent GetFullChannel
+    // (join_all preserves order). The old code held `peer_cache.write()` for
+    // the whole scan and resolved channels one-by-one.
+    let mut cache_entries: Vec<(i64, Peer)> = Vec::new();
+    // (peer id, title, channel_id, access_hash) for [TD] channels only.
+    let mut candidates: Vec<(i64, String, i64, i64)> = Vec::new();
     let mut dialogs = client.iter_dialogs();
-    let mut cache = state.peer_cache.write().await;
     while let Ok(Some(dialog)) = dialogs.next().await {
         if let Peer::Channel(c) = &dialog.peer {
             let id = peer_bare_id(&dialog.peer).unwrap_or(0);
-            cache.insert(id, dialog.peer.clone());
+            cache_entries.push((id, dialog.peer.clone()));
             let title = c.title();
-            if !title.to_lowercase().contains("[td]") {
-                continue;
+            if title.to_lowercase().contains("[td]") {
+                candidates.push((id, title.to_string(), c.raw.id, c.raw.access_hash.unwrap_or(0)));
             }
-            let raw = &c.raw;
-            let input_chan = grammers_tl_types::enums::InputChannel::Channel(
-                grammers_tl_types::types::InputChannel {
-                    channel_id: raw.id,
-                    access_hash: raw.access_hash.unwrap_or(0),
-                },
-            );
-            let mut belongs = false;
-            let mut parent_id = None;
-            if let Ok(grammers_tl_types::enums::messages::ChatFull::Full(full)) = client
-                .invoke(&grammers_tl_types::functions::channels::GetFullChannel {
-                    channel: input_chan,
-                })
-                .await
-            {
-                if let grammers_tl_types::enums::ChatFull::ChannelFull(cf) = full.full_chat {
-                    if cf.about.contains("[telegram-drive-folder]")
-                        && cf.about.lines().any(|l| l.trim() == want_line)
-                    {
-                        belongs = true;
-                        parent_id = cf
-                            .about
-                            .lines()
-                            .find(|l| l.starts_with("parent_id:"))
-                            .and_then(|l| l.split(':').nth(1))
-                            .and_then(|s| s.parse::<i64>().ok());
-                    }
-                }
-            }
-            if !belongs {
-                continue;
-            }
-            let display = title
-                .replace(" [TD]", "")
-                .replace(" [td]", "")
-                .replace("[TD]", "")
-                .replace("[td]", "")
-                .trim()
-                .to_string();
-            // Strip "{org} — " prefix added at creation for display.
-            let display = display.split(" — ").last().unwrap_or(&display).to_string();
-            folders.push(crate::models::FolderMetadata { id, name: display, parent_id });
         }
     }
+    {
+        let mut cache = state.peer_cache.write().await;
+        for (id, peer) in cache_entries {
+            cache.insert(id, peer);
+        }
+    }
+    let want = want_line.clone();
+    let folders: Vec<crate::models::FolderMetadata> =
+        futures::future::join_all(candidates.into_iter().map(|(id, title, channel_id, access_hash)| {
+            let client = client.clone();
+            let want_line = want.clone();
+            async move {
+                let input_chan = grammers_tl_types::enums::InputChannel::Channel(
+                    grammers_tl_types::types::InputChannel {
+                        channel_id,
+                        access_hash,
+                    },
+                );
+                let mut belongs = false;
+                let mut parent_id = None;
+                if let Ok(grammers_tl_types::enums::messages::ChatFull::Full(full)) = client
+                    .invoke(&grammers_tl_types::functions::channels::GetFullChannel {
+                        channel: input_chan,
+                    })
+                    .await
+                {
+                    if let grammers_tl_types::enums::ChatFull::ChannelFull(cf) = full.full_chat {
+                        if cf.about.contains("[telegram-drive-folder]")
+                            && cf.about.lines().any(|l| l.trim() == want_line)
+                        {
+                            belongs = true;
+                            parent_id = cf
+                                .about
+                                .lines()
+                                .find(|l| l.starts_with("parent_id:"))
+                                .and_then(|l| l.split(':').nth(1))
+                                .and_then(|s| s.parse::<i64>().ok());
+                        }
+                    }
+                }
+                belongs.then(|| {
+                    let display = title
+                        .replace(" [TD]", "")
+                        .replace(" [td]", "")
+                        .replace("[TD]", "")
+                        .replace("[td]", "")
+                        .trim()
+                        .to_string();
+                    // Strip "{org} — " prefix added at creation for display.
+                    let display = display.split(" — ").last().unwrap_or(&display).to_string();
+                    crate::models::FolderMetadata { id, name: display, parent_id }
+                })
+            }
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
     HttpResponse::Ok().json(folders)
 }
 
@@ -459,7 +494,7 @@ pub async fn org_upload_file(
         }
     };
 
-    let max_size = crate::tier::current_cap(&state).await;
+    let max_size = crate::tier::cached_cap(&state).await;
     let up = match crate::upload::read_single_upload(payload, max_size).await {
         Ok(u) => u,
         Err(e) => return e,

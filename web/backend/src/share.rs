@@ -117,7 +117,7 @@ fn password_gate_page(token: &str, wrong: bool) -> HttpResponse {
 async fn supabase_req(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<reqwest::Response, String> {
     let url = std::env::var("SUPABASE_URL").map_err(|_| "no supabase".to_string())?;
     let key = std::env::var("SUPABASE_SERVICE_KEY").or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY")).or_else(|_| std::env::var("SUPABASE_ANON_KEY")).map_err(|_| "no key".to_string())?;
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let full = format!("{}/rest/v1/{}", url.trim_end_matches('/'), path.trim_start_matches('/'));
     let mut req = match method {
         "GET" => client.get(&full),
@@ -182,11 +182,12 @@ pub async fn create_share(state: web::Data<AppState>, req: web::Json<CreateShare
     HttpResponse::Ok().json(serde_json::json!({ "token": token, "url": url, "expires_at": expires_at }))
 }
 
-pub async fn list_shares(state: web::Data<AppState>) -> impl Responder {
+pub async fn list_shares(state: web::Data<AppState>, query: web::Query<crate::models::LimitQuery>) -> impl Responder {
     if crate::auth::get_client(&state).await.is_err() {
         return HttpResponse::Unauthorized().body("Not authenticated");
     }
-    match supabase_req("GET", "shared_links?select=*&order=created_at.desc", None).await {
+    let limit = crate::models::clamp_limit(query.limit, 500);
+    match supabase_req("GET", &format!("shared_links?select=*&order=created_at.desc&limit={}", limit), None).await {
         Ok(r) if r.status().is_success() => HttpResponse::Ok().json(r.json::<serde_json::Value>().await.unwrap_or(serde_json::json!([]))),
         _ => HttpResponse::Ok().json(serde_json::json!([]))
     }
@@ -255,7 +256,7 @@ pub async fn public_share(
                 .or_else(|| std::env::var("SUPABASE_ANON_KEY").ok()),
         ) {
             tokio::spawn(async move {
-                let c = reqwest::Client::new();
+                let c = crate::supabase_org::http_client();
                 let _ = c.post(format!("{}/rest/v1/rpc/increment_share_views", u))
                     .header("apikey", &k).header("Authorization", format!("Bearer {}", k))
                     .json(&serde_json::json!({"p_token": token_clone})).send().await;

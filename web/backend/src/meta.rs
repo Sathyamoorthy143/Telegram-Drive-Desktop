@@ -13,7 +13,7 @@ async fn sb(method: &str, path: &str, body: Option<serde_json::Value>) -> Result
         .or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY"))
         .or_else(|_| std::env::var("SUPABASE_ANON_KEY"))
         .map_err(|_| "no key".to_string())?;
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let full = format!("{}/rest/v1/{}", url.trim_end_matches('/'), path.trim_start_matches('/'));
     let mut req = match method {
         "GET" => client.get(&full),
@@ -66,9 +66,10 @@ fn api_rows(v: serde_json::Value) -> serde_json::Value {
 #[derive(Deserialize)]
 pub struct StarRequest { pub message_id: i64, pub folder_id: Option<i64>, pub name: Option<String>, pub starred: Option<bool> }
 
-pub async fn list_favorites(state: web::Data<AppState>) -> impl Responder {
+pub async fn list_favorites(state: web::Data<AppState>, query: web::Query<crate::models::LimitQuery>) -> impl Responder {
     let _ = need_auth(&state);
-    match sb("GET", "file_favorites?select=*&order=starred_at.desc", None).await {
+    let limit = crate::models::clamp_limit(query.limit, 500);
+    match sb("GET", &format!("file_favorites?select=*&order=starred_at.desc&limit={}", limit), None).await {
         Ok(r) if r.status().is_success() => HttpResponse::Ok().json(api_rows(r.json::<serde_json::Value>().await.unwrap_or(serde_json::json!([])))),
         _ => HttpResponse::Ok().json(serde_json::json!([])),
     }
@@ -91,7 +92,7 @@ pub async fn star(state: web::Data<AppState>, req: web::Json<StarRequest>) -> im
     // upsert via on_conflict
     let url = match std::env::var("SUPABASE_URL") { Ok(u) => u, Err(_) => return HttpResponse::Ok().json(true) };
     let key = match std::env::var("SUPABASE_SERVICE_KEY").or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY")).or_else(|_| std::env::var("SUPABASE_ANON_KEY")) { Ok(k) => k, Err(_) => return HttpResponse::Ok().json(true) };
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let resp = client.post(format!("{}/rest/v1/file_favorites", url.trim_end_matches('/')))
         .header("apikey", &key).header("Authorization", format!("Bearer {}", key))
         .header("Prefer", "resolution=merge-duplicates").header("Content-Type", "application/json")
@@ -127,7 +128,7 @@ pub async fn touch(state: web::Data<AppState>, req: web::Json<TouchRequest>) -> 
     });
     let url = match std::env::var("SUPABASE_URL") { Ok(u) => u, Err(_) => return HttpResponse::Ok().json(true) };
     let key = match std::env::var("SUPABASE_SERVICE_KEY").or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY")).or_else(|_| std::env::var("SUPABASE_ANON_KEY")) { Ok(k) => k, Err(_) => return HttpResponse::Ok().json(true) };
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let _ = client.post(format!("{}/rest/v1/file_recents", url.trim_end_matches('/')))
         .header("apikey", &key).header("Authorization", format!("Bearer {}", key))
         .header("Prefer", "resolution=merge-duplicates").header("Content-Type", "application/json")
@@ -162,7 +163,7 @@ pub async fn set_tags(state: web::Data<AppState>, req: web::Json<TagsBody>) -> i
     let row = serde_json::json!({ "message_id": req.message_id, "folder_id": db_folder(req.folder_id), "tags": req.tags });
     let url = match std::env::var("SUPABASE_URL") { Ok(u) => u, Err(_) => return HttpResponse::Ok().json(true) };
     let key = match std::env::var("SUPABASE_SERVICE_KEY").or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY")).or_else(|_| std::env::var("SUPABASE_ANON_KEY")) { Ok(k) => k, Err(_) => return HttpResponse::Ok().json(true) };
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let _ = client.post(format!("{}/rest/v1/file_tags", url.trim_end_matches('/')))
         .header("apikey", &key).header("Authorization", format!("Bearer {}", key))
         .header("Prefer", "resolution=merge-duplicates").header("Content-Type", "application/json")

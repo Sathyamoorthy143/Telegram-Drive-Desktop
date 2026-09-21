@@ -814,6 +814,7 @@ pub async fn list_trash_hdl(
     state: web::Data<AppState>,
     req: HttpRequest,
     path: web::Path<String>,
+    query: web::Query<crate::models::LimitQuery>,
 ) -> impl Responder {
     let org_id = path.into_inner();
     if let Err(e) = require_org_role(&state, &req, &org_id, "viewer").await {
@@ -822,7 +823,7 @@ pub async fn list_trash_hdl(
     if !supabase_org::is_configured() {
         return supabase_unavailable();
     }
-    match supabase_org::list_org_trash(&org_id).await {
+    match supabase_org::list_org_trash(&org_id, Some(crate::models::clamp_limit(query.limit, 500))).await {
         Ok(rows) => HttpResponse::Ok().json(rows),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }

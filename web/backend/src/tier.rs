@@ -38,15 +38,6 @@ pub async fn is_premium(client: &Client) -> bool {
     }
 }
 
-/// Live upload cap for the current session. Unknown/offline defaults to the
-/// free-tier cap so the app never advertises more than Telegram will accept.
-pub async fn current_cap(state: &AppState) -> u64 {
-    match get_client(state).await {
-        Ok(client) => max_upload_bytes(is_premium(&client).await),
-        Err(_) => FREE_MAX_UPLOAD_BYTES,
-    }
-}
-
 /// How long a cached premium verdict stays valid (10 minutes). `get_me` is
 /// one cheap RPC, but downloads/uploads shouldn't pay it on every request.
 pub const TIER_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(600);
@@ -73,6 +64,13 @@ pub async fn premium_cached(state: &AppState) -> bool {
     };
     *state.premium_cache.lock().await = (Some(premium), Some(std::time::Instant::now()));
     premium
+}
+
+/// Cached upload cap: at most one `get_me` RPC per [`TIER_CACHE_TTL`].
+/// Use this on hot paths (upload init/status/complete) — a live RPC per poll
+/// is what made upload progress feel laggy.
+pub async fn cached_cap(state: &AppState) -> u64 {
+    max_upload_bytes(premium_cached(state).await)
 }
 
 #[derive(Serialize)]

@@ -105,6 +105,30 @@ pub async fn save_lock_settings(
             let uid = me.id().bare_id().unwrap_or(0) as i64;
             match crate::supabase::upsert_user_settings(uid, pin_hash, interval, mode).await {
                 Ok(_) => return HttpResponse::Ok().json(true),
+                // Table not created yet (PGRST205 "Could not find the table
+                // 'public.user_settings' in the schema cache"), created from an
+                // old schema missing a column (PGRST204 "Could not find the
+                // 'master_password_hash' column ... in the schema cache"), or
+                // created with the old FK to telegram_sessions (23503: settings
+                // writes are keyed off the live Telegram identity and can
+                // precede the session row). File settings are already persisted
+                // above, so degrade to file-only success instead of 500 — sync
+                // resumes once supabase/migrations/003_legacy_user_settings.sql
+                // is (re-)applied.
+                Err(e)
+                    if e.contains("PGRST205")
+                        || e.contains("PGRST204")
+                        || e.contains("23503")
+                        || e.contains("violates foreign key")
+                        || e.contains("schema cache")
+                        || e.contains("Could not find the table")
+                        || e.contains("Could not find the") =>
+                {
+                    log::warn!(
+                        "user_settings schema missing (re-run 003_legacy_user_settings.sql); lock settings saved to file only"
+                    );
+                    return HttpResponse::Ok().json(true);
+                }
                 Err(e) => return HttpResponse::InternalServerError().body(e),
             }
         }

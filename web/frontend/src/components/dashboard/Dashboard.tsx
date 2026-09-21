@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { History } from 'lucide-react';
@@ -73,6 +73,20 @@ function useKeyboardShortcuts(handlers: {
     }, [handlers]);
 }
 
+/**
+ * Bounded-parallel map for bulk ops: N sequential API calls cost N slow round
+ * trips; batches of 4 cost ~N/4. Returns the success count (failures resolve
+ * false so one bad file never aborts the batch).
+ */
+async function poolCount<T>(items: T[], limit: number, fn: (item: T) => Promise<boolean>): Promise<number> {
+    let ok = 0;
+    for (let i = 0; i < items.length; i += limit) {
+        const rs = await Promise.all(items.slice(i, i + limit).map((it) => fn(it).catch(() => false)));
+        ok += rs.filter(Boolean).length;
+    }
+    return ok;
+}
+
 export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLogout: () => void; onSwitchOrganization?: () => void; topBanner?: React.ReactNode }) {
     const queryClient = useQueryClient();
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
@@ -124,6 +138,20 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     const [isSyncing, setIsSyncing] = useState(false);
     const [isConnected] = useState(true);
     const [userInfo, setUserInfo] = useState<any>(null);
+
+    // Debounced list invalidation: batch uploads used to refetch the whole
+    // file list once per file (N files = N full scans). Collapse bursts into
+    // one trailing refetch.
+    const filesInvalidateTimer = useRef<number | null>(null);
+    const invalidateFilesSoon = useCallback(() => {
+        if (filesInvalidateTimer.current) window.clearTimeout(filesInvalidateTimer.current);
+        filesInvalidateTimer.current = window.setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ['files'] });
+        }, 1500);
+    }, [queryClient, activeFolderId]);
+    useEffect(() => () => {
+        if (filesInvalidateTimer.current) window.clearTimeout(filesInvalidateTimer.current);
+    }, []);
 
     const [previewFile, setPreviewFile] = useState<TelegramFile | null>(null);
     const [viewSettings, setViewSettings] = useState<ViewSettings>({
@@ -211,11 +239,11 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
           else toast.info(msg);
         },
         notifyCancel: (name) => toast.info(`${name} upload cancelled`),
-         onAuthError: (err) => handleAuthError(err),
-         onItemDone: () => {
-           queryClient.invalidateQueries({ queryKey: ['files'] });
-         },
-         onManualStart: () => { batchPinRef.current = { pin: undefined }; },
+        onAuthError: (err) => handleAuthError(err),
+        // Batch uploads fired one full list refetch PER file; debounce to a
+        // single trailing refetch so an N-file batch costs 1 reload, not N.
+        onItemDone: () => invalidateFilesSoon(),
+        onManualStart: () => { batchPinRef.current = { pin: undefined }; },
         setBusy,
       },
       { maxParallel: 4 },
@@ -261,7 +289,12 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                 const mapped = res.map((f: any) => ({
                     ...f, sizeStr: formatBytes(f.size), type: f.icon_type || 'file'
                 }));
-                try { localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), files: mapped })); } catch {}
+                // Offline cache is a fallback, not an archive: skip huge lists
+                // (multi-MB synchronous localStorage writes jank every fetch).
+                try {
+                    if (mapped.length <= 500) localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), files: mapped }));
+                    else localStorage.removeItem(cacheKey);
+                } catch {}
                 setIsOffline(false);
                 return mapped;
             } catch (e) {
@@ -276,7 +309,11 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                 throw e;
             }
         },
-        enabled: activeFolderId !== -1
+        enabled: activeFolderId !== -1,
+        // Folder contents barely change except via our own mutations (which
+        // invalidate explicitly): serve cached rows between navigations
+        // instead of re-scanning the channel on every focus/mount.
+        staleTime: 15000,
     });
 
     const { data: trashItems = [], isLoading: trashLoading, refetch: refetchTrash } = useQuery({
@@ -299,16 +336,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         enabled: activeFolderId === -3,
         staleTime: 10000,
     });
-    const favFiles = (favRows as any[]).map((f: any) => ({
+    const favFiles = useMemo(() => (favRows as any[]).map((f: any) => ({
         ...f, id: f.message_id ?? f.id, name: f.name || `file-${f.message_id ?? f.id}`,
         size: f.size || 0, sizeStr: formatBytes(f.size || 0), type: 'file' as const, icon_type: 'file',
         folder_id: f.folder_id ?? null, starred: true,
-    }));
-    const recentFiles = (recentRows as any[]).map((f: any) => ({
+    })), [favRows]);
+    const recentFiles = useMemo(() => (recentRows as any[]).map((f: any) => ({
         ...f, id: f.message_id ?? f.id, name: f.name || `file-${f.message_id ?? f.id}`,
         size: f.size || 0, sizeStr: formatBytes(f.size || 0), type: 'file' as const, icon_type: 'file',
         folder_id: f.folder_id ?? null, opened_at: f.opened_at,
-    }));
+    })), [recentRows]);
 
     const isSpecial = activeFolderId === -1 || activeFolderId === -2 || activeFolderId === -3;
     const subFolders = isSpecial ? [] : folders
@@ -316,16 +353,19 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         .map(f => ({ ...f, size: 0, sizeStr: "Folder", type: 'folder' as const, created_at: '', icon_type: 'folder' }));
 
     const combinedFiles = activeFolderId === -1 ? trashItems : activeFolderId === -2 ? favFiles : activeFolderId === -3 ? recentFiles : [...subFolders, ...allFiles];
-    const displayedFiles = (activeFolderId === -1 || activeFolderId === -2 || activeFolderId === -3) ? combinedFiles : (searchTerm.length > 2
+    const displayedFiles = useMemo(() => (activeFolderId === -1 || activeFolderId === -2 || activeFolderId === -3) ? combinedFiles : (searchTerm.length > 2
         ? searchResults
-        : combinedFiles.filter((f: any) => f.name.toLowerCase().includes(searchTerm.toLowerCase())));
+        : combinedFiles.filter((f: any) => f.name.toLowerCase().includes(searchTerm.toLowerCase()))),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [combinedFiles, searchTerm, searchResults, activeFolderId]);
     const isTrash = activeFolderId === -1;
     const trashLoadingCombined = isTrash ? trashLoading : isLoading;
 
     const { data: bandwidth } = useQuery({
         queryKey: ['bandwidth'],
         queryFn: () => api.getBandwidth(),
-        refetchInterval: 5000
+        // Stats ticker: was 5s (each tick = render + RPC). 15s is plenty.
+        refetchInterval: 15000
     });
 
     // File operations
@@ -384,13 +424,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
 
     const handleBulkDelete = useCallback(async () => {
         if (selectedIds.length === 0) return;
-        for (const id of selectedIds) {
-            const file = displayedFiles.find(f => f.id === id);
+        const targets = selectedIds
+            .map((id) => ({ id, file: displayedFiles.find(f => f.id === id) }))
+            .filter((t): t is { id: number; file: any } => !!t.file);
+        await poolCount(targets, 4, async ({ id, file }) => {
             try {
                 if (file?.type === 'folder') await api.deleteFolder(id);
                 else await api.deleteFile(id, activeFolderId ?? undefined);
-            } catch { /* continue */ }
-        }
+                return true;
+            } catch { return false; }
+        });
         setSelectedIds([]);
         queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
         toast.success(`Deleted ${selectedIds.length} items`);
@@ -524,12 +567,13 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     // P1-2: bulk star / tag / rename (folders support rename via API; files use star+tag)
     const handleBulkStar = useCallback(async (starred: boolean) => {
         if (selectedIds.length === 0) return;
-        let ok = 0;
-        for (const id of selectedIds) {
-            const f = displayedFiles.find(x => x.id === id);
-            if (!f || f.type === 'folder') continue;
-            try { await api.starFile(id, (f as any).folder_id ?? activeFolderId ?? undefined, starred); ok++; } catch {}
-        }
+        const targets = selectedIds
+            .map((id) => ({ id, f: displayedFiles.find(x => x.id === id) }))
+            .filter((t): t is { id: number; f: any } => !!t.f && t.f.type !== 'folder');
+        const ok = await poolCount(targets, 4, async ({ id, f }) => {
+            try { await api.starFile(id, (f as any).folder_id ?? activeFolderId ?? undefined, starred); return true; }
+            catch { return false; }
+        });
         refetchFav(); queryClient.invalidateQueries({ queryKey: ['favorites'] });
         api.logActivity(starred ? 'bulk-star' : 'bulk-unstar', `${ok} files`, undefined).catch(()=>{});
         toast.success(starred ? `Starred ${ok} file(s)` : `Unstarred ${ok} file(s)`);
@@ -546,16 +590,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         if (!tag) return;
         const t = tag.trim().toLowerCase().replace(/\s+/g, '-');
         if (!t) return;
-        let ok = 0;
-        for (const id of selectedIds) {
-            const f = displayedFiles.find(x => x.id === id);
-            if (!f || f.type === 'folder') continue;
+        const targets = selectedIds
+            .map((id) => ({ id, f: displayedFiles.find(x => x.id === id) }))
+            .filter((t0): t0 is { id: number; f: any } => !!t0.f && t0.f.type !== 'folder');
+        const ok = await poolCount(targets, 4, async ({ id, f }) => {
             try {
                 const cur = await api.getTags(id, (f as any).folder_id ?? undefined);
                 if (!cur.includes(t)) await api.setTags(id, [...cur, t], (f as any).folder_id ?? undefined);
-                ok++;
-            } catch {}
-        }
+                return true;
+            } catch { return false; }
+        });
         api.logActivity('bulk-tag', t, `${ok} files`).catch(()=>{});
         toast.success(`Tagged ${ok} file(s) with #${t}`);
     }, [selectedIds, displayedFiles, activeFolderId, askPrompt]);
@@ -572,11 +616,11 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
             confirmLabel: 'Rename',
         });
         if (!pattern) return;
-        let ok = 0;
-        for (let i = 0; i < folderSel.length; i++) {
+        const ok = await poolCount(folderSel.map((f, i) => ({ f, i })), 4, async ({ f, i }) => {
             const name = pattern.includes('{n}') ? pattern.replace(/\{n\}/g, String(i + 1)) : (folderSel.length === 1 ? pattern : `${pattern} ${i + 1}`);
-            try { await api.renameFolder(folderSel[i].id, name); ok++; } catch {}
-        }
+            try { await api.renameFolder(f.id, name); return true; }
+            catch { return false; }
+        });
         await syncFolders();
         queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
         api.logActivity('bulk-rename', pattern, `${ok} folders`).catch(()=>{});
@@ -953,8 +997,9 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     const currentFolderName = activeFolderId === null ? "Saved Messages" : folders.find(f => f.id === activeFolderId)?.name || "Folder";
     const previewNeighbors = previewNeighborFiles();
 
-    // P1-3: storage stats for current folder (files only)
-    const folderStats = (() => {
+    // P1-3: storage stats for current folder (files only). Memoized: the
+    // old IIFE re-ran on every render (including upload-progress ticks).
+    const folderStats = useMemo(() => {
         if (isSpecial) return null;
         const filesOnly = (allFiles as any[]).filter((f: any) => f.type !== 'folder');
         const bytes = filesOnly.reduce((s: number, f: any) => s + (f.size || 0), 0);
@@ -964,7 +1009,8 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
             byType[cat] = (byType[cat] || 0) + 1;
         }
         return { count: filesOnly.length + subFolders.length, fileCount: filesOnly.length, folderCount: subFolders.length, bytes, byType };
-    })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isSpecial, allFiles, subFolders]);
 
     return (
         <motion.div

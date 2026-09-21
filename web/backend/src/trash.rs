@@ -15,7 +15,7 @@ pub struct TrashItem {
 async fn supabase_req(method: &str, path: &str, body: Option<serde_json::Value>) -> Result<reqwest::Response, String> {
     let url = std::env::var("SUPABASE_URL").map_err(|_| "no supabase".to_string())?;
     let key = std::env::var("SUPABASE_SERVICE_KEY").or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY")).or_else(|_| std::env::var("SUPABASE_ANON_KEY")).map_err(|_| "no key".to_string())?;
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let full = format!("{}/rest/v1/{}", url.trim_end_matches('/'), path.trim_start_matches('/'));
     let mut req = match method {
         "GET" => client.get(&full),
@@ -90,12 +90,13 @@ pub async fn soft_delete(state: web::Data<AppState>, req: web::Json<crate::model
     }
 }
 
-pub async fn list_trash(state: web::Data<AppState>) -> impl Responder {
+pub async fn list_trash(state: web::Data<AppState>, query: web::Query<crate::models::LimitQuery>) -> impl Responder {
     // verify auth
     if crate::auth::get_client(&state).await.is_err() {
         return HttpResponse::Unauthorized().body("Not authenticated");
     }
-    match supabase_req("GET", "trash_items?select=*&order=deleted_at.desc", None).await {
+    let limit = crate::models::clamp_limit(query.limit, 500);
+    match supabase_req("GET", &format!("trash_items?select=*&order=deleted_at.desc&limit={}", limit), None).await {
         Ok(resp) => {
             if resp.status().is_success() {
                 let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!([]));

@@ -29,7 +29,7 @@ pub async fn overview(state: web::Data<AppState>) -> impl Responder {
     let rows: Vec<serde_json::Value> = futures::future::join_all(orgs.iter().map(|org| async move {
         let (members, trash, audit, settings) = futures::future::join4(
             supabase_org::list_org_members(&org.id),
-            supabase_org::list_org_trash(&org.id),
+            supabase_org::list_org_trash(&org.id, None),
             supabase_org::list_org_audit(&org.id, 1),
             supabase_org::get_org_settings(&org.id),
         )

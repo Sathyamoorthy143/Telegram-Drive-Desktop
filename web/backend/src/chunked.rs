@@ -121,7 +121,7 @@ async fn sb(
         .or_else(|_| std::env::var("SUPABASE_SERVICE_ROLE_KEY"))
         .or_else(|_| std::env::var("SUPABASE_ANON_KEY"))
         .map_err(|_| "no key".to_string())?;
-    let client = reqwest::Client::new();
+    let client = crate::supabase_org::http_client();
     let full = format!(
         "{}/rest/v1/{}",
         url.trim_end_matches('/'),
@@ -211,7 +211,7 @@ pub async fn init_upload(
     state: web::Data<AppState>,
     req: web::Json<InitRequest>,
 ) -> HttpResponse {
-    let max_size = tier::current_cap(&state).await;
+    let max_size = tier::cached_cap(&state).await;
     if req.size == 0 || req.size > max_size {
         return HttpResponse::BadRequest().body("invalid size");
     }
@@ -484,7 +484,7 @@ pub async fn complete_upload(
         }
     };
     // Tier-aware cap (2 GB free / 4 GB Premium), resolved once per completion.
-    let max_size = tier::current_cap(&state).await;
+    let max_size = tier::cached_cap(&state).await;
     let mut total: u64 = 0;
     {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

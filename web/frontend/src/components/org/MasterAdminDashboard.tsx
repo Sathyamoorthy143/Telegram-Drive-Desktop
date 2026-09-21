@@ -54,39 +54,44 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   });
 
   const refresh = async () => {
+    // Capability probe and overview are independent: fetch concurrently
+    // instead of serially (~half the wait). Fallback semantics unchanged:
+    // a failed probe clears the stale flag, overview falls back to the
+    // plain org list, and existing rows are kept on total failure.
     try {
-      try {
-        const caps = await api.getBackendCaps();
-        setBackendStale(caps?.org_platform !== true);
-      } catch {
-        setBackendStale(false);
-      }
-      try {
-        const res = await api.getAdminOverview();
-        const list = Array.isArray(res?.orgs) ? res.orgs : Array.isArray(res) ? res : [];
-        if (list.length === 0) {
-          try {
-            const fallback = await api.getOrganizations();
-            const fb = Array.isArray(fallback) ? fallback : [];
-            if (fb.length > 0) {
-              setOrgs(fb.map(toRow));
-              setOverviewPartial(true);
-              return;
-            }
-          } catch { /* keep any optimistic rows */ }
-          setOrgs((prev) => prev);
+      const capsP = api.getBackendCaps().then(
+        (caps) => setBackendStale(caps?.org_platform !== true),
+        () => setBackendStale(false),
+      );
+      const overviewP = (async () => {
+        try {
+          const res = await api.getAdminOverview();
+          const list = Array.isArray(res?.orgs) ? res.orgs : Array.isArray(res) ? res : [];
+          if (list.length === 0) {
+            try {
+              const fallback = await api.getOrganizations();
+              const fb = Array.isArray(fallback) ? fallback : [];
+              if (fb.length > 0) {
+                setOrgs(fb.map(toRow));
+                setOverviewPartial(true);
+                return;
+              }
+            } catch { /* keep any optimistic rows */ }
+            setOrgs((prev) => prev);
+            setOverviewPartial(true);
+            return;
+          }
+          setOrgs(list.map(toRow));
+          setOverviewPartial(res?.partial === true);
+        } catch {
+          const list = await api.getOrganizations();
+          const fb = Array.isArray(list) ? list : [];
+          if (fb.length > 0) setOrgs(fb.map(toRow));
+          else setOrgs((prev) => prev);
           setOverviewPartial(true);
-          return;
         }
-        setOrgs(list.map(toRow));
-        setOverviewPartial(res?.partial === true);
-      } catch {
-        const list = await api.getOrganizations();
-        const fb = Array.isArray(list) ? list : [];
-        if (fb.length > 0) setOrgs(fb.map(toRow));
-        else setOrgs((prev) => prev);
-        setOverviewPartial(true);
-      }
+      })();
+      await Promise.all([capsP, overviewP]);
     } catch (e: any) {
       toast.error(`Failed to load organizations: ${e.message}`);
       setOrgs((prev) => prev || []);

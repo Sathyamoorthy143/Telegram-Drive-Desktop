@@ -94,6 +94,10 @@ export function useUploadEngine<T extends EngineItem>(
   const pausedAllRef = useRef(false);
   const maxParallelRef = useRef(opts?.maxParallel ?? 4);
   const speedRef = useRef<Map<string, { t: number; done: number; speed: number }>>(new Map());
+  // Last setQueue paint per item: XHR progress ticks fire far more often
+  // than the eye (or React) needs — painting at most every 250ms stops the
+  // whole Dashboard re-rendering dozens of times per second per upload.
+  const paintRef = useRef<Map<string, number>>(new Map());
   const adaptersRef = useRef(adapters);
   adaptersRef.current = adapters;
   const [, forceRender] = useState(0);
@@ -135,6 +139,12 @@ export function useUploadEngine<T extends EngineItem>(
     }
     const remaining = Math.max(0, total - done);
     const eta = speed > 0 && done < total ? Math.round(remaining / speed) : undefined;
+    const finished = done >= total;
+    const lastPaint = paintRef.current.get(qid) ?? 0;
+    // Always paint completion (progress bars must reach 100%); otherwise
+    // throttle paints — speed/ETA math above stays exact in the ref.
+    if (!finished && now - lastPaint < 250) return;
+    paintRef.current.set(qid, now);
     setQueue((q) =>
       q.map((x) => {
         if (x.id !== qid) return x;

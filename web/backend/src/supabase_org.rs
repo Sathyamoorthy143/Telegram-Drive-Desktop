@@ -23,6 +23,17 @@ pub fn is_configured() -> bool {
     config().is_ok()
 }
 
+/// Process-wide shared HTTP client for Supabase REST calls.
+///
+/// `reqwest::Client` holds the connection pool: building one per request (the
+/// old pattern) pays a fresh TCP+TLS handshake on every DB query. Cloning is
+/// cheap (Arc-backed) and reuses pooled connections.
+pub fn http_client() -> reqwest::Client {
+    use std::sync::OnceLock;
+    static SHARED: OnceLock<reqwest::Client> = OnceLock::new();
+    SHARED.get_or_init(reqwest::Client::new).clone()
+}
+
 /// Generic REST call against `<SUPABASE_URL>/rest/v1/<path>`.
 pub async fn sb_req(
     method: &str,
@@ -31,7 +42,7 @@ pub async fn sb_req(
 ) -> Result<reqwest::Response, String> {
     let (url, key) = config()?;
     let full = format!("{}/rest/v1/{}", url, path.trim_start_matches('/'));
-    let client = reqwest::Client::new();
+    let client = http_client();
     let mut req = match method {
         "GET" => client.get(&full),
         "POST" => client.post(&full),
@@ -132,7 +143,7 @@ pub async fn upsert_org_settings(org_id: &str, patch: &serde_json::Value) -> Res
     let (url, key) = config()?;
     let mut row = patch.clone();
     row["org_id"] = serde_json::Value::String(org_id.to_string());
-    let client = reqwest::Client::new();
+    let client = http_client();
     let resp = client
         .post(format!("{}/rest/v1/org_settings", url))
         .header("apikey", &key)
@@ -216,10 +227,16 @@ pub async fn delete_org_member(org_id: &str, member_id: &str) -> Result<(), Stri
 
 // ---- Org trash ----
 
-pub async fn list_org_trash(org_id: &str) -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_org_trash(org_id: &str, limit: Option<i64>) -> Result<Vec<serde_json::Value>, String> {
+    // `limit` caps the UI listing; pass None where completeness matters
+    // (trash-set filtering). Column selection stays `*` for the UI payload.
+    let limit_q = match limit {
+        Some(n) if n > 0 => format!("&limit={}", n.min(2000)),
+        _ => String::new(),
+    };
     let v = sb_get_json(&format!(
-        "org_trash?org_id=eq.{}&select=*&order=deleted_at.desc",
-        org_id
+        "org_trash?org_id=eq.{}&select=*&order=deleted_at.desc{}",
+        org_id, limit_q
     ))
     .await?;
     serde_json::from_value(v).map_err(|e| e.to_string())

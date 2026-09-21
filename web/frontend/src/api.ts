@@ -140,10 +140,25 @@ export const getUserInfo = () =>
 export const logout = () =>
   api<boolean>('POST', '/api/auth/logout');
 
-export const getFiles = (folder_id?: number) => {
+export interface FilePage {
+  /** Max messages to walk (default 300 — keeps big folders fast). */
+  limit?: number;
+  /** Messages to skip (paired with limit for paging). */
+  offset?: number;
+}
+
+const filePageQs = (folder_id?: number, page?: FilePage) => {
+  const p = new URLSearchParams();
+  if (folder_id !== undefined) p.set('folder_id', String(folder_id));
+  p.set('limit', String(page?.limit ?? 300));
+  if (page?.offset) p.set('offset', String(page.offset));
+  return `?${p.toString()}`;
+};
+
+export const getFiles = (folder_id?: number, page?: FilePage) => {
   const orgId = getOrgContext();
-  if (orgId) return getOrgFiles(orgId, folder_id);
-  return api<any[]>('GET', `/api/files${folder_id ? `?folder_id=${folder_id}` : ''}`);
+  if (orgId) return getOrgFiles(orgId, folder_id, page);
+  return api<any[]>('GET', `/api/files${filePageQs(folder_id, page)}`);
 };
 
 export const uploadFile = (file: File, folder_id?: number, options?: { signal?: AbortSignal }) => {
@@ -776,8 +791,8 @@ export const orgMe = (orgId: string) =>
   api<{ org_id: string; member_id: string; username: string; role: string }>(
     'GET', `/api/org/${orgId}/me`);
 
-export const getOrgFiles = (orgId: string, folder_id?: number) =>
-  api<any[]>('GET', `/api/org/${orgId}/files${folder_id !== undefined ? `?folder_id=${folder_id}` : ''}`);
+export const getOrgFiles = (orgId: string, folder_id?: number, page?: FilePage) =>
+  api<any[]>('GET', `/api/org/${orgId}/files${filePageQs(folder_id, page)}`);
 
 export const deleteOrgFile = (orgId: string, message_id: number, folder_id?: number) =>
   api<boolean>('POST', `/api/org/${orgId}/files/delete`, { message_id, folder_id });

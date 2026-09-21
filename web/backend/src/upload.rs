@@ -164,7 +164,7 @@ pub async fn upload_file(
     payload: Multipart,
 ) -> impl actix_web::Responder {
     // Tier-aware cap (2 GB free / 4 GB Premium), resolved once per upload.
-    let max_size = tier::current_cap(&state).await;
+    let max_size = tier::cached_cap(&state).await;
     let up = match read_single_upload(payload, max_size).await {
         Ok(u) => u,
         Err(e) => return e,
@@ -328,7 +328,7 @@ pub async fn deliver_to_telegram(
 
 /// Get upload status / config info (live tier-aware cap)
 pub async fn get_upload_status(state: web::Data<AppState>) -> impl actix_web::Responder {
-    let cap = tier::current_cap(&state).await;
+    let cap = tier::cached_cap(&state).await;
     let human = if cap >= tier::PREMIUM_MAX_UPLOAD_BYTES { "4 GB (Premium)" } else { "2 GB" };
     HttpResponse::Ok().json(serde_json::json!({
         "max_file_size": cap,
