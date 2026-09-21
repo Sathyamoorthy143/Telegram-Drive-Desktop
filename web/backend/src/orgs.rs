@@ -179,11 +179,23 @@ pub async fn list_my_organizations(state: web::Data<AppState>) -> impl Responder
     let uid_s = uid.to_string();
     match supabase_org::list_organizations().await {
         Ok(orgs) => {
-            let mine: Vec<serde_json::Value> = orgs
-                .iter()
-                .filter(|o| supabase_org::org_owned_by(o, &uid_s))
-                .map(supabase_org::strip_entry_hash_fields)
-                .collect();
+            let mut mine: Vec<serde_json::Value> = Vec::new();
+            for o in &orgs {
+                if !supabase_org::org_visible_to(o, &uid_s) {
+                    continue;
+                }
+                // Legacy org created before ownership tracking: claim it for
+                // this Telegram account so it keeps showing up (self-heal).
+                if !supabase_org::org_owned_by(o, &uid_s) {
+                    let _ = supabase_org::sb_req(
+                        "PATCH",
+                        &format!("organizations?id=eq.{}", o.id),
+                        Some(serde_json::json!({ "master_admin_id": uid_s })),
+                    )
+                    .await;
+                }
+                mine.push(supabase_org::strip_entry_hash_fields(o));
+            }
             HttpResponse::Ok().json(serde_json::json!({ "orgs": mine }))
         }
         Err(e) => HttpResponse::InternalServerError().body(e),

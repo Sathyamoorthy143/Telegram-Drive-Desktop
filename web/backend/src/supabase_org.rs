@@ -420,6 +420,13 @@ pub fn org_owned_by(org: &Organization, telegram_id: &str) -> bool {
     org.master_admin_id.as_deref() == Some(telegram_id)
 }
 
+/// Visibility check used by `my-orgs`: orgs owned by this Telegram user,
+/// plus legacy rows that predate ownership tracking (`master_admin_id` NULL)
+/// — those get claimed by the first Telegram account that lists them.
+pub fn org_visible_to(org: &Organization, telegram_id: &str) -> bool {
+    org_owned_by(org, telegram_id) || org.master_admin_id.is_none()
+}
+
 pub fn strip_entry_hash_fields(org: &Organization) -> serde_json::Value {
     serde_json::json!({
         "id": org.id,
@@ -494,5 +501,24 @@ mod tests {
         assert!(!org_owned_by(&org, "1"));
         let orphan = Organization { master_admin_id: None, ..org.clone() };
         assert!(!org_owned_by(&orphan, "99"));
+    }
+
+    #[test]
+    fn org_visible_to_includes_owned_and_legacy_orphans() {
+        let org = Organization {
+            id: "o1".into(),
+            name: "Acme".into(),
+            subdomain: "acme".into(),
+            master_admin_id: Some("99".into()),
+            created_at: None,
+            active: Some(true),
+            entry_password_hash: None,
+        };
+        assert!(org_visible_to(&org, "99"));
+        assert!(!org_visible_to(&org, "1"));
+        // Legacy rows without an owner are visible (and get claimed on list).
+        let orphan = Organization { master_admin_id: None, ..org.clone() };
+        assert!(org_visible_to(&orphan, "99"));
+        assert!(org_visible_to(&orphan, "1"));
     }
 }
