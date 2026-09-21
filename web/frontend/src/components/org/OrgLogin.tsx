@@ -1,10 +1,6 @@
-import { useState, lazy, Suspense } from 'react';
-import { Building2, LogIn } from 'lucide-react';
+import { useState } from 'react';
 import * as api from '../../api';
-import { TiltCard } from '../three/TiltCard';
-
-// Lazy WebGL backdrop — keeps three.js out of the main bundle.
-const Scene3D = lazy(() => import('../three/Scene3D').then((m) => ({ default: m.Scene3D })));
+import { OrgShell, OrgCard, AuthCard, Banner } from './ui';
 
 interface Props {
   orgId: string;
@@ -56,63 +52,28 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
   };
 
   return (
-    <div className="h-full w-full flex items-center justify-center p-6 bg-zinc-200 relative overflow-hidden">
-      {/* Interactive 3D backdrop — floats behind the org login card */}
-      <Suspense fallback={null}>
-        <Scene3D variant="light" className="absolute inset-0 z-0" />
-      </Suspense>
-      <TiltCard className="relative z-10 w-full max-w-sm" intensity={5}>
-      <form onSubmit={submit} className="w-full bg-white/90 backdrop-blur-md border border-slate-200 rounded-2xl p-6 shadow-xl text-zinc-900">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="p-2 rounded-xl bg-blue-900 text-amber-50">
-            <Building2 className="w-5 h-5" />
-          </span>
-          <h1 className="text-lg font-black uppercase">{orgName}</h1>
+    <OrgShell>
+      <div className="flex justify-center pt-8">
+        <div className="w-full max-w-sm">
+          <OrgCard>
+            <AuthCard title={orgName} submitLabel="Sign in" busy={busy || inactive === true} error={error} onSubmit={submit}
+              footer={<>
+                <button type="button" onClick={() => { window.location.href = '/'; }}
+                  className="w-full mt-3 text-xs text-telegram-primary hover:underline">← Back to master dashboard</button>
+                <p className="text-xs text-telegram-subtext mt-3 text-center">Organization accounts are created by your org admin. No Telegram login needed. Signing in here ends any other session for this account.</p>
+              </>}>
+              {inactive && <Banner variant="warning">This organization is deactivated. Contact your admin to reactivate it.</Banner>}
+              <p className="text-sm text-telegram-subtext mb-5">Sign in with your organization account.</p>
+              <label className="block text-xs font-medium text-telegram-subtext mb-1">Username</label>
+              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
+                className="w-full mb-3 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" placeholder="e.g. alice" />
+              <label className="block text-xs font-medium text-telegram-subtext mb-1">Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password"
+                className="w-full mb-4 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" placeholder="••••••••" />
+            </AuthCard>
+          </OrgCard>
         </div>
-        <p className="text-sm text-telegram-subtext mb-5">Sign in with your organization account.</p>
-        {inactive && (
-          <p className="text-sm text-yellow-600 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
-            This organization is deactivated. Contact your admin to reactivate it.
-          </p>
-        )}
-        <label className="block text-xs font-medium text-telegram-subtext mb-1">Username</label>
-        <input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoComplete="username"
-          className="w-full mb-3 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
-          placeholder="e.g. alice"
-        />
-        <label className="block text-xs font-medium text-telegram-subtext mb-1">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          className="w-full mb-4 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
-          placeholder="••••••••"
-        />
-        {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy || inactive}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-900 text-amber-50 font-bold disabled:opacity-50 hover:bg-blue-950"
-        >
-          <LogIn className="w-4 h-4" />
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-        <button
-          type="button"
-          onClick={() => { window.location.href = '/'; }}
-          className="w-full mt-3 text-xs text-telegram-primary hover:underline"
-        >
-          ← Back to master dashboard
-        </button>
-        <p className="text-xs text-telegram-subtext mt-3 text-center">
-          Organization accounts are created by your org admin. No Telegram login needed. Signing in here ends any other session for this account.
-        </p>
-      </form>
-      </TiltCard>
-    </div>
+      </div>
+    </OrgShell>
   );
 }
