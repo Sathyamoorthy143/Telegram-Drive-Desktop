@@ -89,8 +89,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     if (loading) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="glass-modal rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+            <div className="glass-modal rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-telegram-border flex items-center justify-between bg-white/5">
                     <div className="flex items-center gap-3">
@@ -105,7 +105,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
 
                 {/* Body */}
-                <div className="p-6 space-y-6">
+                <div className="p-6 space-y-6 overflow-y-auto flex-1 min-h-0">
                     {/* Storage Section - MAIN/BACKUP channels + tier */}
                     <div className="space-y-4">
                         <div className="flex items-center gap-2 text-sm font-semibold text-telegram-text">
