@@ -4,8 +4,10 @@ import {
   Phone, ArrowRight, Globe, Cpu, Check,
   Facebook, Github, Twitch, Twitter, Instagram,
 } from 'lucide-react';
-import cyberBg from '../../assets/Cyber_bg.png';
 import teamBg from '../../assets/Team.png';
+import { CloudHero3D } from '../three/CloudHero3D';
+import { Scene3D } from '../three/Scene3D';
+import { TiltCard } from '../three/TiltCard';
 
 interface LandingProps {
   onSignIn: () => void;
@@ -115,7 +117,8 @@ export function Landing({ onSignIn }: LandingProps) {
             </button>
           </div>
           <div className="flex justify-center items-center mt-6 md:mt-0">
-            <img src={cyberBg} alt="Cloud infrastructure" className="w-full h-auto max-w-[300px] md:max-w-[500px]" />
+            {/* Interactive 3D hero cloud — parallax-follows the pointer */}
+            <CloudHero3D className="w-full aspect-square max-w-[300px] md:max-w-[500px]" />
           </div>
         </div>
 
@@ -147,18 +150,18 @@ export function Landing({ onSignIn }: LandingProps) {
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-4 px-2 text-center">
-            <div className="py-10 rounded-xl shadow-xl bg-white">
+            <TiltCard className="py-10 rounded-xl shadow-xl bg-white">
               <p className="text-blue-900 text-6xl font-black">100%</p>
               <p className="text-gray-400 mt-2">Completion</p>
-            </div>
-            <div className="py-10 rounded-xl shadow-xl bg-white">
+            </TiltCard>
+            <TiltCard className="py-10 rounded-xl shadow-xl bg-white">
               <p className="text-blue-900 text-6xl font-black">24/7</p>
               <p className="text-gray-400 mt-2">Delivery</p>
-            </div>
-            <div className="py-10 rounded-xl shadow-xl bg-white">
+            </TiltCard>
+            <TiltCard className="py-10 rounded-xl shadow-xl bg-white">
               <p className="text-blue-900 text-6xl font-black">100K</p>
               <p className="text-gray-400 mt-2">Transactions</p>
-            </div>
+            </TiltCard>
           </div>
         </div>
       </section>
@@ -183,7 +186,7 @@ export function Landing({ onSignIn }: LandingProps) {
             ].map(([Icon, title, copy]) => {
               const Glyph = Icon as typeof Phone;
               return (
-                <div key={String(title)} className="rounded-xl shadow-xl bg-white">
+                <TiltCard key={String(title)} className="rounded-xl shadow-xl bg-white" intensity={6}>
                   <div className="p-8">
                     <Glyph className="text-white bg-blue-900 w-16 h-12 p-2 rounded-lg mt-[-4rem]" />
                     <h3 className="font-bold text-blue-900 text-2xl my-6">{title as string}</h3>
@@ -196,7 +199,7 @@ export function Landing({ onSignIn }: LandingProps) {
                   >
                     Contact Us <ArrowRight className="w-5" />
                   </button>
-                </div>
+                </TiltCard>
               );
             })}
           </div>
@@ -231,7 +234,10 @@ export function Landing({ onSignIn }: LandingProps) {
       </section>
 
       <section id="pricing" className="w-full my-24 relative">
-        <div className="absolute w-full h-[520px] bg-slate-900 top-0 left-0" />
+        <div className="absolute w-full h-[520px] bg-slate-900 top-0 left-0 overflow-hidden">
+          {/* Floating 3D shapes behind the pricing header */}
+          <Scene3D variant="dark" className="absolute inset-0 opacity-60" particleCount={90} />
+        </div>
         <div className="max-w-[1024px] mx-auto py-12 relative">
           <div className="text-center py-8 text-slate-300">
             <h2 className="text-2xl uppercase tracking-widest">Pricing</h2>
@@ -242,7 +248,7 @@ export function Landing({ onSignIn }: LandingProps) {
           </div>
         </div>
         <div className="grid md:grid-cols-2 gap-1 place-items-center max-w-[1024px] mx-auto relative px-2">
-          <div className="bg-white text-slate-900 m-4 p-8 rounded-xl shadow-2xl relative w-[min(100%,28rem)]">
+          <TiltCard className="bg-white text-slate-900 m-4 p-8 rounded-xl shadow-2xl relative w-[min(100%,28rem)]" intensity={5}>
             <span className="bg-blue-300 px-4 py-2 rounded-xl uppercase font-bold">Standard</span>
             <h2 className="text-6xl font-bold mt-5 text-blue-900">$49<span className="text-2xl text-slate-500">/mo</span></h2>
             <p className="text-xl py-8 text-slate-500">Personal workspace with Telegram-backed files, search, and media preview.</p>
@@ -254,8 +260,8 @@ export function Landing({ onSignIn }: LandingProps) {
             <button type="button" onClick={onSignIn} className="w-full h-12 cs-btn-navy rounded-xl my-2 cursor-pointer">
               Get Started
             </button>
-          </div>
-          <div className="bg-white text-slate-900 m-4 p-8 rounded-xl shadow-2xl relative w-[min(100%,28rem)]">
+          </TiltCard>
+          <TiltCard className="bg-white text-slate-900 m-4 p-8 rounded-xl shadow-2xl relative w-[min(100%,28rem)]" intensity={5}>
             <span className="bg-blue-300 px-4 py-2 rounded-xl uppercase font-bold">Premium</span>
             <h2 className="text-6xl font-bold mt-5 text-blue-900">$99<span className="text-2xl text-slate-500">/mo</span></h2>
             <p className="text-xl py-8 text-slate-500">Organization workspaces with roles, folder grants, and admin controls.</p>
@@ -267,7 +273,7 @@ export function Landing({ onSignIn }: LandingProps) {
             <button type="button" onClick={onSignIn} className="w-full h-12 cs-btn-navy rounded-xl my-2 cursor-pointer">
               Get Started
             </button>
-          </div>
+          </TiltCard>
         </div>
       </section>
 

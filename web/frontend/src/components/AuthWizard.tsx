@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Phone, Key, Lock, ArrowRight, Settings, Sun, Moon, HelpCircle, ExternalLink, X, Heart, Eye, EyeOff, Cloud } from "lucide-react";
 import { useTheme } from '../context/ThemeContext';
 import { requestCode, signIn, checkPassword, getStore } from '../api';
+import { Scene3D } from './three/Scene3D';
+import { TiltCard } from './three/TiltCard';
 
 type Step = "setup" | "phone" | "code" | "password";
 
@@ -167,13 +169,16 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
 
     return (
         <div className="h-full w-full auth-gradient flex items-center justify-center p-6 relative overflow-hidden">
+            {/* Interactive 3D backdrop — floats behind the login card */}
+            <Scene3D variant="light" className="absolute inset-0 z-0" />
             <AuthThemeToggle />
 
+            <TiltCard className="relative z-10 w-full max-w-md" intensity={4}>
             <motion.div
                 initial={{ opacity: 0, scale: 0.94, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 240, damping: 24 }}
-                className="relative p-8 rounded-2xl shadow-xl w-full max-w-md bg-zinc-800 border border-zinc-700"
+                className="relative p-8 rounded-2xl shadow-xl w-full bg-zinc-800/90 backdrop-blur-md border border-zinc-700"
             >
                 <div className="text-center mb-8">
                     <div className="w-16 h-16 mb-6 mx-auto flex items-center justify-center rounded-2xl bg-blue-900 shadow-lg">
@@ -439,6 +444,7 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                     </button>
                 </div>
             </motion.div>
+            </TiltCard>
 
             {/* Help Modal */}
             <AnimatePresence>

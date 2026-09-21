@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Building2, LogIn } from 'lucide-react';
 import * as api from '../../api';
+import { Scene3D } from '../three/Scene3D';
+import { TiltCard } from '../three/TiltCard';
 
 interface Props {
   orgId: string;
@@ -52,8 +54,11 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
   };
 
   return (
-    <div className="h-full w-full flex items-center justify-center p-6 bg-zinc-200">
-      <form onSubmit={submit} className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-zinc-900">
+    <div className="h-full w-full flex items-center justify-center p-6 bg-zinc-200 relative overflow-hidden">
+      {/* Interactive 3D backdrop — floats behind the org login card */}
+      <Scene3D variant="light" className="absolute inset-0 z-0" />
+      <TiltCard className="relative z-10 w-full max-w-sm" intensity={5}>
+      <form onSubmit={submit} className="w-full bg-white/90 backdrop-blur-md border border-slate-200 rounded-2xl p-6 shadow-xl text-zinc-900">
         <div className="flex items-center gap-3 mb-1">
           <span className="p-2 rounded-xl bg-blue-900 text-amber-50">
             <Building2 className="w-5 h-5" />
@@ -103,6 +108,7 @@ export function OrgLogin({ orgId, orgName, inactive, onLogin }: Props) {
           Organization accounts are created by your org admin. No Telegram login needed. Signing in here ends any other session for this account.
         </p>
       </form>
+      </TiltCard>
     </div>
   );
 }
