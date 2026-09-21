@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, type LucideIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface SidebarItemProps {
-    icon: React.ElementType;
+    icon: LucideIcon;
     label: string;
     active: boolean;
     onClick: () => void;
