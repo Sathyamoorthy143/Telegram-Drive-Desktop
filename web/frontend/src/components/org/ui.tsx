@@ -64,7 +64,7 @@ export function AuthCard({ title, submitLabel, busy, error, onSubmit, children, 
 }) {
   return (
     <form onSubmit={onSubmit}>
-      <h2 className="font-bold mb-4">{title}</h2>
+      {title ? <h2 className="font-bold mb-4">{title}</h2> : null}
       {children}
       {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
       <button type="submit" disabled={busy}
