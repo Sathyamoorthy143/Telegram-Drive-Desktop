@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard, Star, Clock, History } from 'lucide-react';
+import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard, Star, Clock, History, Building2 } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
 import { ResizeHandle } from './ResizeHandle';
@@ -29,6 +29,7 @@ interface SidebarProps {
     onSync: () => void;
     onRefresh: () => void;
     onLogout: () => void;
+    onSwitchOrganization?: () => void;
     bandwidth: BandwidthStats | null;
     stats?: { count: number; fileCount: number; folderCount: number; bytes: number; byType?: Record<string, number> } | null;
     onActivityLog: () => void;
@@ -197,7 +198,7 @@ function formatBytesShort(n: number): string {
 
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate,
-    isSyncing, isConnected, onSync, onRefresh, onLogout, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions
+    isSyncing, isConnected, onSync, onRefresh, onLogout, onSwitchOrganization, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -412,6 +413,16 @@ export function Sidebar({
                         <Settings className="w-3 h-3 flex-shrink-0 text-telegram-subtext" />
                         <span className="truncate">Settings</span>
                     </button>
+                    {onSwitchOrganization && (
+                        <button
+                            onClick={onSwitchOrganization}
+                            className="col-span-2 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-telegram-text hover:bg-white/10 rounded-lg transition-colors border border-telegram-border"
+                            title="Switch organization"
+                        >
+                            <Building2 className="w-3 h-3 flex-shrink-0 text-telegram-subtext" />
+                            <span>Switch organization</span>
+                        </button>
+                    )}
                     <button
                         onClick={onLogout}
                         className="col-span-2 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"

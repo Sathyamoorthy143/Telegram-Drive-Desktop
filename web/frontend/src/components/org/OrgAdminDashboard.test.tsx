@@ -50,6 +50,19 @@ describe('OrgAdminDashboard role tabs', () => {
     expect(screen.getAllByText('Files').length).toBeGreaterThan(0);
   });
 
+  it('shows Switch organization for master-in-org and does not call logout', async () => {
+    const onSwitch = vi.fn();
+    const onLogout = vi.fn();
+    render(
+      <OrgAdminDashboard org={org} session={null} onLogout={onLogout} onSwitchOrganization={onSwitch} />,
+    );
+    await waitFor(() => expect(screen.getByText('Switch organization')).toBeTruthy());
+    expect(screen.queryByTitle('Back')).toBeNull();
+    screen.getByText('Switch organization').click();
+    expect(onSwitch).toHaveBeenCalled();
+    expect(onLogout).not.toHaveBeenCalled();
+  });
+
   it('shows upload actions to editors but not viewers', async () => {
     const { unmount } = render(
       <OrgAdminDashboard

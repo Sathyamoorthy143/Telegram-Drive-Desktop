@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthWizard } from "./components/AuthWizard";
 import { Dashboard } from "./components/dashboard/Dashboard";
@@ -13,6 +13,8 @@ import { LockProvider } from "./context/LockContext";
 import { OrgLogin } from "./components/org/OrgLogin";
 import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
 import { OrgAdminDashboard } from "./components/org/OrgAdminDashboard";
+import { OrgPicker } from "./components/org/OrgPicker";
+import { MasterPasswordSetup } from "./components/org/MasterPasswordSetup";
 import { Landing } from "./components/landing/Landing";
 import * as api from "./api";
 import { orgSlugFromPath } from './orgRouting';
@@ -50,14 +52,25 @@ type BootState =
   | { kind: "master-auth" }
   | { kind: "master-drive" }
   | { kind: "master-orgs" }
+  | { kind: "org-picker" }
+  | { kind: "master-password-setup" }
   | { kind: "org-not-found"; slug: string }
   | { kind: "org-login"; org: OrgInfo }
   | { kind: "org-dashboard"; org: OrgInfo; session: OrgSessionInfo | null };
+
+async function bootAfterTelegram(): Promise<BootState> {
+  const st = await api.getMasterUnlockStatus().catch(() => ({ has_master_password: false }));
+  return { kind: st.has_master_password ? "org-picker" : "master-password-setup" };
+}
 
 export function AppContent() {
   const [boot, setBoot] = useState<BootState>({ kind: "checking" });
   const [showLanding, setShowLanding] = useState(true);
   const { theme } = useTheme();
+  const handleTelegramLost = useCallback(() => {
+    setShowLanding(true);
+    setBoot({ kind: "master-auth" });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,10 +167,10 @@ export function AppContent() {
         return;
       }
 
-      // 3. No org context: legacy single-user / master flow.
+      // 3. No org context: picker / first-login master password, never drive.
       if (masterConnected) {
-        // Auto-login attempt for legacy settings (unchanged behavior).
-        setBoot({ kind: "master-drive" });
+        const next = await bootAfterTelegram();
+        if (!cancelled) setBoot(next);
         return;
       }
       try {
@@ -171,7 +184,12 @@ export function AppContent() {
             if (cancelled) return;
             if (ok) {
               const connected = await api.checkConnection().catch(() => false);
-              setBoot({ kind: connected ? "master-drive" : "master-auth" });
+              if (connected) {
+                const next = await bootAfterTelegram();
+                if (!cancelled) setBoot(next);
+                return;
+              }
+              setBoot({ kind: "master-auth" });
               return;
             }
           }
@@ -210,11 +228,26 @@ export function AppContent() {
     <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative">
       <Toaster theme={theme} position="bottom-center" />
       {boot.kind === "master-auth" && (
-        <AuthWizard onLogin={() => setBoot({ kind: "master-drive" })} onBack={() => setShowLanding(true)} />
+        <AuthWizard onLogin={async () => setBoot(await bootAfterTelegram())} onBack={() => setShowLanding(true)} />
+      )}
+      {boot.kind === "master-password-setup" && (
+        <MasterPasswordSetup onReady={() => setBoot({ kind: "org-picker" })} />
+      )}
+      {boot.kind === "org-picker" && (
+        <OrgPicker
+          onUnlockMaster={() => setBoot({ kind: "master-drive" })}
+          onUnlockOrg={(org) => {
+            api.setOrgContext(org.id);
+            api.setOrgSlug(org.subdomain);
+            setBoot({ kind: "org-dashboard", org, session: null });
+          }}
+          onTelegramLost={handleTelegramLost}
+        />
       )}
       {boot.kind === "master-drive" && (
         <Dashboard
           onLogout={() => { setShowLanding(true); setBoot({ kind: "master-auth" }); }}
+          onSwitchOrganization={() => { api.setOrgContext(null); setBoot({ kind: "org-picker" }); }}
           topBanner={
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
               <button
@@ -270,11 +303,17 @@ export function AppContent() {
         <OrgAdminDashboard
           org={boot.org}
           session={boot.session}
-          onBack={boot.session ? undefined : () => { api.setOrgContext(null); window.location.href = '/'; }}
+          onSwitchOrganization={boot.session ? undefined : () => { api.setOrgContext(null); setBoot({ kind: "org-picker" }); }}
           onLogout={() => {
             api.setOrgToken(null, boot.org.id);
             api.setOrgContext(null);
-            window.location.href = boot.session ? `/${boot.org.subdomain}` : '/';
+            if (boot.session) {
+              window.location.href = `/${boot.org.subdomain}`;
+            } else {
+              api.logout().catch(() => {});
+              setShowLanding(true);
+              setBoot({ kind: "master-auth" });
+            }
           }}
         />
       )}

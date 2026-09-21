@@ -73,7 +73,7 @@ function useKeyboardShortcuts(handlers: {
     }, [handlers]);
 }
 
-export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBanner?: React.ReactNode }) {
+export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLogout: () => void; onSwitchOrganization?: () => void; topBanner?: React.ReactNode }) {
     const queryClient = useQueryClient();
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const orgId = api.getOrgContext();
@@ -1006,7 +1006,7 @@ export function Dashboard({ onLogout, topBanner }: { onLogout: () => void; topBa
             else { const f = folders.find(folder => folder.id === id); if (f) setPropertyFile({ ...f, type: 'folder', icon_type: 'folder' } as any); }
         }}
         isSyncing={isSyncing} isConnected={isConnected} userInfo={userInfo}
-        onSync={syncFolders} onRefresh={handleRefresh} onLogout={handleLogout}
+        onSync={syncFolders} onRefresh={handleRefresh} onLogout={handleLogout} onSwitchOrganization={onSwitchOrganization}
         onSettings={() => setShowSettingsModal(true)} bandwidth={bandwidth || null}
         onActivityLog={() => setShowActivityLog(!showActivityLog)}
         onAllVersions={() => setShowAllVersions(true)}

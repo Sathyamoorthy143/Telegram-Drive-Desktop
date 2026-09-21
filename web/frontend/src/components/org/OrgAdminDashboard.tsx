@@ -75,6 +75,7 @@ interface Props {
   session: { username: string; role: string; member_id: string } | null;
   onLogout: () => void;
   onBack?: () => void;
+  onSwitchOrganization?: () => void;
 }
 
 type Tab = 'files' | 'trash' | 'members' | 'activity' | 'settings';
@@ -82,7 +83,7 @@ type Tab = 'files' | 'trash' | 'members' | 'activity' | 'settings';
 const canEdit = (role: string) => ['editor', 'admin', 'owner'].includes(role);
 const canAdmin = (role: string) => ['admin', 'owner'].includes(role);
 
-export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
+export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrganization }: Props) {
   const role = session?.role || 'owner'; // master bypass acts as owner
   const [tab, setTab] = useState<Tab>('files');
   const [files, setFiles] = useState<any[]>([]);
@@ -525,7 +526,12 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
   return (
     <div className="h-full w-full flex flex-col">
       <header className="flex items-center gap-3 px-4 py-3 border-b border-telegram-border bg-telegram-surface">
-        {onBack && (
+        {onSwitchOrganization && (
+          <button onClick={onSwitchOrganization} className="text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Switch organization">
+            Switch organization
+          </button>
+        )}
+        {!onSwitchOrganization && onBack && (
           <button onClick={onBack} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Back">
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -550,7 +556,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack }: Props) {
 <button onClick={logout} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Sign out">
             <LogOut className="w-4 h-4" />
         </button>
-        {!session && (
+        {!session && !onSwitchOrganization && (
           <button onClick={() => { window.location.href = '/'; }} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Master dashboard">
             <FolderOpen className="w-4 h-4" />
           </button>

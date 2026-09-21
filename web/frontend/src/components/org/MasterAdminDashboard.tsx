@@ -21,7 +21,10 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [subdomain, setSubdomain] = useState('');
+  const [entryPassword, setEntryPassword] = useState('');
   const [creating, setCreating] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<OrgOverviewEntry | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('members');
   const [members, setMembers] = useState<OrgMember[]>([]);
@@ -139,12 +142,17 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       toast.error('Name and subdomain are required');
       return;
     }
+    if (entryPassword.length < 4) {
+      toast.error('Entry password min 4 chars');
+      return;
+    }
     setCreating(true);
     try {
-      const created = await api.createOrganization(name.trim(), subdomain.trim().toLowerCase());
+      const created = await api.createOrganization(name.trim(), subdomain.trim().toLowerCase(), entryPassword);
       toast.success(`Organization "${name.trim()}" created`);
       setName('');
       setSubdomain('');
+      setEntryPassword('');
       if (created?.id) {
         setOrgs((prev) => (prev.some((o) => o.id === created.id) ? prev : [toRow(created), ...prev]));
       }
@@ -287,6 +295,11 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
             value={subdomain} onChange={(e) => setSubdomain(e.target.value)} placeholder="subdomain (e.g. acme)"
             className="flex-1 min-w-40 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
           />
+          <input
+            type="password"
+            value={entryPassword} onChange={(e) => setEntryPassword(e.target.value)} placeholder="entry password (min 4)"
+            className="flex-1 min-w-40 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+          />
           <button type="submit" disabled={creating} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-telegram-primary text-white font-medium disabled:opacity-50">
             <Plus className="w-4 h-4" /> {creating ? 'Creating…' : 'Create org'}
           </button>
@@ -345,6 +358,37 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
 
                 {selected?.id === org.id && (
                   <div className="mt-4 pt-4 border-t border-telegram-border">
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (resetPassword.length < 4) {
+                          toast.error('Entry password min 4 chars');
+                          return;
+                        }
+                        setResettingId(org.id);
+                        try {
+                          await api.resetOrgEntryPassword(org.id, resetPassword);
+                          toast.success('Entry password updated');
+                          setResetPassword('');
+                        } catch (err: any) {
+                          toast.error(err.message);
+                        } finally {
+                          setResettingId(null);
+                        }
+                      }}
+                      className="flex flex-wrap gap-2 mb-3"
+                    >
+                      <input
+                        type="password"
+                        value={resetPassword}
+                        onChange={(e) => setResetPassword(e.target.value)}
+                        placeholder="new entry password (min 4)"
+                        className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+                      />
+                      <button type="submit" disabled={resettingId === org.id} className="text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover disabled:opacity-50">
+                        {resettingId === org.id ? 'Saving…' : 'Reset entry password'}
+                      </button>
+                    </form>
                     {detailTab === 'members' ? (
                       <div>
                         <form onSubmit={createMember} className="flex flex-wrap gap-2 mb-3">

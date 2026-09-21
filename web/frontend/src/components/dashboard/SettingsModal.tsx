@@ -21,6 +21,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const { hasPin, lockIntervalMs, notificationMode, setPin, setLockInterval, setNotificationMode } = useLock();
     const [pinInput, setPinInput] = useState('');
     const [pinConfirm, setPinConfirm] = useState('');
+    const [masterPw, setMasterPw] = useState('');
+    const [masterPwConfirm, setMasterPwConfirm] = useState('');
+    const [savingMasterPw, setSavingMasterPw] = useState(false);
     const [storage, setStorage] = useState<StorageStatus | null>(null);
     const [tier, setTier] = useState<AccountTier | null>(null);
     const [provisioning, setProvisioning] = useState(false);
@@ -134,6 +137,43 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                             >
                                 <CopyCheck className="w-3.5 h-3.5" />
                                 {backfilling ? 'Copying…' : 'Copy Old Files'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="h-px bg-telegram-border" />
+
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-telegram-text">
+                            <ShieldCheck className="w-4 h-4 text-telegram-primary" />
+                            Master Admin password
+                        </div>
+                        <div className="p-3 bg-telegram-hover/40 border border-telegram-border rounded-xl text-[11px] text-telegram-subtext">
+                            Reset without the old password. Used to open the personal drive from the org picker.
+                        </div>
+                        <div className="flex gap-2">
+                            <input type="password" value={masterPw} onChange={e => setMasterPw(e.target.value)} placeholder="New password (min 4)" className="flex-1 bg-black/20 border border-telegram-border rounded-xl px-3 py-2 text-sm text-telegram-text placeholder:text-telegram-subtext/50 focus:outline-none focus:ring-2 focus:ring-telegram-primary/50" />
+                            <input type="password" value={masterPwConfirm} onChange={e => setMasterPwConfirm(e.target.value)} placeholder="Confirm" className="flex-1 bg-black/20 border border-telegram-border rounded-xl px-3 py-2 text-sm text-telegram-text placeholder:text-telegram-subtext/50 focus:outline-none focus:ring-2 focus:ring-telegram-primary/50" />
+                            <button
+                                disabled={savingMasterPw}
+                                onClick={async () => {
+                                    if (masterPw.length < 4) return toast.error('Password must be at least 4 characters');
+                                    if (masterPw !== masterPwConfirm) return toast.error('Passwords do not match');
+                                    setSavingMasterPw(true);
+                                    try {
+                                        await api.setMasterPassword(masterPw);
+                                        toast.success('Master Admin password saved');
+                                        setMasterPw('');
+                                        setMasterPwConfirm('');
+                                    } catch (err: any) {
+                                        toast.error(err?.message || 'Failed to save password');
+                                    } finally {
+                                        setSavingMasterPw(false);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-telegram-primary hover:bg-telegram-primary/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
+                            >
+                                {savingMasterPw ? 'Saving…' : 'Set'}
                             </button>
                         </div>
                     </div>
