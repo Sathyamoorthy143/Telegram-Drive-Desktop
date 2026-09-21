@@ -255,6 +255,17 @@ pub async fn require_master(state: &web::Data<AppState>) -> Result<(), HttpRespo
     }
 }
 
+pub async fn current_telegram_user_id(state: &web::Data<AppState>) -> Result<i64, HttpResponse> {
+    require_master(state).await?;
+    let client = crate::auth::get_client(state)
+        .await
+        .map_err(|e| HttpResponse::InternalServerError().body(e))?;
+    match client.get_me().await {
+        Ok(me) => Ok(me.id().bare_id().unwrap_or(0) as i64),
+        Err(e) => Err(HttpResponse::Unauthorized().body(e.to_string())),
+    }
+}
+
 /// Validate org_id path parameter: must match `[a-z0-9-]+`, 1-63 chars.
 /// Prevents path traversal / injection via org routes.
 pub fn valid_org_id(s: &str) -> bool {

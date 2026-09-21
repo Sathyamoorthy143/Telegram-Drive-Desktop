@@ -6,10 +6,11 @@
 
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 
-use crate::auth_org::{is_master_admin, require_master, require_org_role, subdomain_from_req};
+use crate::auth_org::{current_telegram_user_id, is_master_admin, require_master, require_org_role, subdomain_from_req};
+use crate::entry_unlock::{evaluate_org_unlock, EntryUnlockError};
 use crate::models::{
-    CreateMemberRequest, CreateOrgRequest, LogOrgActivityRequest, UpdateOrgRequest,
-    UpdateOrgSettingsRequest,
+    CreateMemberRequest, CreateOrgRequest, LogOrgActivityRequest, NewPasswordBody, PasswordBody,
+    UpdateOrgRequest, UpdateOrgSettingsRequest,
 };
 use crate::supabase_org;
 use crate::AppState;
@@ -119,7 +120,16 @@ pub async fn create_organization(
     if is_reserved_slug(&sub) {
         return HttpResponse::BadRequest().body("subdomain is reserved and cannot be used as an org slug");
     }
-    let org = match supabase_org::create_organization(name, &sub).await {
+    let entry_password = body.entry_password.trim();
+    if entry_password.len() < 4 {
+        return HttpResponse::BadRequest().body("entry_password must be at least 4 characters");
+    }
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let uid_s = uid.to_string();
+    let org = match supabase_org::create_organization(name, &sub, Some(&uid_s), None).await {
         Ok(o) => o,
         Err(e) => {
             if e.contains("duplicate") || e.contains("unique") || e.contains("409") {
@@ -128,6 +138,13 @@ pub async fn create_organization(
             return HttpResponse::InternalServerError().body(e);
         }
     };
+    let hash = supabase_org::hash_org_entry_password(entry_password, &org.id);
+    let _ = supabase_org::sb_req(
+        "PATCH",
+        &format!("organizations?id=eq.{}", org.id),
+        Some(serde_json::json!({ "entry_password_hash": hash })),
+    )
+    .await;
     // Initialize empty settings row so later upserts merge cleanly.
     let _ = supabase_org::upsert_org_settings(&org.id, &serde_json::json!({})).await;
     let ip = req.peer_addr().map(|a| a.ip().to_string());
@@ -137,7 +154,149 @@ pub async fn create_organization(
         ip, None,
     )
     .await;
-    HttpResponse::Ok().json(org)
+    HttpResponse::Ok().json(supabase_org::strip_entry_hash_fields(&org))
+}
+
+fn org_unlock_status_response(err: EntryUnlockError) -> HttpResponse {
+    match err {
+        EntryUnlockError::MissingHash => {
+            HttpResponse::Conflict().body("Set an entry password in Organizations first")
+        }
+        EntryUnlockError::WrongPassword => HttpResponse::Unauthorized().body("Wrong password"),
+        EntryUnlockError::Inactive => HttpResponse::Forbidden().body("Organization is inactive"),
+        EntryUnlockError::NotOwner => HttpResponse::Forbidden().body("Not the owner of this organization"),
+    }
+}
+
+pub async fn list_my_organizations(state: web::Data<AppState>) -> impl Responder {
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    let uid_s = uid.to_string();
+    match supabase_org::list_organizations().await {
+        Ok(orgs) => {
+            let mine: Vec<serde_json::Value> = orgs
+                .iter()
+                .filter(|o| supabase_org::org_owned_by(o, &uid_s))
+                .map(supabase_org::strip_entry_hash_fields)
+                .collect();
+            HttpResponse::Ok().json(serde_json::json!({ "orgs": mine }))
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+pub async fn unlock_organization(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<PasswordBody>,
+) -> impl Responder {
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    let org_id = path.into_inner();
+    let org = match supabase_org::get_org_by_id(&org_id).await {
+        Ok(Some(o)) => o,
+        Ok(None) => return HttpResponse::NotFound().body("Organization not found"),
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+    let uid_s = uid.to_string();
+    match evaluate_org_unlock(
+        org.entry_password_hash.as_deref(),
+        &body.password,
+        &org.id,
+        org.active.unwrap_or(true),
+        org.master_admin_id.as_deref(),
+        &uid_s,
+    ) {
+        Ok(()) => {
+            let ip = req.peer_addr().map(|a| a.ip().to_string());
+            supabase_org::audit_best_effort(
+                &org.id,
+                None,
+                "org.unlock",
+                "organization",
+                &org.id,
+                serde_json::json!({ "subdomain": org.subdomain }),
+                ip,
+                None,
+            )
+            .await;
+            HttpResponse::Ok().json(serde_json::json!({
+                "ok": true,
+                "org": { "id": org.id, "name": org.name, "subdomain": org.subdomain },
+            }))
+        }
+        Err(e) => org_unlock_status_response(e),
+    }
+}
+
+pub async fn reset_entry_password(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<NewPasswordBody>,
+) -> impl Responder {
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    let new_password = body.new_password.trim();
+    if new_password.len() < 4 {
+        return HttpResponse::BadRequest().body("new_password must be at least 4 characters");
+    }
+    let org_id = path.into_inner();
+    let org = match supabase_org::get_org_by_id(&org_id).await {
+        Ok(Some(o)) => o,
+        Ok(None) => return HttpResponse::NotFound().body("Organization not found"),
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+    let uid_s = uid.to_string();
+    match org.master_admin_id.as_deref() {
+        Some(owner) if owner != uid_s => {
+            return HttpResponse::Forbidden().body("Not the owner of this organization");
+        }
+        _ => {}
+    }
+    let hash = supabase_org::hash_org_entry_password(new_password, &org.id);
+    let mut patch = serde_json::json!({ "entry_password_hash": hash });
+    if org.master_admin_id.is_none() {
+        patch["master_admin_id"] = serde_json::Value::String(uid_s);
+    }
+    match supabase_org::sb_req("PATCH", &format!("organizations?id=eq.{}", org.id), Some(patch)).await {
+        Ok(resp) if resp.status().is_success() => {
+            let ip = req.peer_addr().map(|a| a.ip().to_string());
+            supabase_org::audit_best_effort(
+                &org.id,
+                None,
+                "org.entry_password.reset",
+                "organization",
+                &org.id,
+                serde_json::json!({}),
+                ip,
+                None,
+            )
+            .await;
+            HttpResponse::Ok().json(serde_json::json!({ "ok": true }))
+        }
+        Ok(resp) => {
+            let txt = resp.text().await.unwrap_or_default();
+            HttpResponse::InternalServerError().body(txt)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
 }
 
 /// `GET /api/admin/organizations/{id}`

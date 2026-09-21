@@ -25,6 +25,7 @@ mod transcribe;
 mod trash;
 mod upload;
 mod utils;
+mod entry_unlock;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer, HttpResponse};
@@ -214,8 +215,14 @@ async fn main() -> std::io::Result<()> {
                     // ---- Multi-org platform ----
                     .route("/current-org", web::get().to(orgs::current_org))
                     .route("/admin/overview", web::get().to(admin::overview))
+                    .route("/admin/master-unlock-status", web::get().to(admin::master_unlock_status))
+                    .route("/admin/master-password", web::post().to(admin::set_master_password))
+                    .route("/admin/master-unlock", web::post().to(admin::master_unlock))
+                    .route("/admin/my-orgs", web::get().to(orgs::list_my_organizations))
                     .route("/admin/organizations", web::get().to(orgs::list_organizations))
                     .route("/admin/organizations", web::post().to(orgs::create_organization))
+                    .route("/admin/organizations/{id}/unlock", web::post().to(orgs::unlock_organization))
+                    .route("/admin/organizations/{id}/reset-entry-password", web::post().to(orgs::reset_entry_password))
                     .route("/admin/organizations/{id}", web::get().to(orgs::get_organization))
                     .route("/admin/organizations/{id}", web::put().to(orgs::update_organization))
                     .route("/admin/organizations/{id}", web::delete().to(orgs::delete_organization))

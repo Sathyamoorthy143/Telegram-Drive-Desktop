@@ -40,6 +40,7 @@ create table if not exists user_settings (
   lock_pin_hash text, -- sha256(pin + "telegram-drive-salt") hex
   lock_interval_ms int default 900000, -- 15min absolute
   notification_mode text default 'hide' check (notification_mode in ('suppress','hide','allow')),
+  master_password_hash text, -- sha256(password || "::telegram-drive-master-entry::" || telegram_user_id)
   updated_at timestamptz default now()
 );
 

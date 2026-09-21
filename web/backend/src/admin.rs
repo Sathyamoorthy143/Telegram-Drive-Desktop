@@ -5,7 +5,10 @@
 
 use actix_web::{web, HttpResponse, Responder};
 
-use crate::auth_org::require_master;
+use crate::auth_org::{current_telegram_user_id, require_master};
+use crate::entry_unlock::{evaluate_master_unlock, EntryUnlockError};
+use crate::models::PasswordBody;
+use crate::supabase;
 use crate::supabase_org;
 use crate::AppState;
 
@@ -64,4 +67,62 @@ pub async fn overview(state: web::Data<AppState>) -> impl Responder {
         "orgs": rows,
         "partial": partial,
     }))
+}
+
+fn unlock_status_response(err: EntryUnlockError) -> HttpResponse {
+    match err {
+        EntryUnlockError::MissingHash => HttpResponse::Conflict().body("Master Admin password is not set"),
+        EntryUnlockError::WrongPassword => HttpResponse::Unauthorized().body("Wrong password"),
+        EntryUnlockError::Inactive => HttpResponse::Forbidden().body("Inactive"),
+        EntryUnlockError::NotOwner => HttpResponse::Forbidden().body("Not owner"),
+    }
+}
+
+pub async fn master_unlock_status(state: web::Data<AppState>) -> impl Responder {
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let row = supabase::get_user_settings(uid).await;
+    let has = row
+        .and_then(|r| r.master_password_hash)
+        .map(|h| !h.is_empty())
+        .unwrap_or(false);
+    HttpResponse::Ok().json(serde_json::json!({ "has_master_password": has }))
+}
+
+pub async fn set_master_password(
+    state: web::Data<AppState>,
+    body: web::Json<PasswordBody>,
+) -> impl Responder {
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let password = body.password.trim();
+    if password.len() < 4 {
+        return HttpResponse::BadRequest().body("password must be at least 4 characters");
+    }
+    let hash = supabase::hash_master_password(password, &uid.to_string());
+    match supabase::set_master_password_hash(uid, hash).await {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({ "ok": true })),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+pub async fn master_unlock(
+    state: web::Data<AppState>,
+    body: web::Json<PasswordBody>,
+) -> impl Responder {
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let stored = supabase::get_user_settings(uid)
+        .await
+        .and_then(|r| r.master_password_hash);
+    match evaluate_master_unlock(stored.as_deref(), &body.password, &uid.to_string()) {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({ "ok": true })),
+        Err(e) => unlock_status_response(e),
+    }
 }
