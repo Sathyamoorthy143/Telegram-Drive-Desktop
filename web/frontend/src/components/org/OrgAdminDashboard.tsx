@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen, HardDrive, X } from 'lucide-react';
+import { LogOut, Files, Trash2, Users, Activity, Settings, RotateCcw, XCircle, FolderPlus, Upload, FolderOpen, HardDrive, X } from 'lucide-react';
+import { OrgShell, PageHeader, Banner, OrgCard, TabBar } from './ui';
 import * as api from '../../api';
 import type { OrgMember, AuditEntry } from '../../types';
 import { stagedUploads, needsChunkedUpload, splitRelativePath, buildFolderIndex, childFolderKey, isPreviewableImage } from '../../orgUpload';
@@ -548,53 +549,30 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
   ];
 
   return (
-    <div className="h-full w-full flex flex-col">
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-telegram-border bg-telegram-surface">
-        {onSwitchOrganization && (
-          <button onClick={onSwitchOrganization} className="text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Switch organization">
-            Switch organization
-          </button>
-        )}
-        {!onSwitchOrganization && onBack && (
-          <button onClick={onBack} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Back">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-        )}
-        <div className="flex-1 min-w-0">
-          <h1 className="font-semibold truncate">{org.name}</h1>
-          <p className="text-xs text-telegram-subtext">
-            {org.subdomain} · {session ? `${session.username} (${session.role})` : 'master admin (acting as owner)'}
-          </p>
-        </div>
-        <nav className="flex gap-1">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ${tab === t.id ? 'bg-telegram-primary text-white' : 'hover:bg-telegram-hover'}`}
-            >
-              <t.icon className="w-3.5 h-3.5" /> {t.label}
-            </button>
-          ))}
-        </nav>
-<button onClick={logout} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Sign out">
-            <LogOut className="w-4 h-4" />
-        </button>
-        {!session && !onSwitchOrganization && (
-          <button onClick={() => { window.location.href = '/'; }} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Master dashboard">
-            <FolderOpen className="w-4 h-4" />
-          </button>
-        )}
-    </header>
+    <OrgShell>
+      <PageHeader
+        icon={<Files className="w-6 h-6 text-telegram-primary" />}
+        title={org.name}
+        subtitle={`${org.subdomain} · ${session ? `${session.username} (${session.role})` : 'master admin (acting as owner)'}`}
+        onBack={!onSwitchOrganization && onBack ? onBack : undefined}
+        actions={<>
+          {onSwitchOrganization && (
+            <button onClick={onSwitchOrganization} className="text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Switch organization">Switch organization</button>
+          )}
+          <TabBar tabs={tabs} active={tab} onChange={setTab} />
+          <button onClick={logout} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Sign out"><LogOut className="w-4 h-4" /></button>
+          {!session && !onSwitchOrganization && (
+            <button onClick={() => { window.location.href = '/'; }} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Master dashboard"><FolderOpen className="w-4 h-4" /></button>
+          )}
+        </>}
+      />
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="max-w-4xl mx-auto">
           {tab === 'files' && (
             <div>
               {storage && !storage.provisioned && (
-                <p className="text-sm text-yellow-600 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
-                  Organization not provisioned yet — ask the master admin to provision Telegram channels before files appear.
-                </p>
+                <Banner variant="warning">Organization not provisioned yet — ask the master admin to provision Telegram channels before files appear.</Banner>
               )}
               {canEdit(role) && (
                 <form onSubmit={createFolder} className="flex gap-2 mb-4">
@@ -771,6 +749,7 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
 
           {tab === 'members' && (
             <div>
+              <OrgCard>
               {canAdmin(role) && (
                 <form onSubmit={createMember} className="flex flex-wrap gap-2 mb-4">
                   <input value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} placeholder="username"
@@ -874,11 +853,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
                   )}
                 </div>
               )}
+              </OrgCard>
             </div>
           )}
 
           {tab === 'activity' && (
             <div>
+              <OrgCard>
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Audit log — who / what / when</h2>
               {activityLoading ? (
                 <p className="text-sm text-telegram-subtext">Loading activity…</p>
@@ -901,11 +882,13 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
                   ))}
                 </ul>
               )}
+              </OrgCard>
             </div>
           )}
 
           {tab === 'settings' && (
             <div className="text-sm">
+              <OrgCard>
               <h2 className="text-sm font-medium text-telegram-subtext mb-2">Org settings</h2>
               <div className="p-4 rounded-xl bg-telegram-surface border border-telegram-border space-y-1 mb-4">
                 <p>Main channel: <span className="font-mono">{storage?.main_channel_id ?? '—'}</span></p>
@@ -948,10 +931,11 @@ export function OrgAdminDashboard({ org, session, onLogout, onBack, onSwitchOrga
               ) : (
                 <p className="text-xs text-telegram-subtext mt-2">Only org admins can change settings.</p>
               )}
+              </OrgCard>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </OrgShell>
   );
 }
