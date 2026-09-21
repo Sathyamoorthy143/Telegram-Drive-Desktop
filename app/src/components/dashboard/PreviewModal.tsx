@@ -4,6 +4,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { TelegramFile } from '../../types';
 import { isImageFile } from '../../utils';
+import { appPreviewKind } from './preview/previewSource';
+import { TextPreview } from './preview/TextPreview';
+import { OfficePreview } from './preview/OfficePreview';
 
 const PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
 const PREVIEW_CACHE_MAX_ITEMS = 8;
@@ -71,6 +74,7 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
     const [reloadNonce, setReloadNonce] = useState(0);
     const [retryCount, setRetryCount] = useState(0);
     const latestRequestRef = useRef(0);
+    const kind = appPreviewKind(file.name);
 
     useEffect(() => {
         setRetryCount(0);
@@ -79,6 +83,12 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
 
     useEffect(() => {
         const load = async () => {
+            // Non-image files render via the dedicated client-side preview
+            // components below — skip the local download + cache flow.
+            if (kind !== 'image') {
+                setLoading(false);
+                return;
+            }
             const key = getPreviewCacheKey(file.id, activeFolderId);
             const shouldBypassCache = reloadNonce > 0;
             const requestId = ++latestRequestRef.current;
@@ -122,7 +132,7 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
             }
         };
         load();
-    }, [file, activeFolderId, reloadNonce]);
+    }, [file, activeFolderId, reloadNonce, kind]);
 
     useEffect(() => {
         const candidates = [nextFile, prevFile].filter((f): f is TelegramFile => !!f && isSafeToPrefetch(f.name));
@@ -222,34 +232,50 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                     </div>
                 )}
 
-                {!loading && !error && src && (
+                {!loading && !error && kind === 'image' && src && (
                     <div className="flex flex-col items-center">
-                        {isImageFile(file.name) ? (
-                            <img
-                                src={src}
-                                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-black"
-                                alt="Preview"
-                                onError={() => {
-                                    const key = getPreviewCacheKey(file.id, activeFolderId);
-                                    forgetPreview(key);
+                        <img
+                            src={src}
+                            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-black"
+                            alt="Preview"
+                            onError={() => {
+                                const key = getPreviewCacheKey(file.id, activeFolderId);
+                                forgetPreview(key);
 
-                                    if (retryCount < 1) {
-                                        setRetryCount((prev) => prev + 1);
-                                        setReloadNonce((prev) => prev + 1);
-                                        return;
-                                    }
+                                if (retryCount < 1) {
+                                    setRetryCount((prev) => prev + 1);
+                                    setReloadNonce((prev) => prev + 1);
+                                    return;
+                                }
 
-                                    setError('Failed to render image preview');
-                                }}
-                            />
-                        ) : (
-                            <div className="bg-[#1c1c1c] p-8 rounded-xl text-center border border-white/10 shadow-2xl">
-                                <File className="w-16 h-16 text-telegram-primary mx-auto mb-4" />
-                                <h3 className="text-xl text-white font-medium mb-2">{file.name}</h3>
-                                <p className="text-gray-400 mb-6">Preview not supported in app.</p>
-                                <p className="text-xs text-gray-500">File type: {file.name.split('.').pop()}</p>
-                            </div>
-                        )}
+                                setError('Failed to render image preview');
+                            }}
+                        />
+                    </div>
+                )}
+
+                {!loading && !error && (kind === 'text' || kind === 'code') && (
+                    <div className="relative w-[92vw] max-w-6xl h-[80vh] rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+                        <TextPreview file={file} activeFolderId={activeFolderId} />
+                    </div>
+                )}
+
+                {!loading && !error && (kind === 'office-doc' || kind === 'office-sheet' || kind === 'office-slide') && (
+                    <div className="relative w-[92vw] max-w-6xl h-[80vh] rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+                        <OfficePreview
+                            file={file}
+                            activeFolderId={activeFolderId}
+                            variant={kind === 'office-doc' ? 'doc' : kind === 'office-sheet' ? 'sheet' : 'slide'}
+                        />
+                    </div>
+                )}
+
+                {!loading && !error && kind === 'unknown' && (
+                    <div className="bg-[#1c1c1c] p-8 rounded-xl text-center border border-white/10 shadow-2xl">
+                        <File className="w-16 h-16 text-telegram-primary mx-auto mb-4" />
+                        <h3 className="text-xl text-white font-medium mb-2">{file.name}</h3>
+                        <p className="text-gray-400 mb-6">Preview not supported in app.</p>
+                        <p className="text-xs text-gray-500">File type: {file.name.split('.').pop()}</p>
                     </div>
                 )}
 

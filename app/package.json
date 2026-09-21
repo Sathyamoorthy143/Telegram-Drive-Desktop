@@ -14,17 +14,20 @@
     "@tanstack/react-virtual": "^3.13.18",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-store": "^2.4.2",
     "@tauri-apps/plugin-updater": "^2.10.0",
     "framer-motion": "^12.26.2",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.562.0",
+    "mammoth": "^1.12.3",
     "pdfjs-dist": "^5.6.205",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "@tauri-apps/plugin-fs": "^2",
-    "sonner": "^2.0.7"
+    "sonner": "^2.0.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
