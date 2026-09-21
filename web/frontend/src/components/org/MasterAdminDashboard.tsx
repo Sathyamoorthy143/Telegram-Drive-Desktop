@@ -244,6 +244,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
           title="Organizations"
           subtitle="Master admin — create orgs, provision Telegram channels, manage admins."
           onBack={onBack}
+          backTitle="Back to My Drive"
           actions={
             <button
               onClick={() => (showAlerts ? setShowAlerts(false) : loadAlertsOverview())}

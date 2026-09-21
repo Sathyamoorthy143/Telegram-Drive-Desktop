@@ -9,13 +9,13 @@ export function OrgShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function PageHeader({ icon, title, subtitle, actions, onBack }: {
-  icon: ReactNode; title: string; subtitle?: string; actions?: ReactNode; onBack?: () => void;
+export function PageHeader({ icon, title, subtitle, actions, onBack, backTitle }: {
+  icon: ReactNode; title: string; subtitle?: string; actions?: ReactNode; onBack?: () => void; backTitle?: string;
 }) {
   return (
     <div className="flex items-center gap-3 mb-6">
       {onBack && (
-        <button onClick={onBack} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title="Back">
+        <button onClick={onBack} className="p-2 rounded-lg border border-telegram-border hover:bg-telegram-hover" title={backTitle ?? 'Back'}>
           <ArrowLeft className="w-4 h-4" />
         </button>
       )}
