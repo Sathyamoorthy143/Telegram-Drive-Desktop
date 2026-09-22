@@ -42,6 +42,9 @@ import { AllVersionsModal } from './AllVersionsModal';
 import { StorageInsights } from './StorageInsights';
 import { DuplicateFinder } from './DuplicateFinder';
 import { LockScreen } from '../LockScreen';
+import { OrgMembersPanel } from '../org/OrgMembersPanel';
+import { OrgActivityPanel } from '../org/OrgActivityPanel';
+import { OrgSettingsPanel } from '../org/OrgSettingsPanel';
 
 // Simple keyboard shortcuts hook
 function useKeyboardShortcuts(handlers: {
@@ -110,8 +113,13 @@ async function fetchFolderFiles(folderId: number | null): Promise<any[]> {
     return mapped;
 }
 
-export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLogout: () => void; onSwitchOrganization?: () => void; topBanner?: React.ReactNode }) {
+export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }: {
+    onLogout: () => void; onSwitchOrganization?: () => void; topBanner?: React.ReactNode;
+    orgMode?: { org: { id: string; name: string; subdomain: string }; session: { username: string; role: string; member_id: string } | null };
+}) {
     const queryClient = useQueryClient();
+    const showAdmin = !orgMode || !orgMode.session || ['admin', 'owner'].includes(orgMode.session.role);
+    const [orgAdminView, setOrgAdminView] = useState<null | 'members' | 'activity' | 'settings'>(null);
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const orgId = api.getOrgContext();
     const { alerts, newCount: alertCount, clearNewCount, expired: alertsExpired } = useOrgAlerts(orgId);
@@ -1264,7 +1272,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
             </AnimatePresence>
 
 <Sidebar
-        folders={folders} activeFolderId={activeFolderId} setActiveFolderId={setActiveFolderId} stats={folderStats}
+        folders={folders} activeFolderId={activeFolderId} setActiveFolderId={(id) => { setOrgAdminView(null); setActiveFolderId(id); }} stats={folderStats}
         onPrefetchFolder={prefetchFolder}
         onDrop={handleDropOnFolder} onDelete={handleFolderDelete} onCreate={handleCreateFolder}
         onRename={(id, name) => handleRename(id, name, true)}
@@ -1281,6 +1289,10 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         onSettings={() => setShowSettingsModal(true)} bandwidth={bandwidth || null}
         onActivityLog={() => setShowActivityLog(!showActivityLog)}
         onAllVersions={() => setShowAllVersions(true)}
+        orgHeader={orgMode ? { name: orgMode.org.name, detail: `${orgMode.org.subdomain} · ${orgMode.session ? `${orgMode.session.username} (${orgMode.session.role})` : 'master admin'}` } : undefined}
+        adminViews={orgMode && showAdmin ? [{ id: 'members', label: 'Members' }, { id: 'activity', label: 'Activity' }, { id: 'settings', label: 'Settings' }] : undefined}
+        activeAdminView={orgAdminView}
+        onSelectAdminView={(id) => setOrgAdminView(id)}
     />
 
             {/* Floating buttons */}
@@ -1371,7 +1383,13 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                         </div>
                     </div>
                 )}
-                {isTrash ? (
+                {(orgMode && orgAdminView) ? (
+                    <div className="flex-1 p-4 overflow-auto">
+                        {orgAdminView === 'members' && <OrgMembersPanel orgId={orgMode.org.id} role={orgMode.session?.role || 'owner'} sessionMemberId={orgMode.session?.member_id || null} folders={folders} />}
+                        {orgAdminView === 'activity' && <OrgActivityPanel orgId={orgMode.org.id} />}
+                        {orgAdminView === 'settings' && <OrgSettingsPanel orgId={orgMode.org.id} role={orgMode.session?.role || 'owner'} />}
+                    </div>
+                ) : isTrash ? (
                     <div className="flex-1 p-4 overflow-auto">
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-sm font-bold text-telegram-text uppercase tracking-widest flex items-center gap-2">Trash <span className="bg-telegram-primary/20 text-telegram-primary px-2 py-0.5 rounded-full text-xs">{trashItems.length}</span></h2>

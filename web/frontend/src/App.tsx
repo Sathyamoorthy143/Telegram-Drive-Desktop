@@ -12,7 +12,6 @@ import { DropZoneProvider } from "./contexts/DropZoneContext";
 import { LockProvider } from "./context/LockContext";
 import { OrgLogin } from "./components/org/OrgLogin";
 import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
-import { OrgAdminDashboard } from "./components/org/OrgAdminDashboard";
 import { OrgPicker } from "./components/org/OrgPicker";
 import { OrgShell, OrgCard } from "./components/org/ui";
 import { MasterPasswordSetup } from "./components/org/MasterPasswordSetup";
@@ -319,10 +318,7 @@ export function AppContent() {
         />
       )}
       {boot.kind === "org-dashboard" && (
-        <OrgAdminDashboard
-          org={boot.org}
-          session={boot.session}
-          onSwitchOrganization={boot.session ? undefined : () => { api.setOrgContext(null); setBoot({ kind: "org-picker" }); }}
+        <Dashboard
           onLogout={() => {
             api.setOrgToken(null, boot.org.id);
             api.setOrgContext(null);
@@ -334,6 +330,8 @@ export function AppContent() {
               setBoot({ kind: "master-auth" });
             }
           }}
+          onSwitchOrganization={boot.session ? undefined : () => { api.setOrgContext(null); setBoot({ kind: "org-picker" }); }}
+          orgMode={{ org: boot.org, session: boot.session }}
         />
       )}
     </main>
