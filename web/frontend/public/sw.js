@@ -1,5 +1,10 @@
 /// Tier 2 #15 — Service worker for offline-capable app shell.
 ///
+/// NOTE: this file is served as-is to browsers, so it MUST stay plain
+/// JavaScript — no TypeScript annotations, interfaces, or `as` casts.
+/// A single type annotation fails SW script evaluation and disables the
+/// whole worker ("ServiceWorker script evaluation failed").
+///
 /// Strategy:
 ///  - App shell (index.html, JS chunks, CSS) is cached on first install
 ///    using a "cache first, falling back to network" strategy.
@@ -20,7 +25,7 @@ const SHELL_URLS = [
 
 /// Install: precache the shell. We let the fetch handler add chunks as they
 /// are requested so we don't need to enumerate every hashed filename in advance.
-self.addEventListener("install", (event: ExtendableEvent) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) => {
       // Prime the cache with the root HTML so the offline fallback works.
@@ -28,11 +33,11 @@ self.addEventListener("install", (event: ExtendableEvent) => {
     })
   );
   // Activate immediately so the new worker takes over without waiting.
-  (event as ExtendableEvent).waitUntil(self.clients.claim());
+  event.waitUntil(self.skipWaiting());
 });
 
 /// Activate: clean up old caches.
-self.addEventListener("activate", (event: ExtendableEvent) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
@@ -42,11 +47,11 @@ self.addEventListener("activate", (event: ExtendableEvent) => {
       );
     })
   );
-  ;(event as ExtendableEvent).waitUntil(self.clients.claim());
+  event.waitUntil(self.clients.claim());
 });
 
 /// Fetch handler: cache-first for shell, network-first for API, network for the rest.
-self.addEventListener("fetch", (event: FetchEvent) => {
+self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
@@ -78,7 +83,7 @@ self.addEventListener("fetch", (event: FetchEvent) => {
 
 /// Cache-first strategy: return cached response if available, otherwise fetch
 /// and cache the result.
-async function cacheFirst(request: Request, cacheName: string): Promise<Response> {
+async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request);
   if (cached) return cached;
   try {
@@ -99,7 +104,7 @@ async function cacheFirst(request: Request, cacheName: string): Promise<Response
 }
 
 /// Network-first strategy: try the network, fall back to cache on failure.
-async function networkFirst(request: Request, cacheName: string): Promise<Response> {
+async function networkFirst(request, cacheName) {
   try {
     const response = await fetch(request);
     if (response.ok) {
@@ -115,13 +120,4 @@ async function networkFirst(request: Request, cacheName: string): Promise<Respon
       headers: { "Content-Type": "application/json" },
     });
   }
-}
-
-// Minimal TypeScript-like declarations for service worker globals.
-interface ExtendableEvent extends Event {
-  waitUntil(f: Promise<unknown>): void;
-}
-interface FetchEvent extends ExtendableEvent {
-  request: Request;
-  respondWith(response: Promise<Response> | Response): void;
 }

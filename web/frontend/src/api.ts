@@ -507,6 +507,13 @@ export const uploadOrgFileResumable = (orgId: string, file: File, folder_id?: nu
 };
 
 export const CHUNK_WORKERS = 8;
+
+/// Chunk PUT retries: Render free-tier wake-ups (~30-60s) and transient DNS
+/// blips outlast 3 quick attempts, so allow 6 with growing backoff
+/// (1s, 2s, 4s, 8s, 16s ≈ 31s worst case per chunk). Network-level
+/// failures (TypeError) and 429/5xx are retried; other statuses throw.
+const CHUNK_MAX_ATTEMPTS = 6;
+const CHUNK_BACKOFF_BASE_MS = 1000;
 export const MAX_CONCURRENT_FILES = 4;
 
 async function sha256(buffer: ArrayBuffer): Promise<string> {
@@ -689,7 +696,7 @@ async function _uploadFileChunked(
       const buffer = await blob.arrayBuffer();
 
       let lastErr: any = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < CHUNK_MAX_ATTEMPTS; attempt++) {
         if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
         await options?.waitIfPaused?.();
         try {
@@ -716,8 +723,8 @@ async function _uploadFileChunked(
           if (e?.name === 'AbortError') throw e;
           lastErr = e;
         }
-        if (attempt < 2) {
-          const backoff = 400 * Math.pow(2, attempt) + Math.random() * 200;
+        if (attempt < CHUNK_MAX_ATTEMPTS - 1) {
+          const backoff = CHUNK_BACKOFF_BASE_MS * Math.pow(2, attempt) + Math.random() * 200;
           await new Promise(r => setTimeout(r, backoff));
         }
       }

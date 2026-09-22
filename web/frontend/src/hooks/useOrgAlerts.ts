@@ -6,6 +6,10 @@ import type { OrgAlert } from '../types';
 const POLL_INTERVAL_MS = 30000;
 const MAX_ALERTS = 50;
 const MAX_NEW_COUNT = 99;
+// Outage backoff: consecutive failures double the quiet period
+// (30s, 60s, 120s …) up to this cap, so a dead backend/DNS doesn't turn
+// the poller into an error storm. Reset on the first success.
+const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 /** Pure dedupe: return entries not yet seen, recording their ids. Id-less entries are skipped. */
 export function filterNewAlerts(seen: Set<string>, data: OrgAlert[]): OrgAlert[] {
@@ -34,13 +38,19 @@ export function useOrgAlerts(orgId: string | null) {
     if (!orgId) return;
 
     let cancelled = false;
+    let failures = 0;
+    let nextAllowedAt = 0;
 
     const fetchAlerts = async () => {
       // No polling for background tabs — resume on visibilitychange.
       if (typeof document !== 'undefined' && document.hidden) return;
+      // In an outage, sit out ticks until the backoff expires.
+      if (Date.now() < nextAllowedAt) return;
       try {
         const data = await api.getOrgAlerts(orgId);
         if (cancelled) return;
+        failures = 0;
+        nextAllowedAt = 0;
         const newAlerts = filterNewAlerts(seenIdsRef.current, data);
         if (newAlerts.length > 0) {
           setNewCount(prev => Math.min(MAX_NEW_COUNT, prev + newAlerts.length));
@@ -59,6 +69,9 @@ export function useOrgAlerts(orgId: string | null) {
         if (String(e?.message || '').includes('401') || String(e?.message || '').toLowerCase().includes('unauthorized')) {
           setExpired(true);
         }
+        // Anything else: back off exponentially (outage/DNS/sleeping backend).
+        failures += 1;
+        nextAllowedAt = Date.now() + Math.min(POLL_INTERVAL_MS * Math.pow(2, failures - 1), MAX_BACKOFF_MS);
       }
     };
 
