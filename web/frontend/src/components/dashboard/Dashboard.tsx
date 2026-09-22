@@ -39,6 +39,8 @@ import { SettingsModal } from './SettingsModal';
 import { TransferLogs } from './TransferLogs';
 import { PropertiesModal } from './PropertiesModal';
 import { AllVersionsModal } from './AllVersionsModal';
+import { StorageInsights } from './StorageInsights';
+import { DuplicateFinder } from './DuplicateFinder';
 import { LockScreen } from '../LockScreen';
 
 // Simple keyboard shortcuts hook
@@ -114,6 +116,8 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     const orgId = api.getOrgContext();
     const { alerts, newCount: alertCount, clearNewCount, expired: alertsExpired } = useOrgAlerts(orgId);
     const [showAlerts, setShowAlerts] = useState(false);
+    const [showInsights, setShowInsights] = useState(false);
+    const [showDuplicates, setShowDuplicates] = useState(false);
     const alertsExpiredToastShown = useRef(false);
     useEffect(() => {
         if (alertsExpired && !alertsExpiredToastShown.current) {
@@ -1313,6 +1317,8 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                     isLocked={isLocked}
                     hasPin={hasPin}
                     alertCount={alertCount}
+                    onOpenInsights={() => setShowInsights(true)}
+                    onOpenDuplicates={() => setShowDuplicates(true)}
                     onOpenAlerts={orgId ? () => {
                         setShowAlerts(v => !v);
                         clearNewCount();
@@ -1339,6 +1345,23 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                         ))}
                     </div>
                     </>
+                )}
+                {showInsights && (
+                    <StorageInsights
+                        folderId={activeFolderId}
+                        folderName={currentFolderName}
+                        onClose={() => setShowInsights(false)}
+                    />
+                )}
+                {showDuplicates && (
+                    <DuplicateFinder
+                        folderId={activeFolderId}
+                        onClose={() => setShowDuplicates(false)}
+                        onTrashChanged={() => {
+                            queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
+                            refetchTrash();
+                        }}
+                    />
                 )}
                 {isOffline && !isSpecial && (
                     <div className="px-4 pt-2">

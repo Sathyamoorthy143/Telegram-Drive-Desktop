@@ -38,8 +38,8 @@
 
 # Tier 4 — Differentiating Features
 
-- [ ] Storage insights dashboard
-- [ ] Duplicate finder
+- [x] Storage insights dashboard — `StorageInsights/` panel (TopBar BarChart3 button): total/files/folders/bandwidth cards, per-type breakdown bars, largest files, averages; pure `computeStorageStats` helper + tests
+- [x] Duplicate finder — `DuplicateFinder/` panel (TopBar Files button): groups by name+size, per-group keep-picker, trash-duplicates action wired to soft delete + query refetch; pure `findDuplicateGroups` helper + tests
 - [ ] Auto-purge trash + retention policy
 - [ ] Share upgrades (QR, custom slug, download limits)
 - [ ] Folder shares with role grants

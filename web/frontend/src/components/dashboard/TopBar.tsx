@@ -2,7 +2,7 @@ import { HardDrive, Sun, Moon, ChevronDown,
     FolderInput, PanelRightClose, PanelRightOpen, FilePlus,
     FolderPlus, ArrowUpDown, Check, List, Grid2X2, Search,
     Clipboard, Scissors, Copy, Camera, Star, Tag, Pencil, ListTree,
-    Lock, Unlock, Bell
+    Lock, Unlock, Bell, BarChart3, Files
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -41,6 +41,8 @@ interface TopBarProps {
     hasPin?: boolean;
     alertCount?: number;
     onOpenAlerts?: () => void;
+    onOpenInsights?: () => void;
+    onOpenDuplicates?: () => void;
 }
 
 export function TopBar({
@@ -48,7 +50,7 @@ export function TopBar({
     onManualUpload, onFolderUpload, onCameraUpload, onCreateFolder, onPaste, onCut, onCopy, canPaste,
     viewSettings, onUpdateViewSettings, searchTerm, onSearchChange, searchFilters, onSearchFiltersChange,
     onToggleLock, isLocked, hasPin,
-    alertCount = 0, onOpenAlerts,
+    alertCount = 0, onOpenAlerts, onOpenInsights, onOpenDuplicates,
 }: TopBarProps) {
     const { theme, toggleTheme } = useTheme();
     const [activeDropdown, setActiveDropdown] = useState<'new' | 'sort' | 'view' | null>(null);
@@ -322,6 +324,28 @@ export function TopBar({
                 >
                     {viewSettings.showPreviewPane ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
                 </button>
+
+                {onOpenInsights && (
+                    <button
+                        onClick={onOpenInsights}
+                        className="btn-interactive p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition"
+                        title="Storage insights"
+                        aria-label="Open storage insights"
+                    >
+                        <BarChart3 className="w-5 h-5" />
+                    </button>
+                )}
+
+                {onOpenDuplicates && (
+                    <button
+                        onClick={onOpenDuplicates}
+                        className="btn-interactive p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition"
+                        title="Find duplicates"
+                        aria-label="Find duplicate files"
+                    >
+                        <Files className="w-5 h-5" />
+                    </button>
+                )}
 
                 <button onClick={toggleTheme} className="btn-interactive p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext transition">
                     {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
