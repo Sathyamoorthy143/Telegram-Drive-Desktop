@@ -1,6 +1,8 @@
 # 📍 LIVE STATUS
-> **Currently working on:** 🔵 TIER 2 — Experience — IN PROGRESS (order: #8 ⌘K palette → #14 view memory → #11 shift-select/status bar → #10 ZIP download → #12 PDF dark mode → #9/#15 as capacity allows)
+> **Currently working on:** 🔵 TIER 2 — Experience — IN PROGRESS (resuming from yesterday)
 > **Tier 1:** ✅ COMPLETE (7/7 done, pushed `2db4c53`)
+> **Tier 2:** PARTIAL — ⌘K palette ✅, shift-select ✅, ZIP download ✅, PDF dark ✅, view memory ✅ (pushed `9c38ca4`)
+> **Now working on:** #9 Upload superpowers → then #13 Accessibility → then #15 Offline shell
 
 ---
 
@@ -16,13 +18,13 @@
 
 # Tier 2 — Experience
 
-- [ ] #8 ⌘K command palette (search + actions)
-- [ ] #9 Upload manager superpowers (resume after reload, conflict dialog, folder structure, auto-retry)
-- [ ] #10 Download experience (folder ZIP, resume, batch)
-- [ ] #11 Selection & bulk actions (marquee, shift-range, status bar)
-- [ ] #12 Preview polish (PDF dark mode, image zoom/pan, neighbor preload)
-- [ ] #13 Accessibility & mobile (focus traps, aria, drawer, long-press)
-- [ ] #14 Per-folder view memory (sort/mode/density/columns)
+- [x] #8 ⌘K command palette (search files + actions; arrow nav; Ctrl+K toggle)
+- [ ] #9 Upload manager superpowers (resume after reload, conflict dialog, folder structure, auto-retry) — **WORKING NOW**
+- [x] #10 Download experience (folder ZIP, resume, batch)
+- [x] #11 Selection & bulk actions (marquee, shift-range, status bar)
+- [x] #12 Preview polish (PDF dark mode toggle)
+- [ ] #13 Accessibility & mobile (focus traps, aria, drawer, long-press) — **next after #9**
+- [x] #14 Per-folder view memory (sort/group/mode per folder via `td_view:` keys)
 - [ ] #15 Offline-first shell (service worker + cached view)
 
 # Tier 3 — Reliability & Operations

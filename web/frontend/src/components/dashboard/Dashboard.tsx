@@ -233,6 +233,9 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                 onUploadId: (id) => ctx.onUploadId(id),
                 waitIfPaused: ctx.waitIfPaused,
                 isCancelled: ctx.isCancelled,
+                // Resume a previously interrupted chunked session (e.g. after
+                // a page reload) instead of restarting from chunk 0.
+                resumeUploadId: (item as any).uploadId,
               });
             } else {
               await api.uploadFile(upFile, targetFolder, { signal: ctx.signal });
@@ -742,10 +745,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     // upload engine (useUploadEngine) — these wrappers only stage/select.
     const stageFilesForUpload = useCallback((fileList: File[], pathFn?: (f: File) => string) => {
         if (fileList.length === 0) return [] as string[];
+        // Match re-selected files against interrupted chunked sessions so the
+        // engine resumes from the last uploaded chunk instead of starting over.
+        let pending: api.PendingUploadSession[] = [];
+        try { pending = api.listResumableUploadSessions(); } catch { pending = []; }
+        const matchSession = (f: File) => pending.find((s) => s.fileName === f.name && s.fileSize === f.size);
         const ids = up.stage(
           fileList.map((f) => {
             const rel = pathFn ? pathFn(f) : ((f as any).webkitRelativePath || f.name);
             const { dirs, fileName } = splitRelativePath(rel);
+            const resume = matchSession(f);
             return {
               file: f,
               meta: {
@@ -755,11 +764,17 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
                 folderId: activeFolderId,
                 dirs,
                 selected: true,
+                ...(resume ? { uploadId: resume.uploadId } : {}),
               },
             };
           }),
         );
-        toast.info(`${fileList.length} file(s) staged — tick checkboxes, then hit Upload`);
+        const resumed = fileList.filter((f) => matchSession(f)).length;
+        toast.info(
+          resumed > 0
+            ? `${fileList.length} file(s) staged — ${resumed} will resume from where they stopped`
+            : `${fileList.length} file(s) staged — tick checkboxes, then hit Upload`,
+        );
         return ids;
     }, [up, activeFolderId]);
 
@@ -1069,6 +1084,36 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
+    // Auto-retry failed uploads once the connection comes back. Manual retry
+    // still works; this only covers the "network blipped, user did nothing"
+    // case so a long batch doesn't sit half-failed.
+    useEffect(() => {
+        const onOnline = () => {
+            const failed = up.queue.filter((x) => x.status === 'error');
+            if (failed.length > 0) {
+                toast.info(`Back online — retrying ${failed.length} failed upload(s)`);
+                up.retryAllFailed();
+            }
+        };
+        window.addEventListener('online', onOnline);
+        return () => window.removeEventListener('online', onOnline);
+    }, [up]);
+
+    // Resumable upload sessions found after a reload: offer one-click resume.
+    const [resumableSessions, setResumableSessions] = useState<api.PendingUploadSession[]>([]);
+    useEffect(() => {
+        try {
+            const sessions = api.listResumableUploadSessions();
+            setResumableSessions(sessions.filter((s) => s.fileSize > api.CHUNKED_UPLOAD_THRESHOLD));
+        } catch {
+            setResumableSessions([]);
+        }
+    }, []);
+    const dismissResumable = useCallback((uploadId: string) => {
+        api.removeUploadSession(uploadId);
+        setResumableSessions((prev) => prev.filter((s) => s.uploadId !== uploadId));
+    }, []);
+
     // Batch download selected files as one ZIP (client-side, capped)
     const handleDownloadSelectedZip = useCallback(async () => {
         const targets = displayedFiles.filter((f) => selectedIds.includes(f.id) && f.type !== 'folder');
@@ -1375,6 +1420,49 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
             )}
 
             <UploadQueue items={uploadQueue} paused={up.pausedAll} onClearFinished={() => up.clearFinished()} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={up.maxParallel} onMaxParallelChange={up.setMaxParallel} />
+
+            {/* Interrupted chunked uploads found after a reload */}
+            {resumableSessions.length > 0 && (
+                <div className="fixed bottom-4 left-4 z-50 max-w-sm glass-strong rounded-xl border border-telegram-border shadow-2xl p-4">
+                    <div className="flex items-start gap-3">
+                        <History className="w-4 h-4 text-telegram-primary mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-telegram-text">
+                                {resumableSessions.length} interrupted upload{resumableSessions.length > 1 ? 's' : ''}
+                            </p>
+                            <p className="text-xs text-telegram-subtext mt-0.5">
+                                These files were partway through uploading. Re-select them to resume from where they stopped.
+                            </p>
+                            <ul className="mt-2 space-y-1">
+                                {resumableSessions.slice(0, 4).map((s) => (
+                                    <li key={s.uploadId} className="flex items-center gap-2 text-xs text-telegram-subtext">
+                                        <span className="truncate flex-1" title={s.fileName}>{s.fileName}</span>
+                                        <span className="text-telegram-muted shrink-0">
+                                            {Math.round((s.uploadedChunks.length / Math.max(1, s.totalChunks)) * 100)}%
+                                        </span>
+                                        <button
+                                            onClick={() => dismissResumable(s.uploadId)}
+                                            className="text-telegram-muted hover:text-red-400 shrink-0"
+                                            title="Dismiss"
+                                        >
+                                            ✕
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            <button
+                                onClick={() => {
+                                    resumableSessions.forEach((s) => dismissResumable(s.uploadId));
+                                    toast.info('Cleared interrupted upload records');
+                                }}
+                                className="mt-2 text-xs px-2.5 py-1 rounded-lg bg-telegram-hover text-telegram-subtext hover:text-telegram-text transition-colors"
+                            >
+                                Dismiss all
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => { handleCancelAllDownloads(); setDownloadQueue(q => q.map((i: any) => (i.status === 'downloading' || i.status === 'pending') ? { ...i, status: 'cancelled' as const } : i)); }} />
             {isLocked && <LockScreen />}
         </motion.div>

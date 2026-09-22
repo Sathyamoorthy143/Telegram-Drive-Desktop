@@ -1,5 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Chunked upload session persistence for resume-after-reload.
+import {
+  saveSession as _saveUploadSession,
+  removeSession as _removeUploadSession,
+  updateSessionProgress as _updateUploadProgress,
+  getPendingSessions as _getPendingSessions,
+  getResumableSessions as _getResumableSessions,
+  type PendingUploadSession,
+} from './lib/uploadSession';
+
 const LEGACY_ORG_TOKEN_KEY = 'td_org_token';
 const orgTokenKey = (orgId: string) => `td_org_token_${orgId}`;
 
@@ -512,6 +522,8 @@ export const uploadFileChunked = (file: File, folder_id?: number, options?: {
   onUploadId?: (id: string) => void;
   waitIfPaused?: () => Promise<void>;
   isCancelled?: () => boolean;
+  /** Resume an existing chunked session by its server upload_id. */
+  resumeUploadId?: string;
 }) => {
   const orgId = getOrgContext();
   if (orgId) return uploadOrgFileChunked(orgId, file, folder_id, options);
@@ -524,7 +536,31 @@ export const uploadOrgFileChunked = (orgId: string, file: File, folder_id?: numb
   onUploadId?: (id: string) => void;
   waitIfPaused?: () => Promise<void>;
   isCancelled?: () => boolean;
+  /** Resume an existing chunked session by its server upload_id. */
+  resumeUploadId?: string;
 }) => _uploadFileChunked(orgId, file, folder_id, options);
+
+// ---------------------------------------------------------------------------
+// Upload session persistence helpers (for UI to show resumable sessions)
+// ---------------------------------------------------------------------------
+
+/** List all pending chunked upload sessions stored in this browser. */
+export const listPendingUploadSessions = (): PendingUploadSession[] => _getPendingSessions();
+
+/** List only sessions recent enough to still be resumable. */
+export const listResumableUploadSessions = (): PendingUploadSession[] => _getResumableSessions();
+
+/** Remove a stored session (after successful resume or manual clear). */
+export const removeUploadSession = (uploadId: string): void => _removeUploadSession(uploadId);
+
+/** Persist or update a chunked upload session. */
+export const saveUploadSession = (session: PendingUploadSession): void => _saveUploadSession(session);
+
+/** Update which chunks are uploaded for a session. */
+export const updateUploadSessionProgress = (uploadId: string, uploadedChunks: number[]): void =>
+  _updateUploadProgress(uploadId, uploadedChunks);
+
+export type { PendingUploadSession };
 
 async function _uploadFileChunked(
   orgId: string | null,
@@ -536,6 +572,8 @@ async function _uploadFileChunked(
     onUploadId?: (id: string) => void;
     waitIfPaused?: () => Promise<void>;
     isCancelled?: () => boolean;
+    /** Resume an existing chunked session by its server upload_id. */
+    resumeUploadId?: string;
   },
 ) {
   const total = file.size;
@@ -551,6 +589,8 @@ async function _uploadFileChunked(
     // Hash manifest: per-chunk SHA-256 plus the whole-file root over the
     // concatenated raw digests (same construction the server verifies).
     // Lets the server reject corrupt chunks instead of trusting the bytes.
+    // NOTE: hashes must be recomputed even when resuming, because the server
+    // verifies each chunk against the manifest from the original init call.
     const chunkHashes: string[] = [];
     for (let i = 0; i < totalChunks; i++) {
       if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) {
@@ -567,23 +607,59 @@ async function _uploadFileChunked(
     });
     const fileRoot = await sha256(rootBytes.buffer as ArrayBuffer);
 
-    const initRes = await api<any>('POST', `${orgPrefix}/files/upload/init`, {
-      name: file.name,
-      size: total,
-      folder_id,
-      total_chunks: totalChunks,
-      chunk_size: CHUNKED_SIZE,
-      file_sha256: fileRoot,
-      hashes: chunkHashes,
+    // Resume path: reuse the server session for this file when one is stored,
+    // so a reload doesn't restart a multi-GB upload from zero.
+    let uploadId: string | null = null;
+    let received: number[] = [];
+    if (options?.resumeUploadId) {
+      const resumedId = options.resumeUploadId;
+      try {
+        const session = await api<any>(
+          'GET',
+          `${orgPrefix}/files/upload/session?upload_id=${encodeURIComponent(resumedId)}`,
+        );
+        received = Array.isArray(session?.received) ? (session.received as number[]) : [];
+        uploadId = resumedId;
+      } catch {
+        // Session expired server-side: fall through to a fresh init below.
+        uploadId = null;
+      }
+    }
+    if (!uploadId) {
+      const initRes = await api<any>('POST', `${orgPrefix}/files/upload/init`, {
+        name: file.name,
+        size: total,
+        folder_id,
+        total_chunks: totalChunks,
+        chunk_size: CHUNKED_SIZE,
+        file_sha256: fileRoot,
+        hashes: chunkHashes,
+      });
+      uploadId = initRes.upload_id as string;
+      received = Array.isArray(initRes.received) ? (initRes.received as number[]) : [];
+    }
+    const activeUploadId: string = uploadId;
+    options?.onUploadId?.(activeUploadId);
+
+    // Persist the session so a reload can resume it.
+    _saveUploadSession({
+      uploadId: activeUploadId,
+      fileName: file.name,
+      fileSize: total,
+      folderId: folder_id ?? null,
+      totalChunks,
+      chunkSize: CHUNKED_SIZE,
+      uploadedChunks: received,
+      fileSha256: fileRoot,
+      orgId: orgId ?? undefined,
+      startedAt: Date.now(),
     });
-    const uploadId = initRes.upload_id as string;
-    options?.onUploadId?.(uploadId);
 
     // Seed from the server session too: if a previous attempt landed chunks
     // (or init raced), don't resend what the backend already holds.
-    const uploaded = new Set<number>(initRes.received as number[]);
+    const uploaded = new Set<number>(received);
     try {
-      const session = await api<any>('GET', `${orgPrefix}/files/upload/session?upload_id=${encodeURIComponent(uploadId)}`);
+      const session = await api<any>('GET', `${orgPrefix}/files/upload/session?upload_id=${encodeURIComponent(activeUploadId)}`);
       for (const idx of (session?.received as number[]) || []) uploaded.add(idx);
     } catch {
       // Session lookup is best-effort; init's list still applies.
@@ -617,7 +693,7 @@ async function _uploadFileChunked(
         if (options?.isCancelled?.() || abortController.signal.aborted || options?.signal?.aborted) return;
         await options?.waitIfPaused?.();
         try {
-          const chunkUrl = `${API_BASE}${orgPrefix}/files/upload/chunk?upload_id=${encodeURIComponent(uploadId)}&index=${index}&hash=${encodeURIComponent(chunkHashes[index])}`;
+          const chunkUrl = `${API_BASE}${orgPrefix}/files/upload/chunk?upload_id=${encodeURIComponent(activeUploadId)}&index=${index}&hash=${encodeURIComponent(chunkHashes[index])}`;
           const fetchOpts: RequestInit = {
             method: 'PUT',
             body: buffer,
@@ -657,6 +733,9 @@ async function _uploadFileChunked(
         if (uploaded.has(idx)) continue;
         await uploadChunk(idx);
         uploaded.add(idx);
+        // Track progress in the persisted session so a reload resumes near
+        // where it stopped instead of at zero.
+        _updateUploadProgress(activeUploadId, Array.from(uploaded));
       }
     };
 
@@ -670,7 +749,9 @@ async function _uploadFileChunked(
       throw new DOMException('cancelled', 'AbortError');
     }
 
-    const complete = await api<any>('POST', `${orgPrefix}/files/upload/complete`, { upload_id: uploadId });
+    const complete = await api<any>('POST', `${orgPrefix}/files/upload/complete`, { upload_id: activeUploadId });
+    // Upload finished: the session is no longer resumable.
+    _removeUploadSession(activeUploadId);
     return complete;
   })();
 }
