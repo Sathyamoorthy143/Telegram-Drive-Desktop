@@ -193,6 +193,18 @@ function requireNoOrgContext(feature: string): void {
   }
 }
 
+/** First 200 chars of an error body, for actionable download/thumbnail errors
+ * (e.g. Telegram FLOOD_WAIT text). Empty string when the body is unreadable. */
+async function errSnippet(res: Response): Promise<string> {
+  try {
+    const t = await res.text();
+    const s = t.trim().slice(0, 200);
+    return s ? ` — ${s}` : '';
+  } catch {
+    return '';
+  }
+}
+
 export const downloadFile = async (
   folder_id: number,
   message_id: number,
@@ -203,7 +215,7 @@ export const downloadFile = async (
   const res = await fetch(`${API_BASE}/api/files/${folder_id}/${message_id}/download`, {
     signal: options?.signal,
   });
-  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Download failed: ${res.status}${await errSnippet(res)}`);
   return res.blob();
 };
 
@@ -943,7 +955,7 @@ export const downloadOrgFileBlob = async (
     headers: orgToken ? { 'X-Org-Token': orgToken } : {},
     signal: options?.signal,
   });
-  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Download failed: ${res.status}${await errSnippet(res)}`);
   return res.blob();
 };
 
@@ -963,7 +975,7 @@ export const fetchOrgThumbnail = async (
     headers: orgToken ? { 'X-Org-Token': orgToken } : {},
     signal: options?.signal,
   });
-  if (!res.ok) throw new Error(`Thumbnail failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Thumbnail failed: ${res.status}${await errSnippet(res)}`);
   return res.blob();
 };
 

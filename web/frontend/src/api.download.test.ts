@@ -26,4 +26,11 @@ describe('downloadFile error surfacing', () => {
     vi.mocked(fetch).mockResolvedValueOnce(errRes(404) as any);
     await expect(downloadFile(0, 36)).rejects.toThrow('Download failed: 404');
   });
+
+  it('includes the server error body so Telegram reasons are visible', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false, status: 500, text: async () => 'FLOOD_WAIT_42', blob: async () => { throw new Error('no body'); },
+    } as any);
+    await expect(downloadFile(0, 36)).rejects.toThrow('Download failed: 500 — FLOOD_WAIT_42');
+  });
 });
