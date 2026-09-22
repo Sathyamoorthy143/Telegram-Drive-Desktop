@@ -6,9 +6,11 @@ interface DownloadQueueProps {
     items: DownloadItem[];
     onClearFinished: () => void;
     onCancelAll: () => void;
+    // Dismiss the whole panel (parent reopens it on new activity).
+    onClose?: () => void;
 }
 
-export function DownloadQueue({ items, onClearFinished, onCancelAll }: DownloadQueueProps) {
+export function DownloadQueue({ items, onClearFinished, onCancelAll, onClose }: DownloadQueueProps) {
     if (items.length === 0) return null;
 
     const activeCount = items.filter(i => i.status === 'pending' || i.status === 'downloading').length;
@@ -33,6 +35,11 @@ export function DownloadQueue({ items, onClearFinished, onCancelAll }: DownloadQ
                     {completedCount > 0 && (
                         <button onClick={onClearFinished} className="text-xs text-telegram-primary hover:text-telegram-text transition-colors">
                             Clear Finished
+                        </button>
+                    )}
+                    {onClose && (
+                        <button onClick={onClose} className="p-1 hover:bg-telegram-hover rounded transition-colors" title="Hide panel">
+                            <X className="w-3.5 h-3.5 text-telegram-subtext" />
                         </button>
                     )}
                 </div>

@@ -22,9 +22,11 @@ interface UploadQueueProps {
     // Live parallel manager
     maxParallel?: number;
     onMaxParallelChange?: (n: number) => void;
+    // Dismiss the whole panel (parent reopens it on new activity).
+    onClose?: () => void;
 }
 
-export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCancelItem, onPauseAll, onResumeAll, onRetryItem, onRetryAllFailed, onToggleSelect, onSelectAll, onStartSelected, onPauseItem, onResumeItem, onRemoveItem, maxParallel = 4, onMaxParallelChange }: UploadQueueProps) {
+export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCancelItem, onPauseAll, onResumeAll, onRetryItem, onRetryAllFailed, onToggleSelect, onSelectAll, onStartSelected, onPauseItem, onResumeItem, onRemoveItem, maxParallel = 4, onMaxParallelChange, onClose }: UploadQueueProps) {
     if (items.length === 0) return null;
 
     const failedCount = items.filter(i => i.status === 'error').length;
@@ -73,6 +75,11 @@ export function UploadQueue({ items, paused, onClearFinished, onCancelAll, onCan
                         {failedCount > 1 && onRetryAllFailed && (
                             <button onClick={onRetryAllFailed} className="flex items-center gap-1 text-xs text-telegram-primary hover:text-telegram-text transition-colors" title={`Retry all ${failedCount} failed uploads`}>
                                 <RotateCcw className="w-3.5 h-3.5" /> Retry all ({failedCount})
+                            </button>
+                        )}
+                        {onClose && (
+                            <button onClick={onClose} className="p-1 hover:bg-telegram-hover rounded transition-colors" title="Hide panel">
+                                <X className="w-3.5 h-3.5 text-telegram-subtext" />
                             </button>
                         )}
                     </div>

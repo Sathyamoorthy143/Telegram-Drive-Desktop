@@ -234,6 +234,10 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
     const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
     const [propertyFile, setPropertyFile] = useState<TelegramFile | null>(null);
     const [downloadQueue, setDownloadQueue] = useState<any[]>([]);
+    useEffect(() => {
+        if (downloadQueue.length > prevDownloadLen.current) setDownloadPanelHidden(false);
+        prevDownloadLen.current = downloadQueue.length;
+    }, [downloadQueue.length]);
     // Shared parallel upload engine: queue state, slots, pause/resume,
     // cancel, retry, speed/ETA. Staging UI + per-file transfer (with
     // encryption) are injected via adapters below.
@@ -312,6 +316,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
       { maxParallel: 4 },
     );
     const uploadQueue = up.queue;
+    // Dismissed queue panels stay hidden until genuinely new activity
+    // (a staged file, a fresh download) grows the list again.
+    const [uploadPanelHidden, setUploadPanelHidden] = useState(false);
+    const [downloadPanelHidden, setDownloadPanelHidden] = useState(false);
+    const prevUploadLen = useRef(0);
+    const prevDownloadLen = useRef(0);
+    useEffect(() => {
+        if (uploadQueue.length > prevUploadLen.current) setUploadPanelHidden(false);
+        prevUploadLen.current = uploadQueue.length;
+    }, [uploadQueue.length]);
     const internalDragRef = useRef<number | null>(null);
     const [internalDragFileId, _setInternalDragFileId] = useState<number | null>(null);
     const setInternalDragFileId = (id: number | null) => {
@@ -1555,7 +1569,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                 </Suspense>
             )}
 
-            <UploadQueue items={uploadQueue} paused={up.pausedAll} onClearFinished={() => up.clearFinished()} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={up.maxParallel} onMaxParallelChange={up.setMaxParallel} />
+            {!uploadPanelHidden && <UploadQueue items={uploadQueue} paused={up.pausedAll} onClearFinished={() => up.clearFinished()} onCancelAll={handleCancelAllUploads} onCancelItem={handleCancelUpload} onPauseAll={handlePauseAllUploads} onResumeAll={handleResumeAllUploads} onRetryItem={handleRetryUpload} onRetryAllFailed={handleRetryAllFailed} onToggleSelect={handleToggleUploadSelect} onSelectAll={handleSelectAllUploads} onStartSelected={() => handleStartSelectedUploads()} onPauseItem={handlePauseUploadItem} onResumeItem={handleResumeUploadItem} onRemoveItem={handleRemoveUploadItem} maxParallel={up.maxParallel} onMaxParallelChange={up.setMaxParallel} onClose={() => setUploadPanelHidden(true)} />}
 
             {/* Interrupted chunked uploads found after a reload */}
             {resumableSessions.length > 0 && (
@@ -1599,7 +1613,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                     </div>
                 </div>
             )}
-            <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => { handleCancelAllDownloads(); setDownloadQueue(q => q.map((i: any) => (i.status === 'downloading' || i.status === 'pending') ? { ...i, status: 'cancelled' as const } : i)); }} />
+            {!downloadPanelHidden && <DownloadQueue items={downloadQueue} onClearFinished={() => setDownloadQueue(q => q.filter((i: any) => i.status !== 'success' && i.status !== 'error'))} onCancelAll={() => { handleCancelAllDownloads(); setDownloadQueue(q => q.map((i: any) => (i.status === 'downloading' || i.status === 'pending') ? { ...i, status: 'cancelled' as const } : i)); }} onClose={() => setDownloadPanelHidden(true)} />}
             {isLocked && <LockScreen />}
         </motion.div>
     );
