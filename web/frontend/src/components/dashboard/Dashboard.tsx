@@ -125,11 +125,13 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
     // In org mode surface that message via toast; master toasts unchanged.
     const orgErr = (e: any, fallback: string) =>
         orgMode && /not available in organization/i.test(String(e?.message || '')) ? String(e.message) : fallback;
-    // Drive-view navigation with org guards: master Trash/Starred/Recent have
-    // no org backend — toast instead of rendering a silently-broken view.
+    // Drive-view navigation with org guards: master Starred/Recent have no
+    // org backend — toast instead of rendering a silently-broken view. Trash
+    // IS org-backed (getOrgTrash/restoreOrgTrash/purgeOrgTrash), so -1 stays
+    // navigable in org mode and the trash query/handlers route per-mode below.
     const selectDriveView = useCallback((id: number | null) => {
-        if (orgMode && (id === -1 || id === -2 || id === -3)) {
-            const feature = id === -1 ? 'Master trash (use org trash instead)' : id === -2 ? 'Favorites' : 'Recent';
+        if (orgMode && (id === -2 || id === -3)) {
+            const feature = id === -2 ? 'Favorites' : 'Recent';
             toast.error(`${feature} is not available in organization context`);
             return;
         }
@@ -381,10 +383,16 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
 
     const { data: trashItems = [], isLoading: trashLoading, refetch: refetchTrash } = useQuery({
         queryKey: ['trash'],
-        queryFn: () => api.getTrash().then(res => res.map((f: any) => ({
-            ...f, id: f.message_id, name: f.name, size: f.size, sizeStr: formatBytes(f.size), type: 'file' as const, icon_type: 'file', folder_id: f.folder_id, deleted_at: f.deleted_at
-        }))),
-        enabled: activeFolderId === -1 && !orgMode
+        // Org mode has its own trash backend — map its rows to the shape the
+        // Trash view JSX needs (same mapper as the master branch).
+        queryFn: () => (orgMode
+            ? api.getOrgTrash(orgMode.org.id).then(res => res.map((f: any) => ({
+                ...f, id: f.message_id, name: f.name, size: f.size, sizeStr: formatBytes(f.size), type: 'file' as const, icon_type: 'file', folder_id: f.folder_id, deleted_at: f.deleted_at
+            })))
+            : api.getTrash().then(res => res.map((f: any) => ({
+                ...f, id: f.message_id, name: f.name, size: f.size, sizeStr: formatBytes(f.size), type: 'file' as const, icon_type: 'file', folder_id: f.folder_id, deleted_at: f.deleted_at
+            })))),
+        enabled: activeFolderId === -1
     });
 
     const { data: favRows = [], refetch: refetchFav } = useQuery({
@@ -460,18 +468,28 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
     }, [syncFolders]);
 
     const handleRestore = useCallback(async (id: number, folder_id?: number) => {
-        try { await api.restoreTrash(id, folder_id); toast.success('Restored'); refetchTrash(); queryClient.invalidateQueries({ queryKey: ['files'] }); } catch (e: any) { toast.error(orgErr(e, 'Restore failed')); }
-    }, [refetchTrash, queryClient]);
+        try {
+            if (orgMode) await api.restoreOrgTrash(orgMode.org.id, id, folder_id);
+            else await api.restoreTrash(id, folder_id);
+            toast.success('Restored'); refetchTrash(); queryClient.invalidateQueries({ queryKey: ['files'] });
+        } catch (e: any) { toast.error(orgErr(e, 'Restore failed')); }
+    }, [refetchTrash, queryClient, orgMode]);
 
     const handleEmptyTrash = useCallback(async () => {
+        // No empty-all org endpoint exists — toast instead of a broken call.
+        if (orgMode) { toast.error('Empty trash is not available in organization context'); return; }
         if (!window.confirm('Permanently delete all trashed files?')) return;
         try { await api.emptyTrash(); toast.success('Trash emptied'); refetchTrash(); } catch (e: any) { toast.error(orgErr(e, 'Empty failed')); }
-    }, [refetchTrash]);
+    }, [refetchTrash, orgMode]);
 
     const handlePurgeTrash = useCallback(async (id: number, folder_id?: number) => {
         if (!window.confirm('Permanently delete this file? It cannot be restored.')) return;
-        try { await api.purgeTrash(id, folder_id); toast.success('Permanently deleted'); refetchTrash(); } catch (e: any) { toast.error(orgErr(e, 'Delete failed')); }
-    }, [refetchTrash]);
+        try {
+            if (orgMode) await api.purgeOrgTrash(orgMode.org.id, id, folder_id);
+            else await api.purgeTrash(id, folder_id);
+            toast.success('Permanently deleted'); refetchTrash();
+        } catch (e: any) { toast.error(orgErr(e, 'Delete failed')); }
+    }, [refetchTrash, orgMode]);
 
     const handleDelete = useCallback(async (id: number) => {
         try {
@@ -493,7 +511,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         const targets = selectedIds
             .map((id) => ({ id, file: displayedFiles.find(f => f.id === id) }))
             .filter((t): t is { id: number; file: any } => !!t.file);
-        await poolCount(targets, 4, async ({ id, file }) => {
+        const ok = await poolCount(targets, 4, async ({ id, file }) => {
             try {
                 if (file?.type === 'folder') await api.deleteFolder(id);
                 else await api.deleteFile(id, activeFolderId ?? undefined);
@@ -502,7 +520,11 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         });
         setSelectedIds([]);
         queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
-        toast.success(`Deleted ${selectedIds.length} items`);
+        // poolCount swallows per-item failures: on a shortfall report the
+        // honest count as an error instead of a false full-success toast.
+        // Full success keeps the exact master toast below, byte-identical.
+        if (ok < targets.length) toast.error(`Deleted ${ok} of ${targets.length} items`);
+        else toast.success(`Deleted ${selectedIds.length} items`);
     }, [selectedIds, activeFolderId, displayedFiles, queryClient]);
 
     const downloadControllers = useRef<Map<number, AbortController>>(new Map());

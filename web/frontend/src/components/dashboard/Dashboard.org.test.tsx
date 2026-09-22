@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useState, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 /*
@@ -15,7 +16,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
  *   handleFolderDelete / handleDelete / handleBulkDelete → api.deleteFolder (orgErr toast)
  *   folder Properties entries (Sidebar + FileExplorer) → api.getFolderProperties (open-site toast; modal would crash on sync throw)
  *   SettingsModal open   → api.getSettings / api.saveSettings (safe: internal try/catch + save toast already surfaces e.message; no guard)
- *   trash view/query     → api.getTrash / api.restoreTrash / api.emptyTrash / api.purgeTrash (nav blocked with toast; queries disabled; handler catches via orgErr)
+ *   trash view/query     → api.getOrgTrash / restoreOrgTrash / purgeOrgTrash in orgMode
+ *     (adapted, not blocked); empty-all has no org endpoint → toast; master fns untouched
+ *   bulk delete          → poolCount `ok` shortfall surfaces toast.error(`Deleted ok of n`)
  *   starred view/query   → api.getFavorites (nav blocked with toast; query disabled)
  *   recent view/query    → api.getRecent (nav blocked with toast; query disabled)
  *   handleStar / handleBulkStar → api.starFile (already surfaces e.message / early-return toast)
@@ -52,8 +55,25 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...mod,
     useQuery: (opts: any) => {
+      // Hooks run unconditionally on every call (Rules of Hooks): the trash
+      // query flips from disabled to enabled when Trash is clicked, so
+      // conditional useState/useEffect would reorder hooks mid-mount.
+      const [asyncData, setAsyncData] = useState<any[] | undefined>(undefined);
+      const isTrash = opts?.queryKey?.[0] === 'trash' && typeof opts?.queryFn === 'function';
+      const trashEnabled = isTrash && opts?.enabled !== false;
+      const queryFnRef = useRef(opts?.queryFn);
+      queryFnRef.current = opts?.queryFn;
+      useEffect(() => {
+        if (!trashEnabled) return;
+        let live = true;
+        queryFnRef.current().then((d: any) => { if (live) setAsyncData(d); }).catch(() => { if (live) setAsyncData([]); });
+        return () => { live = false; };
+      }, [trashEnabled]);
       if (opts?.enabled === false) return { data: undefined, isLoading: false, error: null, refetch: vi.fn() };
       if (opts?.queryKey?.[0] === 'files') return { data: mockFilesState.files, isLoading: false, error: null };
+      // Trash executes its real queryFn so org-mode routing (getOrgTrash +
+      // row mapping) is exercised; other keys keep the static stub.
+      if (isTrash) return { data: asyncData, isLoading: asyncData === undefined, error: null, refetch: vi.fn() };
       return { data: [], isLoading: false, error: null, refetch: vi.fn() };
     },
     useQueryClient: () => ({ invalidateQueries: vi.fn(), prefetchQuery: vi.fn(), setQueryData: vi.fn() }),
@@ -78,6 +98,10 @@ vi.mock('../../api', async (importOriginal) => {
     restoreTrash: boom('Master trash (use org trash instead)'),
     emptyTrash: boom('Master trash (use org trash instead)'),
     purgeTrash: boom('Master trash (use org trash instead)'),
+    getOrgTrash: vi.fn(async () => []),
+    restoreOrgTrash: vi.fn(async () => true),
+    purgeOrgTrash: vi.fn(async () => true),
+    deleteFile: vi.fn(async () => true),
     getFavorites: boom('Favorites'),
     getRecent: boom('Recent'),
     getBandwidth: boom('Bandwidth stats'),
@@ -106,6 +130,7 @@ vi.mock('../../api', async (importOriginal) => {
 });
 
 import { toast } from 'sonner';
+import * as api from '../../api';
 import { Dashboard } from './Dashboard';
 import { LockProvider } from '../../context/LockContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
@@ -212,13 +237,78 @@ describe('Dashboard org mode unavailable-feature guards', () => {
     ));
   });
 
-  it('blocks trash / starred / recent navigation with a toast', async () => {
+  it('opens the org trash view instead of blocking it', async () => {
     renderDashboard();
     fireEvent.click(screen.getByText('Trash'));
+    expect(vi.mocked(api.getOrgTrash)).toHaveBeenCalledWith('o1');
+    await waitFor(() => expect(screen.getByText('Trash is empty')).toBeTruthy());
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  it('loads org trash rows mapped to the trash view shape', async () => {
+    vi.mocked(api.getOrgTrash).mockResolvedValueOnce([
+      { message_id: 11, folder_id: 5, name: 'old-doc.pdf', size: 2048, deleted_at: '2026-09-01T00:00:00Z' },
+    ] as any);
+    renderDashboard();
+    fireEvent.click(screen.getByText('Trash'));
+    await waitFor(() => expect(screen.getByText('old-doc.pdf')).toBeTruthy());
+    // Mapped shape the JSX needs: sizeStr via formatBytes + deleted date line.
+    expect(screen.getByText(/2 KB/)).toBeTruthy();
+  });
+
+  it('restore calls the org variant, not master restoreTrash', async () => {
+    vi.mocked(api.getOrgTrash).mockResolvedValueOnce([
+      { message_id: 11, folder_id: 5, name: 'old-doc.pdf', size: 2048, deleted_at: '2026-09-01T00:00:00Z' },
+    ] as any);
+    renderDashboard();
+    fireEvent.click(screen.getByText('Trash'));
+    fireEvent.click(await screen.findByText('Restore'));
+    await waitFor(() => expect(vi.mocked(api.restoreOrgTrash)).toHaveBeenCalledWith('o1', 11, 5));
+    expect(vi.mocked(api.restoreTrash)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Restored');
+  });
+
+  it('purge calls the org variant, not master purgeTrash', async () => {
+    (window as any).confirm = vi.fn(() => true);
+    vi.mocked(api.getOrgTrash).mockResolvedValueOnce([
+      { message_id: 11, folder_id: 5, name: 'old-doc.pdf', size: 2048, deleted_at: '2026-09-01T00:00:00Z' },
+    ] as any);
+    renderDashboard();
+    fireEvent.click(screen.getByText('Trash'));
+    fireEvent.click(await screen.findByText('Delete forever'));
+    await waitFor(() => expect(vi.mocked(api.purgeOrgTrash)).toHaveBeenCalledWith('o1', 11, 5));
+    expect(vi.mocked(api.purgeTrash)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Permanently deleted');
+  });
+
+  it('empty-all toasts (no emptyOrgTrash endpoint exists)', async () => {
+    vi.mocked(api.getOrgTrash).mockResolvedValueOnce([
+      { message_id: 11, folder_id: 5, name: 'old-doc.pdf', size: 2048, deleted_at: '2026-09-01T00:00:00Z' },
+    ] as any);
+    renderDashboard();
+    fireEvent.click(screen.getByText('Trash'));
+    fireEvent.click(await screen.findByText('Empty Trash'));
     await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
       expect.stringMatching(/not available in organization/i),
     ));
-    vi.clearAllMocks();
+    expect(vi.mocked(api.emptyTrash)).not.toHaveBeenCalled();
+  });
+
+  it('bulk delete reports the honest count on partial failure', async () => {
+    // report.pdf deletes fine (mocked deleteFile); the Proj folder throw
+    // (deleteFolder boom) must surface as `Deleted 1 of 2`, not a success.
+    mockFilesState.files = [FILE_ROW];
+    renderDashboard();
+    fireEvent.click(await explorer().findByText('report.pdf'));
+    const folder = await explorer().findByText('Proj');
+    fireEvent.click(folder, { ctrlKey: true });
+    fireEvent.click(screen.getByTitle('Delete Selected'));
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Deleted 1 of 2 items'));
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalledWith(expect.stringMatching(/^Deleted/));
+  });
+
+  it('blocks starred / recent navigation with a toast', async () => {
+    renderDashboard();
     fireEvent.click(screen.getByText('Starred'));
     await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
       expect.stringMatching(/not available in organization/i),
