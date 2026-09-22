@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard, Star, Clock, History, Building2 } from 'lucide-react';
+import { HardDrive, Folder, Plus, RefreshCw, LogOut, Settings, ChevronRight, ChevronDown, Edit2, Scissors, Copy, Trash2, Info, Clipboard, Star, Clock, History, Building2, Users, Activity } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
 import { ResizeHandle } from './ResizeHandle';
@@ -36,6 +36,10 @@ interface SidebarProps {
     onAllVersions: () => void;
     /** Prefetch a folder's file list (hover-to-load). */
     onPrefetchFolder?: (id: number | null) => void;
+    orgHeader?: { name: string; detail: string };
+    adminViews?: { id: 'members' | 'activity' | 'settings'; label: string }[];
+    activeAdminView?: 'members' | 'activity' | 'settings' | null;
+    onSelectAdminView?: (id: 'members' | 'activity' | 'settings') => void;
 }
 
 function RecursiveTree({
@@ -203,7 +207,8 @@ function formatBytesShort(n: number): string {
 
 export function Sidebar({
     folders, activeFolderId, setActiveFolderId, onDrop, onDelete, onRename, onCut, onCopy, onPaste, canPaste, onProperties, onCreate,
-    isSyncing, isConnected, onSync, onRefresh, onLogout, onSwitchOrganization, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions, onPrefetchFolder
+    isSyncing, isConnected, onSync, onRefresh, onLogout, onSwitchOrganization, onSettings, bandwidth, userInfo, stats, onActivityLog, onAllVersions, onPrefetchFolder,
+    orgHeader, adminViews, activeAdminView, onSelectAdminView
 }: SidebarProps) {
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -263,10 +268,10 @@ export function Sidebar({
                 </div>
                 <div className="flex flex-col min-w-0">
                     <span className="font-bold text-sm text-telegram-text truncate">
-                        {userInfo ? `${userInfo.first_name} ${userInfo.last_name || ''}` : 'Cloudsphere Space'}
+                        {orgHeader ? orgHeader.name : (userInfo ? `${userInfo.first_name} ${userInfo.last_name || ''}` : 'Cloudsphere Space')}
                     </span>
                     <span className="text-[10px] text-telegram-subtext truncate">
-                        {userInfo?.username ? `@${userInfo.username}` : (isConnected ? 'Online' : 'Offline')}
+                        {orgHeader ? orgHeader.detail : (userInfo?.username ? `@${userInfo.username}` : (isConnected ? 'Online' : 'Offline'))}
                     </span>
                 </div>
             </div>
@@ -326,6 +331,18 @@ export function Sidebar({
                       onContextMenu={(e) => e.preventDefault()}
                       folderId={null}
                   />
+                  {(adminViews ?? []).map((v) => (
+                      <SidebarItem
+                          key={v.id}
+                          icon={v.id === 'members' ? Users : v.id === 'activity' ? Activity : Settings}
+                          label={v.label}
+                          active={activeAdminView === v.id}
+                          onClick={() => onSelectAdminView?.(v.id)}
+                          onDrop={(e: React.DragEvent) => e.preventDefault()}
+                          onContextMenu={(e) => e.preventDefault()}
+                          folderId={null}
+                      />
+                  ))}
 
                 {rootContextMenu && (
                     <div
