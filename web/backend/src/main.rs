@@ -71,7 +71,9 @@ pub const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 async fn version() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "commit": std::env::var("BUILD_COMMIT").unwrap_or_else(|_| "dev".into()),
+        "commit": std::env::var("BUILD_COMMIT")
+            .or_else(|_| std::env::var("RENDER_GIT_COMMIT"))
+            .unwrap_or_else(|_| "dev".into()),
         "org_platform": true,
     }))
 }

@@ -276,7 +276,7 @@ export function Sidebar({
                 </div>
             </div>
 
-            <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto min-h-0">
+            <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto min-h-0 custom-scrollbar">
                 <SidebarItem
                     icon={HardDrive}
                     label="Saved Messages"
