@@ -203,7 +203,7 @@ export const downloadFile = async (
   const res = await fetch(`${API_BASE}/api/files/${folder_id}/${message_id}/download`, {
     signal: options?.signal,
   });
-  if (!res.ok) throw new Error('Download failed');
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
   return res.blob();
 };
 
@@ -943,7 +943,7 @@ export const downloadOrgFileBlob = async (
     headers: orgToken ? { 'X-Org-Token': orgToken } : {},
     signal: options?.signal,
   });
-  if (!res.ok) throw new Error(`Preview failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
   return res.blob();
 };
 

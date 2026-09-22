@@ -8,6 +8,8 @@
 
 use actix_web::{HttpRequest, HttpResponse};
 use grammers_client::media::Media;
+use std::sync::Arc;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::AppState;
 
@@ -19,6 +21,30 @@ pub fn parse_channel_fid(s: &str) -> Result<Option<i64>, HttpResponse> {
             Ok(id) => Ok(Some(id)),
             Err(_) => Err(HttpResponse::BadRequest().body(format!("invalid folder id: {}", s))),
         },
+    }
+}
+
+/// Max time to wait for a download permit before failing fast.
+/// Flood-stalled transfers hold a permit for the whole body (flood sleeps
+/// happen mid-stream), so without a bound a few stalled transfers queue
+/// every later media request forever — browsers then report misleading
+/// network errors instead of a retryable 503.
+const SLOT_WAIT_SECS: u64 = 30;
+
+/// Acquire a download permit, failing fast when all slots stay busy.
+async fn acquire_download_slot(
+    slots: &Arc<Semaphore>,
+    wait_secs: u64,
+) -> Result<OwnedSemaphorePermit, &'static str> {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(wait_secs),
+        slots.clone().acquire_owned(),
+    )
+    .await
+    {
+        Ok(Ok(p)) => Ok(p),
+        Ok(Err(_)) => Err("download limiter shut down"),
+        Err(_) => Err("Server is busy serving other transfers — retry shortly"),
     }
 }
 
@@ -78,9 +104,9 @@ pub async fn serve_media(
             .to_string(),
         _ => "application/octet-stream".to_string(),
     };
-    let permit = match state.download_slots.clone().acquire_owned().await {
+    let permit = match acquire_download_slot(&state.download_slots, SLOT_WAIT_SECS).await {
         Ok(s) => s,
-        Err(_) => return HttpResponse::InternalServerError().body("download limiter shut down"),
+        Err(msg) => return HttpResponse::ServiceUnavailable().body(msg),
     };
     let etag = canonical_etag(channel_id, mid);
     match crate::fast_transfer::range_decision(req, &etag, size) {
@@ -120,5 +146,28 @@ pub async fn serve_media(
                 .insert_header(("Cache-Control", cache_control))
                 .streaming(stream)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn acquire_succeeds_when_slot_free() {
+        let slots = Arc::new(Semaphore::new(1));
+        assert!(acquire_download_slot(&slots, 5).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn acquire_fails_fast_when_slots_exhausted() {
+        let slots = Arc::new(Semaphore::new(1));
+        let _held = slots.clone().acquire_owned().await.expect("setup permit");
+        let start = std::time::Instant::now();
+        // Production uses SLOT_WAIT_SECS (30s); 1s here proves the wait is
+        // bounded instead of hanging forever behind stalled transfers.
+        let err = acquire_download_slot(&slots, 1).await.expect_err("must time out");
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(err, "Server is busy serving other transfers — retry shortly");
     }
 }
