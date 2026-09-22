@@ -133,23 +133,31 @@ export function CommandPalette({
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[10vh] p-4" onMouseDown={onClose}>
-            <div
-                className="w-full max-w-xl bg-telegram-surface border border-telegram-border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-                onMouseDown={(e) => e.stopPropagation()}
+        <div
+                className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[10vh] p-4"
+                onMouseDown={onClose}
+                role="presentation"
             >
-                {/* Search input */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-telegram-border">
-                    <Search className="w-4 h-4 text-telegram-subtext shrink-0" />
-                    <input
-                        ref={inputRef}
-                        value={query}
-                        onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
-                        placeholder="Search files, folders, actions…"
-                        className="flex-1 bg-transparent outline-none text-telegram-text placeholder-telegram-muted text-sm"
-                    />
-                    <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-telegram-hover text-telegram-subtext border border-telegram-border">ESC</kbd>
-                </div>
+                <div
+                    className="w-full max-w-xl bg-telegram-surface border border-telegram-border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Command palette"
+                >
+                    {/* Search input */}
+                    <div className="flex items-center gap-3 px-4 py-3 border-b border-telegram-border" role="search">
+                        <Search className="w-4 h-4 text-telegram-subtext shrink-0" aria-hidden="true" />
+                        <input
+                            ref={inputRef}
+                            value={query}
+                            onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
+                            placeholder="Search files, folders, actions…"
+                            className="flex-1 bg-transparent outline-none text-telegram-text placeholder-telegram-muted text-sm"
+                            aria-label="Search files, folders, and actions"
+                        />
+                        <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-telegram-hover text-telegram-subtext border border-telegram-border" aria-label="Press Escape to close">ESC</kbd>
+                    </div>
 
                 {/* Results */}
                 <div ref={listRef} className="max-h-[55vh] overflow-y-auto custom-scrollbar py-1.5">
@@ -169,10 +177,13 @@ export function CommandPalette({
                                     onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => runRow(row)}
                                     className={base}
+                                    role="option"
+                                    aria-selected={selected}
+                                    tabIndex={selected ? 0 : -1}
                                 >
-                                    <Icon className="w-4 h-4 shrink-0" />
+                                    <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                                     <span className="flex-1">{row.label}</span>
-                                    {selected && <CornerDownLeft className="w-3.5 h-3.5 text-telegram-muted" />}
+                                    {selected && <CornerDownLeft className="w-3.5 h-3.5 text-telegram-muted" aria-hidden="true" />}
                                 </div>
                             );
                         }
@@ -185,10 +196,13 @@ export function CommandPalette({
                                     onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => runRow(row)}
                                     className={base}
+                                    role="option"
+                                    aria-selected={selected}
+                                    tabIndex={selected ? 0 : -1}
                                 >
-                                    <FolderIcon className="w-4 h-4 text-telegram-primary shrink-0" />
+                                    <FolderIcon className="w-4 h-4 text-telegram-primary shrink-0" aria-hidden="true" />
                                     <span className="flex-1 truncate">{row.name}</span>
-                                    <span className="text-[10px] uppercase tracking-widest text-telegram-muted">folder</span>
+                                    <span className="text-[10px] uppercase tracking-widest text-telegram-muted" aria-label="folder">folder</span>
                                 </div>
                             );
                         }
@@ -200,10 +214,13 @@ export function CommandPalette({
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => runRow(row)}
                                 className={base}
+                                role="option"
+                                aria-selected={selected}
+                                tabIndex={selected ? 0 : -1}
                             >
-                                <FileTypeIcon filename={row.file.name} size="sm" />
+                                <FileTypeIcon filename={row.file.name} size="sm" aria-hidden="true" />
                                 <span className="flex-1 truncate">{row.file.name}</span>
-                                <span className="text-[10px] uppercase tracking-widest text-telegram-muted">file</span>
+                                <span className="text-[10px] uppercase tracking-widest text-telegram-muted" aria-label="file">file</span>
                             </div>
                         );
                     })}

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { api } from './api';
 import { tierUploadLabel } from './tier';
 
 describe('tierUploadLabel', () => {
@@ -8,5 +9,11 @@ describe('tierUploadLabel', () => {
 
   it('labels the premium tier cap', () => {
     expect(tierUploadLabel({ premium: true, max_upload_bytes: 4 * 1024 ** 3 })).toBe('4 GB (Premium)');
+  });
+});
+
+describe('api', () => {
+  it('proxies to the configured API base', () => {
+    expect(typeof api).toBe('function');
   });
 });

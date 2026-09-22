@@ -425,12 +425,12 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     }, [refetchTrash, queryClient]);
 
     const handleEmptyTrash = useCallback(async () => {
-        if (!confirm('Permanently delete all trashed files?')) return;
+        if (!window.confirm('Permanently delete all trashed files?')) return;
         try { await api.emptyTrash(); toast.success('Trash emptied'); refetchTrash(); } catch { toast.error('Empty failed'); }
     }, [refetchTrash]);
 
     const handlePurgeTrash = useCallback(async (id: number, folder_id?: number) => {
-        if (!confirm('Permanently delete this file? It cannot be restored.')) return;
+        if (!window.confirm('Permanently delete this file? It cannot be restored.')) return;
         try { await api.purgeTrash(id, folder_id); toast.success('Permanently deleted'); refetchTrash(); } catch { toast.error('Delete failed'); }
     }, [refetchTrash]);
 
@@ -908,7 +908,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
             const dups = fileList.filter(f => existing.has(`${f.name}::${f.size}`));
             if (dups.length > 0) {
                 const names = dups.slice(0, 3).map(f => f.name).join(', ') + (dups.length > 3 ? ` +${dups.length - 3} more` : '');
-                const uploadAnyway = window.confirm(`${dups.length} file(s) already exist with same name + size:\n${names}\n\nOK = stage anyway (duplicates)\nCancel = skip duplicates`);
+                const uploadAnyway = window.window.confirm(`${dups.length} file(s) already exist with same name + size:\n${names}\n\nOK = stage anyway (duplicates)\nCancel = skip duplicates`);
                 if (!uploadAnyway) {
                     fileList = fileList.filter(f => !existing.has(`${f.name}::${f.size}`));
                     if (fileList.length === 0) { toast.info('Skipped duplicates — nothing staged'); return; }

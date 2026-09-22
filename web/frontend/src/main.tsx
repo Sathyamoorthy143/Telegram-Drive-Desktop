@@ -2,10 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 
-// One-time cleanup: no code in this repo registers a service worker, but
-// older deploys shipped public/sw.js, so existing browsers may still run a
-// stale worker that intercepts fetches (and crashes on failures). Unregister
-// every worker for this origin plus its caches on boot. Idempotent.
+// Tier 2 #15 (partial): register a service worker for the cached shell.
+// Registers on first load after a short delay to avoid blocking initial render.
+// The worker caches the app shell (index.html + JS/CSS) so subsequent loads
+// work offline. API calls are network-first (fall back to stale on failure).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker.getRegistrations().then((regs) => {
     for (const r of regs) r.unregister().catch(() => {});
@@ -17,6 +17,20 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
       }
     }).catch(() => {});
   }
+
+  // Register the new service worker that caches the app shell for offline use.
+  window.addEventListener("load", () => {
+    // Small delay to ensure the page is fully painted before installing the worker.
+    setTimeout(() => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js", { scope: "/" }).then((reg) => {
+          console.log("[SW] Service worker registered:", reg.scope);
+        }).catch((err) => {
+          console.warn("[SW] Service worker registration failed:", err);
+        });
+      }
+    }, 1000);
+  }, { once: true });
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
