@@ -14,6 +14,7 @@ import { OrgLogin } from "./components/org/OrgLogin";
 import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
 import { OrgAdminDashboard } from "./components/org/OrgAdminDashboard";
 import { OrgPicker } from "./components/org/OrgPicker";
+import { OrgShell, OrgCard } from "./components/org/ui";
 import { MasterPasswordSetup } from "./components/org/MasterPasswordSetup";
 import { Landing } from "./components/landing/Landing";
 import * as api from "./api";
@@ -217,11 +218,11 @@ export function AppContent() {
 
   if (boot.kind === "checking") {
     return (
-      <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative flex items-center justify-center bg-zinc-200">
+      <main className="h-screen w-screen text-telegram-text overflow-hidden selection:bg-telegram-primary/30 relative flex items-center justify-center">
         <Toaster theme={theme} position="bottom-center" />
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-zinc-600 font-medium">Restoring session...</p>
+          <div className="w-10 h-10 border-4 border-telegram-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-telegram-subtext font-medium">Restoring session...</p>
         </div>
       </main>
     );
@@ -280,28 +281,34 @@ export function AppContent() {
         />
       )}
       {boot.kind === "org-not-found" && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center max-w-sm px-6">
-            <p className="text-lg font-semibold mb-1">Organization not found</p>
-            <p className="text-sm text-telegram-subtext mb-4">
-              No organization matches “{boot.slug}”. Check the URL or ask your admin for the right link.
-            </p>
-            <div className="flex gap-2 justify-center">
-              <button
-                onClick={() => window.location.reload()}
-                className="text-sm px-4 py-2 rounded-lg border border-telegram-border hover:bg-telegram-hover"
-              >
-                Retry
-              </button>
-              <button
-                onClick={() => { api.setOrgContext(null); window.location.href = '/'; }}
-                className="text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white"
-              >
-                Back to master
-              </button>
+        <OrgShell>
+          <div className="flex justify-center pt-8">
+            <div className="w-full max-w-sm">
+              <OrgCard>
+                <div className="text-center px-2 py-2">
+                  <p className="text-lg font-semibold mb-1">Organization not found</p>
+                  <p className="text-sm text-telegram-subtext mb-4">
+                    No organization matches “{boot.slug}”. Check the URL or ask your admin for the right link.
+                  </p>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="text-sm px-4 py-2 rounded-lg border border-telegram-border hover:bg-telegram-hover"
+                    >
+                      Retry
+                    </button>
+                    <button
+                      onClick={() => { api.setOrgContext(null); window.location.href = '/'; }}
+                      className="text-sm px-4 py-2 rounded-lg bg-telegram-primary text-white"
+                    >
+                      Back to master
+                    </button>
+                  </div>
+                </div>
+              </OrgCard>
             </div>
           </div>
-        </div>
+        </OrgShell>
       )}
       {boot.kind === "org-login" && (
         <OrgLogin
