@@ -18,6 +18,7 @@ import { DownloadQueue } from './DownloadQueue';
 import { useLock } from '../../context/LockContext';
 import { MoveToFolderModal } from './MoveToFolderModal';
 import { PromptModal, PromptRequest } from './PromptModal';
+import { useConfirm } from '../../context/ConfirmContext';
 import { VersionsModal } from './VersionsModal';
 // Heavy editors/viewers (univer, tiptap, mammoth, pdfjs) are code-split so the
 // initial bundle stays lean; they load on first preview/edit.
@@ -517,6 +518,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
     const [tagFile, setTagFile] = useState<any | null>(null);
     const [versionsFile, setVersionsFile] = useState<any | null>(null);
     const [promptState, setPromptState] = useState<PromptRequest | null>(null);
+    const { confirm } = useConfirm();
     const promptResolve = useRef<((v: string | null) => void) | null>(null);
     const askPrompt = useCallback(
         (req: PromptRequest) =>
@@ -784,6 +786,34 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
           && x.selected !== false
           && (!onlyIds || onlyIds.includes(x.id)),
         );
+        // Conflict check: warn before uploading files whose names already exist
+        // in the target folder (backend keeps both, renaming the new copies).
+        let queueToStart = pending;
+        try {
+          const existingNames = new Set(
+            (activeFolderId === null || activeFolderId === undefined || activeFolderId >= 0
+              ? allFiles
+              : []
+            ).map((f: any) => String(f.name || '').toLowerCase()),
+          );
+          const conflicts = pending.filter((x) => existingNames.has(String(x.name || '').toLowerCase()) && !(x as any).uploadId);
+          if (conflicts.length > 0) {
+            const preview = conflicts.slice(0, 5).map((c) => `• ${c.name}`).join('\n');
+            const more = conflicts.length > 5 ? `\n…and ${conflicts.length - 5} more` : '';
+            const proceed = await confirm({
+              title: 'Files with these names already exist',
+              message: `${conflicts.length} file(s) already exist in this folder:\n\n${preview}${more}\n\nUpload anyway (both copies are kept, new ones renamed), or skip those files?`,
+              confirmText: 'Upload anyway',
+              cancelText: 'Skip those',
+            });
+            if (!proceed) {
+              const conflictIds = new Set(conflicts.map((c) => c.id));
+              queueToStart = pending.filter((x) => !conflictIds.has(x.id));
+            }
+          }
+        } catch {
+          // Conflict check is best-effort; never block uploads on it.
+        }
         const folderIndex = new Map<string, number>();
         try {
           const fresh = await api.scanFolders();
@@ -834,7 +864,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner }: { onLog
           return parent;
         };
         uploadFolderByItemRef.current = new Map();
-        for (const item of pending) {
+        for (const item of queueToStart) {
           const dirs = (item.dirs && item.dirs.length > 0)
             ? item.dirs
             : splitRelativePath(item.path || item.name || '').dirs;
