@@ -120,6 +120,30 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
     const queryClient = useQueryClient();
     const showAdmin = !orgMode || !orgMode.session || ['admin', 'owner'].includes(orgMode.session.role);
     const [orgAdminView, setOrgAdminView] = useState<null | 'members' | 'activity' | 'settings'>(null);
+    // Task 4: org-backend gap surfacing. Master-only api endpoints throw
+    // "<feature> is not available in organization context" under org context.
+    // In org mode surface that message via toast; master toasts unchanged.
+    const orgErr = (e: any, fallback: string) =>
+        orgMode && /not available in organization/i.test(String(e?.message || '')) ? String(e.message) : fallback;
+    // Drive-view navigation with org guards: master Trash/Starred/Recent have
+    // no org backend — toast instead of rendering a silently-broken view.
+    const selectDriveView = useCallback((id: number | null) => {
+        if (orgMode && (id === -1 || id === -2 || id === -3)) {
+            const feature = id === -1 ? 'Master trash (use org trash instead)' : id === -2 ? 'Favorites' : 'Recent';
+            toast.error(`${feature} is not available in organization context`);
+            return;
+        }
+        setOrgAdminView(null);
+        setActiveFolderId(id);
+    }, [orgMode]);
+    // Master activity log has no org backend (org activity lives in the admin
+    // Activity panel) and TransferLogs crashes on its sync throw — guard here.
+    const openActivityLog = useCallback((open: boolean) => {
+        if (orgMode && open) { toast.error('Activity log is not available in organization context'); return; }
+        setShowActivityLog(open);
+    }, [orgMode]);
+    // Global search has no org backend — toast once per mount, stay silent after.
+    const searchOrgToastShown = useRef(false);
     const { isLocked, hasPin, notificationMode, queueToast, setBusy, lock } = useLock();
     const orgId = api.getOrgContext();
     const { alerts, newCount: alertCount, clearNewCount, expired: alertsExpired } = useOrgAlerts(orgId);
@@ -360,19 +384,19 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         queryFn: () => api.getTrash().then(res => res.map((f: any) => ({
             ...f, id: f.message_id, name: f.name, size: f.size, sizeStr: formatBytes(f.size), type: 'file' as const, icon_type: 'file', folder_id: f.folder_id, deleted_at: f.deleted_at
         }))),
-        enabled: activeFolderId === -1
+        enabled: activeFolderId === -1 && !orgMode
     });
 
     const { data: favRows = [], refetch: refetchFav } = useQuery({
         queryKey: ['favorites'],
         queryFn: () => api.getFavorites(),
-        enabled: activeFolderId === -2,
+        enabled: activeFolderId === -2 && !orgMode,
         staleTime: 10000,
     });
     const { data: recentRows = [] } = useQuery({
         queryKey: ['recent'],
         queryFn: () => api.getRecent(),
-        enabled: activeFolderId === -3,
+        enabled: activeFolderId === -3 && !orgMode,
         staleTime: 10000,
     });
     const favFiles = useMemo(() => (favRows as any[]).map((f: any) => ({
@@ -403,6 +427,9 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
     const { data: bandwidth } = useQuery({
         queryKey: ['bandwidth'],
         queryFn: () => api.getBandwidth(),
+        // No org backend for bandwidth stats — the Sidebar widget hides when
+        // this is undefined, so disable the query in org mode (master unchanged).
+        enabled: !orgMode,
         // Stats ticker: was 5s (each tick = render + RPC). 15s is plenty.
         refetchInterval: 15000
     });
@@ -429,21 +456,21 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         } catch { toast.error('Failed to create folder'); }
     }, [syncFolders]);
     const handleFolderDelete = useCallback(async (id: number, name: string) => {
-        try { await api.deleteFolder(id); await syncFolders(); toast.success(`"${name}" deleted`); } catch { toast.error('Failed'); }
+        try { await api.deleteFolder(id); await syncFolders(); toast.success(`"${name}" deleted`); } catch (e: any) { toast.error(orgErr(e, 'Failed')); }
     }, [syncFolders]);
 
     const handleRestore = useCallback(async (id: number, folder_id?: number) => {
-        try { await api.restoreTrash(id, folder_id); toast.success('Restored'); refetchTrash(); queryClient.invalidateQueries({ queryKey: ['files'] }); } catch { toast.error('Restore failed'); }
+        try { await api.restoreTrash(id, folder_id); toast.success('Restored'); refetchTrash(); queryClient.invalidateQueries({ queryKey: ['files'] }); } catch (e: any) { toast.error(orgErr(e, 'Restore failed')); }
     }, [refetchTrash, queryClient]);
 
     const handleEmptyTrash = useCallback(async () => {
         if (!window.confirm('Permanently delete all trashed files?')) return;
-        try { await api.emptyTrash(); toast.success('Trash emptied'); refetchTrash(); } catch { toast.error('Empty failed'); }
+        try { await api.emptyTrash(); toast.success('Trash emptied'); refetchTrash(); } catch (e: any) { toast.error(orgErr(e, 'Empty failed')); }
     }, [refetchTrash]);
 
     const handlePurgeTrash = useCallback(async (id: number, folder_id?: number) => {
         if (!window.confirm('Permanently delete this file? It cannot be restored.')) return;
-        try { await api.purgeTrash(id, folder_id); toast.success('Permanently deleted'); refetchTrash(); } catch { toast.error('Delete failed'); }
+        try { await api.purgeTrash(id, folder_id); toast.success('Permanently deleted'); refetchTrash(); } catch (e: any) { toast.error(orgErr(e, 'Delete failed')); }
     }, [refetchTrash]);
 
     const handleDelete = useCallback(async (id: number) => {
@@ -458,7 +485,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
             }
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
             toast.success('Moved to Trash');
-        } catch { toast.error('Delete failed'); }
+        } catch (e: any) { toast.error(orgErr(e, 'Delete failed')); }
     }, [activeFolderId, displayedFiles, queryClient]);
 
     const handleBulkDelete = useCallback(async () => {
@@ -582,10 +609,17 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
             setShowMoveModal(false);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
             toast.success('Moved');
-        } catch { toast.error('Move failed'); }
+        } catch (e: any) { toast.error(orgErr(e, 'Move failed')); }
     }, [selectedIds, activeFolderId, queryClient]);
 
     const handleGlobalSearch = useCallback(async (q: string) => {
+        if (orgMode) {
+            if (!searchOrgToastShown.current) {
+                searchOrgToastShown.current = true;
+                toast.error('Search is not available in organization context');
+            }
+            return [];
+        }
         try {
             // parse inline filters: type:pdf size>10MB size<100MB
             let query = q; let file_type = searchFilters.file_type || undefined;
@@ -596,16 +630,17 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
             const smin = q.match(/size>\s*(\d+(?:\.\d+)?)\s*(MB|GB|KB)?/i); if (smin) { const v = parseFloat(smin[1]); const u = (smin[2]||'MB').toUpperCase(); min_size = v*(u==='GB'?1024*1024*1024:u==='KB'?1024:1024*1024); query = query.replace(smin[0],'').trim(); }
             return await api.searchFilesAdvanced(query || q, { file_type, min_size, max_size });
         } catch { return []; }
-    }, [searchFilters]);
+    }, [searchFilters, orgMode]);
 
     const handleRename = useCallback(async (id: number, newName: string, isFolder: boolean) => {
         if (isFolder) {
-            try { await api.renameFolder(id, newName); await syncFolders(); } catch { toast.error('Rename failed'); }
+            try { await api.renameFolder(id, newName); await syncFolders(); } catch (e: any) { toast.error(orgErr(e, 'Rename failed')); }
         }
     }, [syncFolders]);
 
     // P1-2: bulk star / tag / rename (folders support rename via API; files use star+tag)
     const handleBulkStar = useCallback(async (starred: boolean) => {
+        if (orgMode) { toast.error('Star is not available in organization context'); return; }
         if (selectedIds.length === 0) return;
         const targets = selectedIds
             .map((id) => ({ id, f: displayedFiles.find(x => x.id === id) }))
@@ -617,9 +652,10 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         refetchFav(); queryClient.invalidateQueries({ queryKey: ['favorites'] });
         api.logActivity(starred ? 'bulk-star' : 'bulk-unstar', `${ok} files`, undefined).catch(()=>{});
         toast.success(starred ? `Starred ${ok} file(s)` : `Unstarred ${ok} file(s)`);
-    }, [selectedIds, displayedFiles, activeFolderId, refetchFav, queryClient]);
+    }, [selectedIds, displayedFiles, activeFolderId, refetchFav, queryClient, orgMode]);
 
     const handleBulkTag = useCallback(async () => {
+        if (orgMode) { toast.error('Tags is not available in organization context'); return; }
         if (selectedIds.length === 0) return;
         const tag = await askPrompt({
             title: 'Add tag',
@@ -642,9 +678,10 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         });
         api.logActivity('bulk-tag', t, `${ok} files`).catch(()=>{});
         toast.success(`Tagged ${ok} file(s) with #${t}`);
-    }, [selectedIds, displayedFiles, activeFolderId, askPrompt]);
+    }, [selectedIds, displayedFiles, activeFolderId, askPrompt, orgMode]);
 
     const handleBulkRename = useCallback(async () => {
+        if (orgMode) { toast.error('Rename folder is not available in organization context'); return; }
         const folderSel = selectedIds
             .map(id => displayedFiles.find(x => x.id === id))
             .filter((f): f is any => !!f && f.type === 'folder');
@@ -665,7 +702,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
         api.logActivity('bulk-rename', pattern, `${ok} folders`).catch(()=>{});
         toast.success(`Renamed ${ok} folder(s)`);
-    }, [selectedIds, displayedFiles, activeFolderId, syncFolders, queryClient, askPrompt]);
+    }, [selectedIds, displayedFiles, activeFolderId, syncFolders, queryClient, askPrompt, orgMode]);
 
     const handleCut = useCallback((ids: number[]) => {
         setClipboard({ type: 'cut', messageIds: ids, folderIds: [], sourceFolderId: activeFolderId, canPaste: true });
@@ -688,7 +725,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
             setClipboard(null);
             queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
             toast.success('Pasted');
-        } catch { toast.error('Paste failed'); }
+        } catch (e: any) { toast.error(orgErr(e, 'Paste failed')); }
     }, [clipboard, activeFolderId, queryClient]);
 
     const handleShare = useCallback(async (file: any) => {
@@ -1067,7 +1104,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                 queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] });
                 if (selectedIds.includes(fileId)) setSelectedIds([]);
                 toast.success(`Moved ${idsToMove.length} file(s)`);
-            } catch { toast.error('Failed to move file(s)'); }
+            } catch (e: any) { toast.error(orgErr(e, 'Failed to move file(s)')); }
             setInternalDragFileId(null);
         }
     }, [activeFolderId, selectedIds, queryClient]);
@@ -1258,10 +1295,10 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                         onManualUpload={handleManualUpload}
                         onFolderUpload={handleFolderUpload}
                         onSettings={() => setShowSettingsModal(true)}
-                        onStarred={() => setActiveFolderId(-2)}
-                        onRecent={() => setActiveFolderId(-3)}
-                        onTrash={() => setActiveFolderId(-1)}
-                        onActivity={() => setShowActivityLog(true)}
+                        onStarred={() => selectDriveView(-2)}
+                        onRecent={() => selectDriveView(-3)}
+                        onTrash={() => selectDriveView(-1)}
+                        onActivity={() => openActivityLog(true)}
                         onVersions={() => setShowAllVersions(true)}
                         onDownloadSelectedZip={handleDownloadSelectedZip}
                     />
@@ -1272,7 +1309,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
             </AnimatePresence>
 
 <Sidebar
-        folders={folders} activeFolderId={activeFolderId} setActiveFolderId={(id) => { setOrgAdminView(null); setActiveFolderId(id); }} stats={folderStats}
+        folders={folders} activeFolderId={activeFolderId} setActiveFolderId={selectDriveView} stats={folderStats}
         onPrefetchFolder={prefetchFolder}
         onDrop={handleDropOnFolder} onDelete={handleFolderDelete} onCreate={handleCreateFolder}
         onRename={(id, name) => handleRename(id, name, true)}
@@ -1281,13 +1318,14 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         onPaste={(targetId) => handlePaste(targetId)}
         canPaste={!!clipboard}
         onProperties={(id) => {
+            if (orgMode) { toast.error('Folder properties is not available in organization context'); return; }
             if (id === null) setPropertyFile({ id: 0, name: "Saved Messages", type: 'folder', icon_type: 'folder' } as any);
             else { const f = folders.find(folder => folder.id === id); if (f) setPropertyFile({ ...f, type: 'folder', icon_type: 'folder' } as any); }
         }}
         isSyncing={isSyncing} isConnected={isConnected} userInfo={userInfo}
         onSync={syncFolders} onRefresh={handleRefresh} onLogout={handleLogout} onSwitchOrganization={onSwitchOrganization}
         onSettings={() => setShowSettingsModal(true)} bandwidth={bandwidth || null}
-        onActivityLog={() => setShowActivityLog(!showActivityLog)}
+        onActivityLog={() => openActivityLog(!showActivityLog)}
         onAllVersions={() => setShowAllVersions(true)}
         orgHeader={orgMode ? { name: orgMode.org.name, detail: `${orgMode.org.subdomain} · ${orgMode.session ? `${orgMode.session.username} (${orgMode.session.role})` : 'master admin'}` } : undefined}
         adminViews={orgMode && showAdmin ? [{ id: 'members', label: 'Members' }, { id: 'activity', label: 'Activity' }, { id: 'settings', label: 'Settings' }] : undefined}
@@ -1296,7 +1334,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
     />
 
             {/* Floating buttons */}
-            <button onClick={() => setShowActivityLog(true)} className="fixed bottom-6 left-72 z-40 p-3 bg-telegram-surface border border-telegram-border rounded-full shadow-lg hover:bg-telegram-hover text-telegram-secondary transition-all hover:scale-110 group" title="Activity Log">
+            <button onClick={() => openActivityLog(true)} className="fixed bottom-6 left-72 z-40 p-3 bg-telegram-surface border border-telegram-border rounded-full shadow-lg hover:bg-telegram-hover text-telegram-secondary transition-all hover:scale-110 group" title="Activity Log">
                 <History className="w-5 h-5 group-hover:rotate-12 transition-transform" />
             </button>
 
@@ -1432,10 +1470,11 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                     onDragStart={(fileId) => setInternalDragFileId(fileId)}
                     onDragEnd={() => setTimeout(() => setInternalDragFileId(null), 50)}
                     onRename={handleRename} onCut={handleCut} onCopy={handleCopy}
-                    onMove={() => setShowMoveModal(true)} onShare={handleShare} onEdit={handleEdit} onVersions={(f)=>setVersionsFile(f)} onStar={handleStar} starredIds={starredIds} onTags={(f)=>setTagFile(f)} onPaste={() => handlePaste()}
+                    onMove={() => setShowMoveModal(true)} onShare={handleShare} onEdit={handleEdit} onVersions={(f)=>setVersionsFile(f)} onStar={handleStar} starredIds={starredIds} onTags={(f)=>{ if (orgMode) { toast.error('Tags is not available in organization context'); return; } setTagFile(f); }} onPaste={() => handlePaste()}
                     canPaste={!!clipboard} onOpenFolder={(id) => setActiveFolderId(id)}
                     folders={folders}
                     onProperties={(file) => {
+                        if (orgMode && (!file || file.type === 'folder')) { toast.error('Folder properties is not available in organization context'); return; }
                         if (!file) setPropertyFile({ id: activeFolderId || 0, name: currentFolderName, type: 'folder', icon_type: 'folder' } as any);
                         else setPropertyFile(file);
                     }}
