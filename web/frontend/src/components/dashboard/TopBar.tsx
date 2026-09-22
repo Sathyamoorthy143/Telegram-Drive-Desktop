@@ -162,41 +162,41 @@ export function TopBar({
                         <>
                             <button onClick={() => onCopy(selectedIds)} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-blue-400 transition text-sm" title="Copy Selected">
                                 <Copy className="w-4 h-4" />
-                                <span>Copy</span>
+                                <span className="hidden sm:inline">Copy</span>
                             </button>
                             <button onClick={() => onCut(selectedIds)} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-orange-400 transition text-sm" title="Cut Selected">
                                 <Scissors className="w-4 h-4" />
-                                <span>Cut</span>
+                                <span className="hidden sm:inline">Cut</span>
                             </button>
                             <button onClick={onBulkDownload} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-telegram-text transition text-sm" title="Download Selected">
                                 <HardDrive className="w-4 h-4" />
-                                <span>Download</span>
+                                <span className="hidden sm:inline">Download</span>
                             </button>
                             <button onClick={onShowMoveModal} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-telegram-text transition text-sm" title="Move Selected">
                                 <FolderInput className="w-4 h-4" />
-                                <span>Move</span>
+                                <span className="hidden sm:inline">Move</span>
                             </button>
                             {onBulkStar && (
                                 <button onClick={() => onBulkStar(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-yellow-400 transition text-sm" title="Star Selected">
                                     <Star className="w-4 h-4" />
-                                    <span>Star</span>
+                                    <span className="hidden sm:inline">Star</span>
                                 </button>
                             )}
                             {onBulkTag && (
                                 <button onClick={onBulkTag} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-purple-400 transition text-sm" title="Tag Selected">
                                     <Tag className="w-4 h-4" />
-                                    <span>Tag</span>
+                                    <span className="hidden sm:inline">Tag</span>
                                 </button>
                             )}
                             {onBulkRename && (
                                 <button onClick={onBulkRename} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-telegram-text transition text-sm" title="Rename Selected Folders">
                                     <Pencil className="w-4 h-4" />
-                                    <span>Rename</span>
+                                    <span className="hidden sm:inline">Rename</span>
                                 </button>
                             )}
                             <button onClick={onBulkDelete} className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-telegram-hover rounded-md text-red-400 transition text-sm" title="Delete Selected">
                                 <Check className="w-4 h-4 rotate-45" />
-                                <span>Delete</span>
+                                <span className="hidden sm:inline">Delete</span>
                             </button>
                         </>
                     )}

@@ -534,39 +534,43 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         downloadControllers.current.clear();
     }, []);
 
+    const handleDownloadOne = useCallback(async (id: number) => {
+        const file = displayedFiles.find(f => f.id === id);
+        if (!file) return;
+        const ctrl = new AbortController();
+        downloadControllers.current.set(id, ctrl);
+        setDownloadQueue(q => [...q.filter(x => x.id !== id), { id, name: file.name, status: 'downloading' as const }]);
+        try {
+            const blob = await api.downloadFile(activeFolderId ?? 0, id, { signal: ctrl.signal });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            // Deferred revoke: revoking synchronously can truncate the
+            // save in some browsers.
+            window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+            setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'success' as const, progress: 100 } : x));
+            api.touchRecent(file.id, file.folder_id ?? activeFolderId ?? undefined, file.name, file.size).catch(()=>{});
+            api.logActivity('download', `folder:${file.folder_id ?? activeFolderId ?? 'root'}`, file.name).catch(()=>{});
+        } catch (e: any) {
+            if (ctrl.signal.aborted || e?.name === 'AbortError') {
+                setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'cancelled' as const } : x));
+            } else {
+                setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'error' as const, error: e?.message || 'Download failed' } : x));
+                toast.error(`Failed: ${file.name}`);
+            }
+        } finally {
+            downloadControllers.current.delete(id);
+        }
+    }, [displayedFiles, activeFolderId]);
+
     const handleBulkDownload = useCallback(async () => {
         for (const id of selectedIds) {
-            const file = displayedFiles.find(f => f.id === id);
-            if (!file) continue;
-            const ctrl = new AbortController();
-            downloadControllers.current.set(id, ctrl);
-            setDownloadQueue(q => [...q.filter(x => x.id !== id), { id, name: file.name, status: 'downloading' as const }]);
-            try {
-                const blob = await api.downloadFile(activeFolderId ?? 0, id, { signal: ctrl.signal });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = file.name;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                // Deferred revoke: revoking synchronously can truncate the
-                // save in some browsers.
-                window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-                setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'success' as const, progress: 100 } : x));
-                api.touchRecent(file.id, file.folder_id ?? activeFolderId ?? undefined, file.name, file.size).catch(()=>{});
-                api.logActivity('download', `folder:${file.folder_id ?? activeFolderId ?? 'root'}`, file.name).catch(()=>{});
-            } catch (e: any) {
-                if (ctrl.signal.aborted || e?.name === 'AbortError') {
-                    setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'cancelled' as const } : x));
-                } else {
-                    setDownloadQueue(q => q.map(x => x.id === id ? { ...x, status: 'error' as const, error: e?.message || 'Download failed' } : x));
-                    toast.error(`Failed: ${file.name}`);
-                }
-            } finally {
-                downloadControllers.current.delete(id);
-            }
+            await handleDownloadOne(id);
         }
-    }, [selectedIds, displayedFiles, activeFolderId]);
+    }, [selectedIds, handleDownloadOne]);
 
     useEffect(() => {
         const controllers = downloadControllers.current;
@@ -1485,7 +1489,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                     viewSettings={viewSettings} onUpdateViewSettings={onUpdateViewSettings}
                     selectedIds={selectedIds} activeFolderId={activeFolderId}
                     onFileClick={handleFileClick} onDelete={handleDelete}
-                    onDownload={(id, name) => { handleBulkDownload(); }}
+                    onDownload={(id) => { handleDownloadOne(id); }}
                     onPreview={handlePreview} onManualUpload={handleManualUpload} onFolderUpload={handleFolderUpload}
                     handleDroppedFiles={handleDroppedFiles} onSelectionClear={() => setSelectedIds([])}
                     onToggleSelection={handleToggleSelection} onDrop={handleDropOnFolder}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useState, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
@@ -379,5 +379,48 @@ describe('Dashboard org mode unavailable-feature guards', () => {
     renderDashboard();
     await waitFor(() => expect(screen.getByText('Acme')).toBeTruthy());
     expect(screen.queryByText('Used Today:')).toBeNull();
+  });
+});
+
+describe('Dashboard single-file download', () => {
+  const IMG_ROW: any = {
+    id: 11, message_id: 11, name: 'a.jpg', size: 100, sizeStr: '100 B',
+    type: 'file', icon_type: 'file', folder_id: null,
+  };
+
+  beforeEach(() => {
+    localStorage.setItem('viewSettings', JSON.stringify({
+      viewMode: 'list', groupBy: 'none', showPreviewPane: false,
+      sortField: 'name', sortDirection: 'asc',
+    }));
+    URL.createObjectURL = vi.fn(() => 'blob:fake');
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async (url: any) => {
+      if (String(url).includes('/download')) {
+        return { ok: true, status: 200, blob: async () => new Blob(['x']) };
+      }
+      return { ok: false, status: 500, text: async () => 'unexpected' };
+    }));
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('downloads the clicked file itself, not the selection', async () => {
+    mockFilesState.files = [IMG_ROW];
+    // Master mode, nothing selected: the old wiring downloaded selectedIds
+    // (empty) and silently did nothing.
+    renderDashboard(null);
+    const nameEl = await explorer().findByText('a.jpg');
+    const row = nameEl.closest('div.group') || nameEl.closest('div[class*="grid"]') || nameEl.parentElement!;
+    fireEvent.click(within(row as HTMLElement).getByTitle('Download'));
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('/api/files/0/11/download'),
+      expect.anything(),
+    ));
   });
 });
