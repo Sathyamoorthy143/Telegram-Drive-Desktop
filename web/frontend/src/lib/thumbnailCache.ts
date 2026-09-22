@@ -26,6 +26,11 @@ export function getCachedThumb(key: string): string | null {
     return url;
 }
 
+/** Store an already-fetched URL (e.g. org thumbnails fetched as blobs). */
+export function storeCachedThumb(key: string, url: string): void {
+    touch(key, url);
+}
+
 /** Load (or reuse) a thumbnail; resolves once the image has decoded. */
 export function loadThumb(key: string, url: string): Promise<string> {
     const cached = getCachedThumb(key);

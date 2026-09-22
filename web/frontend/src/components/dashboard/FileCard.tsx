@@ -5,7 +5,7 @@ import * as api from '../../api';
 import { TelegramFile } from '../../types';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { fileAccent } from '../../accents';
-import { getCachedThumb, loadThumb, thumbKey } from '../../lib/thumbnailCache';
+import { getCachedThumb, loadThumb, storeCachedThumb, thumbKey } from '../../lib/thumbnailCache';
 
 interface FileCardProps {
     file: TelegramFile;
@@ -79,7 +79,13 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
         if (!visible || isFolder || !isImageFile(file.name)) return;
 
         let cancelled = false;
-        const key = thumbKey(activeFolderId, file.id);
+        // Org files live in the org channel under org auth: the master
+        // thumbnail URL would 404 (wrong channel, no token), so fetch the
+        // org thumbnail to a blob URL instead. Key is org-scoped — file ids
+        // collide across orgs.
+        const orgId = api.getOrgContext();
+        const folderId = (file as any).folder_id ?? activeFolderId ?? undefined;
+        const key = orgId ? `org:${orgId}:${folderId ?? 'home'}:${file.id}` : thumbKey(activeFolderId, file.id);
         const cached = getCachedThumb(key);
         if (cached) {
             setThumbnail(cached);
@@ -87,10 +93,17 @@ export function FileCard({ file, onDelete, onDownload, onPreview, isSelected, on
         }
 
         setThumbnailLoading(true);
-        loadThumb(key, api.getThumbnailUrl(activeFolderId ?? 'home', file.id))
-            .then((url) => { if (!cancelled) setThumbnail(url); })
-            .catch(() => { /* silently fail */ })
-            .finally(() => { if (!cancelled) setThumbnailLoading(false); });
+        if (orgId) {
+            api.getOrgThumbnailUrl(orgId, folderId, file.id)
+                .then((url) => { if (!cancelled) { storeCachedThumb(key, url); setThumbnail(url); } })
+                .catch(() => { /* silently fail */ })
+                .finally(() => { if (!cancelled) setThumbnailLoading(false); });
+        } else {
+            loadThumb(key, api.getThumbnailUrl(activeFolderId ?? 'home', file.id))
+                .then((url) => { if (!cancelled) setThumbnail(url); })
+                .catch(() => { /* silently fail */ })
+                .finally(() => { if (!cancelled) setThumbnailLoading(false); });
+        }
 
         return () => { cancelled = true; };
     }, [visible, file.id, file.name, activeFolderId, isFolder]);

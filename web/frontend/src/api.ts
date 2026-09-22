@@ -994,6 +994,17 @@ export const fetchOrgThumbnail = async (
   return res.blob();
 };
 
+/**
+ * Org thumbnail as an object URL for <img> tags (which cannot send the
+ * X-Org-Token header themselves). Master thumbnails are plain URLs;
+ * org thumbnails must go through this fetch-to-blob path.
+ */
+export const getOrgThumbnailUrl = async (
+  orgId: string,
+  folder_id: number | undefined,
+  message_id: number,
+): Promise<string> => URL.createObjectURL(await fetchOrgThumbnail(orgId, folder_id, message_id));
+
 export const uploadOrgFile = (orgId: string, file: File, folder_id?: number, options?: { signal?: AbortSignal }) => {
   const formData = new FormData();
   formData.append('file', file);
