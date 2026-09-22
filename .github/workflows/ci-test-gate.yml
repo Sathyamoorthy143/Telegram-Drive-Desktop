@@ -1,0 +1,79 @@
+name: CI Test Gate
+
+# Tier 3 #18 — Run cargo test + tsc + vitest on every PR so regressions
+# never land on main. Mirrors the local test commands documented in
+# app/README.md and web/README.md.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "web/backend/**"
+      - "web/frontend/**"
+      - "web-server/src/**"
+      - "web-server/frontend/src/**"
+      - "app/src/**"
+      - ".github/workflows/ci-test-gate.yml"
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            web/backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('web/backend/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: cargo test (web/backend)
+        working-directory: web/backend
+        run: cargo test 2>&1
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+
+  frontend-web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+      - name: Install dependencies (web/frontend)
+        working-directory: web/frontend
+        run: npm ci
+      - name: TypeScript check
+        working-directory: web/frontend
+        run: npx tsc --noEmit
+      - name: Run vitest
+        working-directory: web/frontend
+        run: npm test
+
+  frontend-web-server-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web-server/frontend/package-lock.json
+      - name: Install dependencies (web-server/frontend)
+        working-directory: web-server/frontend
+        run: npm ci
+      - name: TypeScript check
+        working-directory: web-server/frontend
+        run: npx tsc --noEmit

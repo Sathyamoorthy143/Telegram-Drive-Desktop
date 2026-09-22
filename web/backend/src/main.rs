@@ -8,6 +8,11 @@ mod files;
 mod folders;
 mod keep_alive;
 mod meta;
+mod metrics;
+mod schema_check;
+
+
+
 mod models;
 mod org_files;
 mod orgs;
@@ -74,7 +79,7 @@ async fn version() -> HttpResponse {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
-    env_logger::init();
+    metrics::init_logging();
 
     let port_str = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
     let port: u16 = if port_str.trim().is_empty() {
@@ -155,6 +160,8 @@ async fn main() -> std::io::Result<()> {
             .route("/health", web::get().to(keep_alive::health_check))
             .route("/api/debug/upload-probe", web::get().to(debug::upload_probe))
             .route("/s/{token}", web::get().to(share::public_share))
+            .route("/api/schema/check", web::get().to(schema_check::check_schema))
+            .route("/api/metrics", web::get().to(metrics::metrics_handler))
             .service(
                 web::scope("/api")
                     .route("/health", web::get().to(keep_alive::health_check))
