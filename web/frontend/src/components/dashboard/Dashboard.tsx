@@ -959,7 +959,10 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
             : splitRelativePath(item.path || item.name || '').dirs;
           uploadFolderByItemRef.current.set(item.id, await resolveUploadFolder(dirs));
         }
-        up.start(onlyIds);
+        // Start exactly the conflict-resolved set: passing the wrapper's
+        // `onlyIds` (or nothing) would re-include files the user chose to
+        // skip, because the engine starts every selected staged item.
+        up.start(queueToStart.map((x) => x.id));
     }, [up, activeFolderId]);
 
     // Checkbox works LIVE: staged/pending flips selection; unchecking a
