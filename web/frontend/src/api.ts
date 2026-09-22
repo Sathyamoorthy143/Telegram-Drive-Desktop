@@ -205,6 +205,21 @@ async function errSnippet(res: Response): Promise<string> {
   }
 }
 
+/**
+ * Boot safety: race a request against a timer so a wedged backend (hung
+ * Telegram RPCs, exhausted workers) can never trap the app on the boot
+ * splash forever. On timeout the fallback is used as if the call failed.
+ */
+export function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 export const downloadFile = async (
   folder_id: number,
   message_id: number,

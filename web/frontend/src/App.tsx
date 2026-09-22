@@ -128,9 +128,13 @@ export function AppContent() {
         }
         return null;
       })();
+      // Boot must never hang: a wedged backend (hung Telegram RPCs, stalled
+      // workers) holds HTTP connections open forever, and plain awaits would
+      // trap the app on the splash. Time out into the unreachable path.
+      const BOOT_TIMEOUT_MS = 25000;
       const [orgOutcome, masterConnected] = await Promise.all([
-        resolveOrg,
-        api.checkConnection().catch(() => false as boolean),
+        api.withTimeout(resolveOrg, BOOT_TIMEOUT_MS, null),
+        api.withTimeout(api.checkConnection().catch(() => false as boolean), BOOT_TIMEOUT_MS, false),
       ]);
       if (cancelled) return;
       if (orgOutcome && 'notFound' in orgOutcome) {

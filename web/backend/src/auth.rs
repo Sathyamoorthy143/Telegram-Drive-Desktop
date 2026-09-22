@@ -109,17 +109,22 @@ pub async fn check_connection(state: web::Data<AppState>) -> impl Responder {
     // Reason-aware shape; the frontend boolean wrapper maps `.connected`.
     // `transport` (retry shortly) vs `unauthorized` (re-login) vs `no_client`.
     match state.client.lock().await.clone() {
-        Some(client) => match client.get_me().await {
-            Ok(_) => {
+        // get_me must never hang the status probe: a wedged Telegram runner
+        // would otherwise trap boot/health checks behind it forever.
+        Some(client) => match tokio::time::timeout(std::time::Duration::from_secs(20), client.get_me()).await {
+            Ok(Ok(_)) => {
                 HttpResponse::Ok().json(serde_json::json!({ "connected": true, "reason": "ok" }))
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 let m = e.to_string();
                 if is_transport_failure(&m) {
                     HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "transport" }))
                 } else {
                     HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "unauthorized" }))
                 }
+            }
+            Err(_) => {
+                HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "transport" }))
             }
         },
         None => HttpResponse::Ok().json(serde_json::json!({ "connected": false, "reason": "no_client" })),
