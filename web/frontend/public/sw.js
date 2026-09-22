@@ -58,6 +58,10 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET requests (they can't be safely cached and replayed).
   if (request.method !== "GET") return;
 
+  // Skip anything that isn't http(s) — e.g. chrome-extension:// or blob:
+  // the Cache API rejects those schemes and throws.
+  if (url.protocol !== "http:" && url.protocol !== "https:") return;
+
   // API calls: network first, fall back to stale cache.
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(request, API_CACHE));
@@ -81,6 +85,14 @@ self.addEventListener("fetch", (event) => {
   // These are large or time-sensitive and should not be cached by the SW.
 });
 
+/// Media endpoints must never be cached: bodies are huge (multi-GB downloads
+/// would fill the cache quota) and partial (206) or failed mid-stream
+/// responses make Cache.put() itself throw.
+function isCacheableApi(url) {
+  if (!url.pathname.startsWith("/api/")) return false;
+  return !/\/(download|preview|stream|thumbnail|upload|share)\b/.test(url.pathname);
+}
+
 /// Cache-first strategy: return cached response if available, otherwise fetch
 /// and cache the result.
 async function cacheFirst(request, cacheName) {
@@ -89,8 +101,12 @@ async function cacheFirst(request, cacheName) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
+      // put() itself can throw (opaque/partial/interrupted bodies) — a
+      // cache write must never break the response going to the page.
+      try {
+        const cache = await caches.open(cacheName);
+        await cache.put(request, response.clone());
+      } catch {}
     }
     return response;
   } catch {
@@ -104,12 +120,19 @@ async function cacheFirst(request, cacheName) {
 }
 
 /// Network-first strategy: try the network, fall back to cache on failure.
+/// Media endpoints bypass the cache entirely (see isCacheableApi).
 async function networkFirst(request, cacheName) {
+  const url = new URL(request.url);
+  if (!isCacheableApi(url)) {
+    return fetch(request);
+  }
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
+      try {
+        const cache = await caches.open(cacheName);
+        await cache.put(request, response.clone());
+      } catch {}
     }
     return response;
   } catch {
