@@ -81,6 +81,39 @@ fn strip_org(org: &crate::models::Organization) -> serde_json::Value {
     })
 }
 
+#[derive(serde::Deserialize)]
+pub struct ResolveQuery {
+    pub name: Option<String>,
+}
+
+/// `GET /api/orgs/resolve?name=` — public pre-login resolver used by the
+/// shared Sign-In form. Matches subdomain exactly first, then display name
+/// (case-insensitive). Returns only `{ org_id, display_name }`; unknown
+/// names get a bare 404 so nothing is enumerable beyond existence.
+pub async fn resolve_org(q: web::Query<ResolveQuery>) -> impl Responder {
+    let needle = q.name.as_deref().unwrap_or("").trim().to_lowercase();
+    if needle.is_empty() || needle == "master" || is_reserved_slug(&needle) {
+        return HttpResponse::NotFound().body("Not found");
+    }
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    if let Ok(Some(org)) = supabase_org::get_org_by_subdomain(&needle).await {
+        return HttpResponse::Ok().json(serde_json::json!({
+            "org_id": org.id, "display_name": org.name,
+        }));
+    }
+    match supabase_org::list_organizations().await {
+        Ok(orgs) => match orgs.into_iter().find(|o| o.name.trim().to_lowercase() == needle) {
+            Some(org) => HttpResponse::Ok().json(serde_json::json!({
+                "org_id": org.id, "display_name": org.name,
+            })),
+            None => HttpResponse::NotFound().body("Not found"),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
 // ---- Master: org CRUD ----
 
 /// `GET /api/admin/organizations`

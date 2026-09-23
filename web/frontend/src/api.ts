@@ -856,6 +856,10 @@ export const unlockMaster = (password: string) =>
 export const getMyOrgs = () =>
   api<{ orgs: MyOrg[] }>('GET', '/api/admin/my-orgs');
 
+export const resolveOrg = (name: string) =>
+  api<{ org_id: string; display_name: string }>(
+    'GET', `/api/orgs/resolve?name=${encodeURIComponent(name)}`);
+
 export const unlockOrganization = (id: string, password: string) =>
   api<{ ok: boolean; org: { id: string; name: string; subdomain: string } }>(
     'POST', `/api/admin/organizations/${id}/unlock`, { password });

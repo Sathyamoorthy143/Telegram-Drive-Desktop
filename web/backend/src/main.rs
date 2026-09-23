@@ -234,6 +234,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/settings/lock", web::put().to(settings::save_lock_settings))
                     // ---- Multi-org platform ----
                     .route("/current-org", web::get().to(orgs::current_org))
+                    .route("/orgs/resolve", web::get().to(orgs::resolve_org))
                     .route("/admin/overview", web::get().to(admin::overview))
                     .route("/admin/master-unlock-status", web::get().to(admin::master_unlock_status))
                     .route("/admin/master-password", web::post().to(admin::set_master_password))
