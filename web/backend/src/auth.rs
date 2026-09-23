@@ -97,6 +97,16 @@ pub fn is_transport_failure(m: &str) -> bool {
     l.contains("dropped") || l.contains("disconnected") || l.contains("connection reset")
 }
 
+/// Whether a timed-out login-code attempt may be retried inside the same
+/// request. Always false: one stalled attempt already consumes the client's
+/// patience budget (frontend `LOGIN_CODE_TIMEOUT_MS` 70s vs 60s per
+/// attempt), so a retry can only answer after the client gave up — and each
+/// extra sendCode risks Telegram FLOOD_WAIT. Fast-failing transport errors
+/// still retry via the attempt loop.
+pub fn may_retry_timed_out_attempt() -> bool {
+    false
+}
+
 pub async fn connect(state: web::Data<AppState>, req: web::Json<ConnectRequest>) -> impl Responder {
     *state.api_id.lock().await = Some(req.api_id);
     match get_client(&state).await {
@@ -193,14 +203,11 @@ pub async fn request_code(
         let result = match outcome {
             Ok(r) => r,
             Err(_) => {
-                if attempt < 2 {
-                    reset_client(&state).await;
-                    tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt as u64 + 1))).await;
-                    match get_client(&state).await {
-                        Ok(c) => { client = c; continue; }
-                        Err(e2) => return HttpResponse::BadGateway().body(format!("Telegram timed out and reconnect failed: {}", e2)),
-                    }
-                }
+                // Fail loud inside the client's patience budget. Retrying a
+                // stalled attempt here (see may_retry_timed_out_attempt) can
+                // only answer after the frontend already gave up, and the
+                // user's "retry once" then piles a second 3-attempt chain
+                // onto Telegram — the classic road to FLOOD_WAIT.
                 return HttpResponse::GatewayTimeout().body(
                     "Telegram did not answer the login-code request within 60s. Wait a minute, then retry once — do not spam retries."
                 );
@@ -465,5 +472,13 @@ mod tests {
         assert!(!is_transport_failure("PHONE_NUMBER_INVALID"));
         assert!(!is_transport_failure("FLOOD_WAIT_30"));
         assert!(!is_transport_failure("API_ID_INVALID"));
+    }
+
+    #[test]
+    fn timed_out_attempts_never_retry_in_request() {
+        // Contract with the frontend: the client gives up at 70s while one
+        // attempt costs up to 60s — any in-request retry answers too late
+        // and risks FLOOD_WAIT. Fast transport failures still retry.
+        assert!(!may_retry_timed_out_attempt());
     }
 }
