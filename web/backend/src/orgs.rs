@@ -222,6 +222,16 @@ pub async fn unlock_organization(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     let uid_s = uid.to_string();
+    let ip = req.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+    let key = format!("{}:org:{}", ip, org.id);
+    {
+        let mut tracker = state.unlock_attempts.lock().await;
+        if let Err(retry) = tracker.check(&key) {
+            return HttpResponse::TooManyRequests()
+                .insert_header(("Retry-After", retry.to_string()))
+                .body("Too many attempts — try again shortly");
+        }
+    }
     match evaluate_org_unlock(
         org.entry_password_hash.as_deref(),
         &body.password,
@@ -231,6 +241,7 @@ pub async fn unlock_organization(
         &uid_s,
     ) {
         Ok(()) => {
+            state.unlock_attempts.lock().await.record(&key, true);
             let ip = req.peer_addr().map(|a| a.ip().to_string());
             supabase_org::audit_best_effort(
                 &org.id,
@@ -248,7 +259,10 @@ pub async fn unlock_organization(
                 "org": { "id": org.id, "name": org.name, "subdomain": org.subdomain },
             }))
         }
-        Err(e) => org_unlock_status_response(e),
+        Err(e) => {
+            state.unlock_attempts.lock().await.record(&key, false);
+            org_unlock_status_response(e)
+        },
     }
 }
 

@@ -3,7 +3,7 @@
 //! All endpoints require Telegram auth (master admin). Org members use the
 //! `/api/org/{id}/...` routes in [`crate::orgs`] instead.
 
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 
 use crate::auth_org::{current_telegram_user_id, require_master};
 use crate::entry_unlock::{evaluate_master_unlock, EntryUnlockError};
@@ -112,8 +112,19 @@ pub async fn set_master_password(
 
 pub async fn master_unlock(
     state: web::Data<AppState>,
+    req: HttpRequest,
     body: web::Json<PasswordBody>,
 ) -> impl Responder {
+    let ip = req.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+    let key = format!("{}:master", ip);
+    {
+        let mut tracker = state.unlock_attempts.lock().await;
+        if let Err(retry) = tracker.check(&key) {
+            return HttpResponse::TooManyRequests()
+                .insert_header(("Retry-After", retry.to_string()))
+                .body("Too many attempts — try again shortly");
+        }
+    }
     let uid = match current_telegram_user_id(&state).await {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -122,7 +133,13 @@ pub async fn master_unlock(
         .await
         .and_then(|r| r.master_password_hash);
     match evaluate_master_unlock(stored.as_deref(), &body.password, &uid.to_string()) {
-        Ok(()) => HttpResponse::Ok().json(serde_json::json!({ "ok": true })),
-        Err(e) => unlock_status_response(e),
+        Ok(()) => {
+            state.unlock_attempts.lock().await.record(&key, true);
+            HttpResponse::Ok().json(serde_json::json!({ "ok": true }))
+        }
+        Err(e) => {
+            state.unlock_attempts.lock().await.record(&key, false);
+            unlock_status_response(e)
+        }
     }
 }

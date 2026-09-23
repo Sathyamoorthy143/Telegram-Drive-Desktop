@@ -42,6 +42,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 
 use crate::models::Settings;
+use crate::unlock_throttle::AttemptTracker;
 
 pub struct AppState {
     pub client: Arc<Mutex<Option<grammers_client::Client>>>,
@@ -62,6 +63,8 @@ pub struct AppState {
     /// to 24+ RPC workers; without this, a page of thumbnails stampedes the
     /// single shared connection into flood/disconnect (`dropped (cancelled)`).
     pub download_slots: Arc<Semaphore>,
+    /// Failed entry-unlock attempts per "ip:account" key (see unlock_throttle).
+    pub unlock_attempts: Arc<Mutex<AttemptTracker>>,
 }
 
 /// Max simultaneous Telegram media downloads per backend instance.
@@ -113,6 +116,7 @@ async fn main() -> std::io::Result<()> {
         org_sessions: auth_org::new_token_store(),
         master_cache: Arc::new(Mutex::new((None, None))),
         download_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)),
+        unlock_attempts: Arc::new(Mutex::new(AttemptTracker::default())),
     });
 
     // Background MAIN â†’ BACKUP replication worker + MAIN channel watcher.
