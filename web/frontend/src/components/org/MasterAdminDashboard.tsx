@@ -23,8 +23,10 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [name, setName] = useState('');
   const [subdomain, setSubdomain] = useState('');
   const [entryPassword, setEntryPassword] = useState('');
+  const [entryConfirm, setEntryConfirm] = useState('');
   const [creating, setCreating] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<OrgOverviewEntry | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('members');
@@ -152,6 +154,12 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       toast.error('Entry password min 4 chars');
       return;
     }
+    // A typo here permanently locks the org ("Invalid name or password" on
+    // every attempt) — require confirmation like member passwords.
+    if (entryPassword !== entryConfirm) {
+      toast.error('Entry passwords do not match');
+      return;
+    }
     setCreating(true);
     try {
       const created = await api.createOrganization(name.trim(), subdomain.trim().toLowerCase(), entryPassword);
@@ -159,6 +167,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       setName('');
       setSubdomain('');
       setEntryPassword('');
+      setEntryConfirm('');
       if (created?.id) {
         setOrgs((prev) => (prev.some((o) => o.id === created.id) ? prev : [toRow(created), ...prev]));
       }
@@ -310,6 +319,11 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
             value={entryPassword} onChange={(e) => setEntryPassword(e.target.value)} placeholder="entry password (min 4)"
             className="flex-1 min-w-40 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
           />
+          <input
+            type="password"
+            value={entryConfirm} onChange={(e) => setEntryConfirm(e.target.value)} placeholder="confirm entry password"
+            className="flex-1 min-w-40 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+          />
           <button type="submit" disabled={creating} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-telegram-primary text-white font-medium disabled:opacity-50">
             <Plus className="w-4 h-4" /> {creating ? 'Creating…' : 'Create org'}
           </button>
@@ -375,11 +389,16 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                           toast.error('Entry password min 4 chars');
                           return;
                         }
+                        if (resetPassword !== resetConfirm) {
+                          toast.error('Entry passwords do not match');
+                          return;
+                        }
                         setResettingId(org.id);
                         try {
                           await api.resetOrgEntryPassword(org.id, resetPassword);
                           toast.success('Entry password updated');
                           setResetPassword('');
+                          setResetConfirm('');
                         } catch (err: any) {
                           toast.error(err.message);
                         } finally {
@@ -393,6 +412,13 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                         value={resetPassword}
                         onChange={(e) => setResetPassword(e.target.value)}
                         placeholder="new entry password (min 4)"
+                        className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+                      />
+                      <input
+                        type="password"
+                        value={resetConfirm}
+                        onChange={(e) => setResetConfirm(e.target.value)}
+                        placeholder="confirm new entry password"
                         className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
                       />
                       <button type="submit" disabled={resettingId === org.id} className="text-xs px-3 py-1.5 rounded-lg border border-telegram-border hover:bg-telegram-hover disabled:opacity-50">

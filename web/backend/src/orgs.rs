@@ -172,12 +172,26 @@ pub async fn create_organization(
         }
     };
     let hash = supabase_org::hash_org_entry_password(entry_password, &org.id);
-    let _ = supabase_org::sb_req(
+    // An org without its entry hash can never be unlocked (every attempt
+    // 409s) — fail the creation loud instead of leaving a broken org behind.
+    match supabase_org::sb_req(
         "PATCH",
         &format!("organizations?id=eq.{}", org.id),
         Some(serde_json::json!({ "entry_password_hash": hash })),
     )
-    .await;
+    .await
+    {
+        Ok(resp) if resp.status().is_success() => {}
+        Ok(resp) => {
+            let txt = resp.text().await.unwrap_or_default();
+            return HttpResponse::InternalServerError()
+                .body(format!("Organization created but entry password could not be saved: {}", txt));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Organization created but entry password could not be saved: {}", e));
+        }
+    }
     // Initialize empty settings row so later upserts merge cleanly.
     let _ = supabase_org::upsert_org_settings(&org.id, &serde_json::json!({})).await;
     let ip = req.peer_addr().map(|a| a.ip().to_string());
@@ -255,6 +269,19 @@ pub async fn unlock_organization(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     let uid_s = uid.to_string();
+    if org.master_admin_id.is_none() {
+        // Unclaimed org (legacy row, or the uuid-migration retry path that
+        // creates without an owner): claim it for this master best-effort,
+        // mirroring the list_my_organizations self-heal. A failed claim must
+        // not block the unlock — the entry password still gates it, and the
+        // check below evaluates unclaimed orgs as owned by the attempter.
+        let _ = supabase_org::sb_req(
+            "PATCH",
+            &format!("organizations?id=eq.{}", org.id),
+            Some(serde_json::json!({ "master_admin_id": uid_s })),
+        )
+        .await;
+    }
     let ip = req.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
     let key = format!("{}:org:{}", ip, org.id);
     {
@@ -270,7 +297,7 @@ pub async fn unlock_organization(
         &body.password,
         &org.id,
         org.active.unwrap_or(true),
-        org.master_admin_id.as_deref(),
+        crate::entry_unlock::unlock_owner_for_check(org.master_admin_id.as_deref(), &uid_s),
         &uid_s,
     ) {
         Ok(()) => {

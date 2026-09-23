@@ -45,6 +45,18 @@ pub fn evaluate_org_unlock(
     }
 }
 
+/// Owner actually checked for an org unlock attempt. Unclaimed orgs
+/// (`master_admin_id` None — legacy rows, or the uuid-migration retry path
+/// that creates without an owner) are evaluated as if owned by the
+/// attempting Telegram user; the caller should best-effort claim the row
+/// first. Foreign owners stay denied (`NotOwner` downstream).
+pub fn unlock_owner_for_check<'a>(
+    org_owner: Option<&'a str>,
+    telegram_uid: &'a str,
+) -> Option<&'a str> {
+    Some(org_owner.unwrap_or(telegram_uid))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,6 +76,32 @@ mod tests {
         assert_eq!(
             evaluate_master_unlock(Some(""), "secret", "123"),
             Err(EntryUnlockError::MissingHash)
+        );
+    }
+
+    #[test]
+    fn unlock_owner_for_check_claims_unclaimed_and_keeps_others() {
+        assert_eq!(unlock_owner_for_check(None, "99"), Some("99"));
+        assert_eq!(unlock_owner_for_check(Some("99"), "99"), Some("99"));
+        assert_eq!(unlock_owner_for_check(Some("1"), "99"), Some("1"));
+    }
+
+    #[test]
+    fn unclaimed_org_unlocks_with_correct_password_for_attempter() {
+        // The broken-org scenario: no owner row, attempter knows the entry
+        // password → must verify (was NotOwner before the claim fallback).
+        let hash = crate::supabase_org::hash_org_entry_password("secret", "org-1");
+        let owner = unlock_owner_for_check(None, "99");
+        assert!(evaluate_org_unlock(Some(&hash), "secret", "org-1", true, owner, "99").is_ok());
+        assert_eq!(
+            evaluate_org_unlock(Some(&hash), "wrong", "org-1", true, owner, "99"),
+            Err(EntryUnlockError::WrongPassword)
+        );
+        // Foreign owners still denied even with the right password.
+        let foreign = unlock_owner_for_check(Some("1"), "99");
+        assert_eq!(
+            evaluate_org_unlock(Some(&hash), "secret", "org-1", true, foreign, "99"),
+            Err(EntryUnlockError::NotOwner)
         );
     }
 
