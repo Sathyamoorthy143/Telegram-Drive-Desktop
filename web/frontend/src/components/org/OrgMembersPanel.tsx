@@ -11,7 +11,7 @@ export function OrgMembersPanel({ orgId, role, sessionMemberId, folders }: {
 }) {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [grants, setGrants] = useState<api.OrgFolderGrant[]>([]);
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', confirm: '', role: 'viewer' });
   const [grantForm, setGrantForm] = useState({ member_id: '', folder_id: '', level: 'view' });
   const [savingGrant, setSavingGrant] = useState(false);
   const [grantsLoading, setGrantsLoading] = useState(false);
@@ -77,10 +77,17 @@ export function OrgMembersPanel({ orgId, role, sessionMemberId, folders }: {
       toast.error('Username required, password min 4 chars');
       return;
     }
+    // No recovery exists for a mistyped member password (hashes only), so
+    // require confirmation — a typo here otherwise locks the account with
+    // a permanent "invalid username or password".
+    if (newUser.password !== newUser.confirm) {
+      toast.error('Passwords do not match');
+      return;
+    }
     try {
       await api.createOrgMember(orgId, newUser.username.trim(), newUser.password, newUser.role);
       toast.success(`"${newUser.username}" added as ${newUser.role}`);
-      setNewUser({ username: '', password: '', role: 'viewer' });
+      setNewUser({ username: '', password: '', confirm: '', role: 'viewer' });
       loadMembers();
     } catch (e: any) { toast.error(e.message); }
   };
@@ -108,6 +115,8 @@ export function OrgMembersPanel({ orgId, role, sessionMemberId, folders }: {
           <input value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} placeholder="username"
             className="flex-1 min-w-32 px-3 py-2 text-sm rounded-lg bg-telegram-surface border border-telegram-border outline-none focus:border-telegram-primary" />
           <input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} placeholder="password (min 4)"
+            className="flex-1 min-w-32 px-3 py-2 text-sm rounded-lg bg-telegram-surface border border-telegram-border outline-none focus:border-telegram-primary" />
+          <input type="password" value={newUser.confirm} onChange={(e) => setNewUser({ ...newUser, confirm: e.target.value })} placeholder="confirm password"
             className="flex-1 min-w-32 px-3 py-2 text-sm rounded-lg bg-telegram-surface border border-telegram-border outline-none focus:border-telegram-primary" />
           <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
             className="px-3 py-2 text-sm rounded-lg bg-telegram-surface border border-telegram-border">

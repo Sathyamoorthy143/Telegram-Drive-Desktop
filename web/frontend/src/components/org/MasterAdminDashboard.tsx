@@ -30,7 +30,7 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
   const [detailTab, setDetailTab] = useState<DetailTab>('members');
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [activity, setActivity] = useState<AuditEntry[]>([]);
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'admin' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', confirm: '', role: 'admin' });
   const [provisioningId, setProvisioningId] = useState<string | null>(null);
   const [backendStale, setBackendStale] = useState(false);
   const [overviewPartial, setOverviewPartial] = useState(false);
@@ -213,10 +213,16 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
       toast.error('Username required, password min 4 chars');
       return;
     }
+    // No recovery exists for a mistyped member password (hashes only) — a
+    // typo here locks the account with a permanent "invalid" login.
+    if (newUser.password !== newUser.confirm) {
+      toast.error('Passwords do not match');
+      return;
+    }
     try {
       await api.createOrgMember(selected.id, newUser.username.trim(), newUser.password, newUser.role, true);
       toast.success(`Member "${newUser.username}" created as ${newUser.role}`);
-      setNewUser({ username: '', password: '', role: 'admin' });
+      setNewUser({ username: '', password: '', confirm: '', role: 'admin' });
       setMembers(await api.getOrgMembers(selected.id, true));
       await refresh();
     } catch (e: any) {
@@ -399,6 +405,8 @@ export function MasterAdminDashboard({ onOpenOrg, onBack }: Props) {
                           <input value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} placeholder="username"
                             className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" />
                           <input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} placeholder="password (min 4)"
+                            className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" />
+                          <input type="password" value={newUser.confirm} onChange={(e) => setNewUser({ ...newUser, confirm: e.target.value })} placeholder="confirm password"
                             className="flex-1 min-w-32 px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary" />
                           <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                             className="px-3 py-1.5 text-sm rounded-lg bg-telegram-bg border border-telegram-border">
