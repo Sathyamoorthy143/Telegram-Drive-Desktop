@@ -182,9 +182,31 @@ pub async fn request_code(
         return HttpResponse::Ok().json("already_authorized");
     }
     for attempt in 0..3 {
-        match client
-            .request_login_code(&phone, &api_hash)
-            .await
+        // Bound each attempt: a wedged Telegram runner must never trap the
+        // wizard on "Connecting..." forever. Timeouts reuse the transport-
+        // failure path (rebuild pool + retry), then fail loud.
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            client.request_login_code(&phone, &api_hash),
+        )
+        .await;
+        let result = match outcome {
+            Ok(r) => r,
+            Err(_) => {
+                if attempt < 2 {
+                    reset_client(&state).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt as u64 + 1))).await;
+                    match get_client(&state).await {
+                        Ok(c) => { client = c; continue; }
+                        Err(e2) => return HttpResponse::BadGateway().body(format!("Telegram timed out and reconnect failed: {}", e2)),
+                    }
+                }
+                return HttpResponse::GatewayTimeout().body(
+                    "Telegram did not answer the login-code request within 60s. Wait a minute, then retry once — do not spam retries."
+                );
+            }
+        };
+        match result
         {
             Ok(token) => {
                 *state.login_token.lock().await = Some(token);

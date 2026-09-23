@@ -2,8 +2,13 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, Key, Lock, ArrowRight, Settings, Sun, Moon, HelpCircle, ExternalLink, X, Heart, Eye, EyeOff, Cloud } from "lucide-react";
 import { useTheme } from '../context/ThemeContext';
-import { requestCode, signIn, checkPassword, getStore, getBackendCaps } from '../api';
+import { requestCode, signIn, checkPassword, getStore, getBackendCaps, withTimeout } from '../api';
 import { TiltCard } from './three/TiltCard';
+
+/** Upper bound on the login-code request: beyond this the wizard must fail
+ * loud ("timed out, retry once") instead of spinning on Connecting... forever.
+ * Exported for tests. */
+export const LOGIN_CODE_TIMEOUT_MS = 70000;
 
 // The WebGL scene pulls in three.js (~700KB) — load it after first paint so
 // the login form is interactive immediately on slow connections.
@@ -139,7 +144,10 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
             if (!envCreds.apiId && isNaN(idInt)) throw new Error("API ID must be a number");
             const trimmedHash = envCreds.apiHash ? "" : apiHash.trim();
             if (!envCreds.apiHash && !trimmedHash) throw new Error("API Hash is required");
-            const res = await requestCode(trimmedPhone, idInt, trimmedHash);
+            const res = await withTimeout(requestCode(trimmedPhone, idInt, trimmedHash), LOGIN_CODE_TIMEOUT_MS, "timeout");
+            if (res === "timeout") {
+                throw new Error("The server took too long to send the code. Wait a minute, then retry once.");
+            }
             if (res === "already_authorized") {
                 onLogin();
                 return;
@@ -155,7 +163,10 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                     if (!isNaN(seconds)) { setFloodWait(seconds); return; }
                 }
             }
-            setError(msg || "Failed to send login code");
+            // Flood guidance: every retry extends Telegram's wait, so say so —
+            // hammering Continue is the main way users get stuck here.
+            const extra = /flood/i.test(msg) ? " Do not keep retrying — each attempt extends Telegram's wait." : "";
+            setError((msg || "Failed to send login code") + extra);
         } finally {
             setLoading(false);
         }
