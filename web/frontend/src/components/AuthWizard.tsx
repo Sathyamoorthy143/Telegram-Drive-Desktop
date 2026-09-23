@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, Key, Lock, ArrowRight, Settings, Sun, Moon, HelpCircle, ExternalLink, X, Heart, Eye, EyeOff, Cloud } from "lucide-react";
 import { useTheme } from '../context/ThemeContext';
-import { requestCode, signIn, checkPassword, getStore } from '../api';
+import { requestCode, signIn, checkPassword, getStore, getBackendCaps } from '../api';
 import { TiltCard } from './three/TiltCard';
 
 // The WebGL scene pulls in three.js (~700KB) — load it after first paint so
@@ -45,6 +45,10 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
     const [showHelp, setShowHelp] = useState(false);
     const [showDonate, setShowDonate] = useState(false);
 
+    // Booleans only — the backend never sends secret values, just whether
+    // each credential is preconfigured via env. Absent = old backend = all false.
+    const [envCreds, setEnvCreds] = useState({ apiId: false, apiHash: false, phone: false });
+
     useEffect(() => {
         if (!floodWait) return;
         const interval = setInterval(() => {
@@ -71,6 +75,25 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
             }
         };
         initStore();
+        const initCaps = async () => {
+            try {
+                const caps = await getBackendCaps();
+                const tg = caps?.tg_env;
+                const next = {
+                    apiId: tg?.api_id ?? false,
+                    apiHash: tg?.api_hash ?? false,
+                    phone: tg?.phone ?? false,
+                };
+                setEnvCreds(next);
+                // Skip the setup step entirely when both fields are server-configured.
+                if (next.apiId && next.apiHash) {
+                    setStep("phone");
+                }
+            } catch {
+                // old backend or unreachable — default all false
+            }
+        };
+        initCaps();
     }, []);
 
     const saveCredentials = async () => {
@@ -86,11 +109,17 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
 
     const handleSetupSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (apiId.includes(' ') || apiHash.includes(' ')) {
+        const needId = !envCreds.apiId;
+        const needHash = !envCreds.apiHash;
+        if (needId && apiId.includes(' ')) {
             setError("API ID and API Hash cannot contain spaces.");
             return;
         }
-        if (!apiId || !apiHash) {
+        if (needHash && apiHash.includes(' ')) {
+            setError("API ID and API Hash cannot contain spaces.");
+            return;
+        }
+        if ((needId && !apiId) || (needHash && !apiHash)) {
             setError("Both API ID and Hash are required.");
             return;
         }
@@ -104,12 +133,12 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
         setLoading(true);
         setError(null);
         try {
-            const trimmedPhone = phone.trim();
-            if (!trimmedPhone) throw new Error("Phone number is required.");
-            const idInt = parseInt(apiId, 10);
-            if (isNaN(idInt)) throw new Error("API ID must be a number");
-            const trimmedHash = apiHash.trim();
-            if (!trimmedHash) throw new Error("API Hash is required");
+            const trimmedPhone = envCreds.phone ? "" : phone.trim();
+            if (!envCreds.phone && !trimmedPhone) throw new Error("Phone number is required.");
+            const idInt = envCreds.apiId ? 0 : parseInt(apiId, 10);
+            if (!envCreds.apiId && isNaN(idInt)) throw new Error("API ID must be a number");
+            const trimmedHash = envCreds.apiHash ? "" : apiHash.trim();
+            if (!envCreds.apiHash && !trimmedHash) throw new Error("API Hash is required");
             const res = await requestCode(trimmedPhone, idInt, trimmedHash);
             if (res === "already_authorized") {
                 onLogin();
@@ -218,7 +247,7 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                         </motion.div>
                     ) : (
                         <>
-                            {step === "setup" && (
+                            {step === "setup" && !(envCreds.apiId && envCreds.apiHash) && (
                                 <motion.form
                                     key="setup"
                                     initial={{ x: 20, opacity: 0 }}
@@ -228,6 +257,7 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                     className="space-y-5"
                                 >
                                     <div className="space-y-4">
+                                        {!envCreds.apiId && (
                                         <div>
                                             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">API ID</label>
                                             <div className="relative">
@@ -248,6 +278,8 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                                 </button>
                                             </div>
                                         </div>
+                                        )}
+                                        {!envCreds.apiHash && (
                                         <div>
                                             <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">API Hash</label>
                                             <div className="relative">
@@ -268,6 +300,7 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                                 </button>
                                             </div>
                                         </div>
+                                        )}
                                     </div>
 
                                     <button
@@ -309,6 +342,9 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                 >
                                     <div className="space-y-2">
                                         <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Phone Number</label>
+                                        {envCreds.phone ? (
+                                            <p className="text-sm text-gray-400">Using the phone number configured on the server.</p>
+                                        ) : (
                                         <div className="relative">
                                             <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 auth-form-icon" />
                                             <input
@@ -319,6 +355,7 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                                 className="w-full glass-input rounded-xl pl-12 pr-4 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-all text-lg tracking-wide"
                                             />
                                         </div>
+                                        )}
                                     </div>
                                     <div className="flex flex-col gap-3">
                                         <button
@@ -328,9 +365,11 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                         >
                                             {loading ? "Connecting..." : <>Continue <ArrowRight className="w-5 h-5" /></>}
                                         </button>
+                                        {!(envCreds.apiId && envCreds.apiHash) && (
                                         <button type="button" onClick={() => setStep("setup")} className="text-xs text-gray-500 hover:text-white transition-colors py-2">
                                             Back to Configuration
                                         </button>
+                                        )}
                                     </div>
                                 </motion.form>
                             )}
