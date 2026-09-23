@@ -135,23 +135,40 @@ pub async fn request_code(
     state: web::Data<AppState>,
     req: web::Json<AuthRequest>,
 ) -> impl Responder {
-    let api_hash = req.api_hash.trim().to_string();
+    let api_hash = if req.api_hash.trim().is_empty() {
+        crate::settings::env_telegram_api_hash().unwrap_or_default()
+    } else {
+        req.api_hash.trim().to_string()
+    };
     if api_hash.is_empty() {
         return HttpResponse::BadRequest().body("API Hash cannot be empty");
     }
-    if req.api_id < 1000 {
+    let api_id = if req.api_id >= 1000 {
+        req.api_id
+    } else {
+        let mut id = 0i32;
+        if let Ok(s) = std::env::var("TELEGRAM_API_ID").map(|s| s.trim().parse::<i32>()) { if let Ok(v) = s { id = v; } }
+        if id == 0 { if let Ok(s) = std::env::var("TG_API_ID").map(|s| s.trim().parse::<i32>()) { if let Ok(v) = s { id = v; } } }
+        id
+    };
+    if api_id < 1000 {
         return HttpResponse::BadRequest().body(format!("API ID {} invalid. Get correct ID from https://my.telegram.org", req.api_id));
     }
     if api_hash.contains(' ') {
         return HttpResponse::BadRequest().body("API Hash cannot contain spaces");
     }
-    if req.phone.trim().is_empty() {
+    let phone = if req.phone.trim().is_empty() {
+        crate::settings::env_telegram_phone().unwrap_or_default()
+    } else {
+        req.phone.trim().to_string()
+    };
+    if phone.trim().is_empty() {
         return HttpResponse::BadRequest().body("Phone number is required");
     }
-    *state.api_id.lock().await = Some(req.api_id);
+    *state.api_id.lock().await = Some(api_id);
     {
         let mut s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
-        s.telegram_api_id = Some(req.api_id);
+        s.telegram_api_id = Some(api_id);
         crate::settings::save_settings(&s);
     }
     let mut client = match get_client(&state).await {
@@ -166,7 +183,7 @@ pub async fn request_code(
     }
     for attempt in 0..3 {
         match client
-            .request_login_code(&req.phone, &api_hash)
+            .request_login_code(&phone, &api_hash)
             .await
         {
             Ok(token) => {

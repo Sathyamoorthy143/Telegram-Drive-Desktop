@@ -52,6 +52,19 @@ pub async fn get_settings(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(s)
 }
 
+/// Telegram API hash from env (`TG_API_HASH`, fallback `TELEGRAM_API_HASH`). Trimmed; None when unset/empty.
+pub fn env_telegram_api_hash() -> Option<String> {
+    std::env::var("TG_API_HASH")
+        .or_else(|_| std::env::var("TELEGRAM_API_HASH"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+/// Phone number for the login-code step from env (`TG_PHONE`). Trimmed; None when unset/empty.
+pub fn env_telegram_phone() -> Option<String> {
+    std::env::var("TG_PHONE").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
 pub async fn save_settings_handler(
     state: web::Data<AppState>,
     req: web::Json<Settings>,
@@ -219,5 +232,40 @@ mod tests {
         let reloaded = load_settings();
         assert_eq!(reloaded.channel_id, Some(100));
         assert_eq!(reloaded.backup_channel_id, Some(200));
+    }
+
+    // Single test (not split) so parallel test threads can't race on the
+    // shared process env vars this covers.
+    #[test]
+    fn env_telegram_creds_trimmed_fallback_and_empty() {
+        // Both set → TG_ wins, trimmed.
+        std::env::set_var("TG_API_HASH", "  hash-from-tg  ");
+        std::env::set_var("TELEGRAM_API_HASH", "  hash-from-telegram  ");
+        assert_eq!(env_telegram_api_hash().as_deref(), Some("hash-from-tg"));
+
+        // TG_ unset → TELEGRAM_ fallback, trimmed.
+        std::env::remove_var("TG_API_HASH");
+        std::env::set_var("TELEGRAM_API_HASH", "  fallback-hash  ");
+        assert_eq!(env_telegram_api_hash().as_deref(), Some("fallback-hash"));
+
+        // Unset/empty/whitespace → None.
+        std::env::remove_var("TELEGRAM_API_HASH");
+        assert_eq!(env_telegram_api_hash(), None);
+        std::env::set_var("TG_API_HASH", "");
+        std::env::remove_var("TELEGRAM_API_HASH");
+        assert_eq!(env_telegram_api_hash(), None);
+        std::env::set_var("TG_API_HASH", "   ");
+        assert_eq!(env_telegram_api_hash(), None);
+        std::env::remove_var("TG_API_HASH");
+
+        // Phone: trimmed; empty/whitespace/unset → None.
+        std::env::set_var("TG_PHONE", "  +1234567890  ");
+        assert_eq!(env_telegram_phone().as_deref(), Some("+1234567890"));
+        std::env::set_var("TG_PHONE", "");
+        assert_eq!(env_telegram_phone(), None);
+        std::env::set_var("TG_PHONE", "   ");
+        assert_eq!(env_telegram_phone(), None);
+        std::env::remove_var("TG_PHONE");
+        assert_eq!(env_telegram_phone(), None);
     }
 }

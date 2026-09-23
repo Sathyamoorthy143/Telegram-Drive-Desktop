@@ -73,12 +73,26 @@ pub const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 /// `GET /api/version` â€” lets frontends detect backend capabilities.
 /// `org_platform: true` means all `/api/admin/*` + `/api/org/*` routes exist.
 async fn version() -> HttpResponse {
+    let api_id_present = std::env::var("TELEGRAM_API_ID")
+        .ok()
+        .and_then(|s| s.trim().parse::<i32>().ok())
+        .or_else(|| {
+            std::env::var("TG_API_ID")
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+        })
+        .is_some();
     HttpResponse::Ok().json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "commit": std::env::var("BUILD_COMMIT")
             .or_else(|_| std::env::var("RENDER_GIT_COMMIT"))
             .unwrap_or_else(|_| "dev".into()),
         "org_platform": true,
+        "tg_env": {
+            "api_id": api_id_present,
+            "api_hash": crate::settings::env_telegram_api_hash().is_some(),
+            "phone": crate::settings::env_telegram_phone().is_some(),
+        },
     }))
 }
 
