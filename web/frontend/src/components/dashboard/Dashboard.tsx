@@ -869,7 +869,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         return ids;
     }, [up, activeFolderId]);
 
-    const handleStartSelectedUploads = useCallback(async (onlyIds?: string[]) => {
+    const startSelectedUploadsInner = useCallback(async (onlyIds?: string[]) => {
         const pending = up.queue.filter((x) =>
           (x.status === 'staged' || x.status === 'pending' || x.status === 'paused' || x.status === 'error')
           && x.selected !== false
@@ -905,7 +905,9 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
         }
         const folderIndex = new Map<string, number>();
         try {
-          const fresh = await api.scanFolders();
+            // Bounded: a wedged scan must not freeze staged rows forever —
+            // fall back to an empty folder index and start anyway.
+            const fresh = await api.withTimeout(api.scanFolders(), 15000, []);
           for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
           setFolders(fresh);
         } catch {}
@@ -936,7 +938,7 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
                 }
               } catch {
                 try {
-                  const fresh = await api.scanFolders();
+                  const fresh = await api.withTimeout(api.scanFolders(), 15000, []);
                   for (const [k, v] of buildFolderIndex(fresh)) folderIndex.set(k, v);
                   setFolders(fresh);
                   id = folderIndex.get(key);
@@ -957,13 +959,26 @@ export function Dashboard({ onLogout, onSwitchOrganization, topBanner, orgMode }
           const dirs = (item.dirs && item.dirs.length > 0)
             ? item.dirs
             : splitRelativePath(item.path || item.name || '').dirs;
-          uploadFolderByItemRef.current.set(item.id, await resolveUploadFolder(dirs));
+          // Bounded like the scans above: a stuck folder create must not
+          // freeze the whole batch — fall back to the current folder.
+          uploadFolderByItemRef.current.set(item.id, await api.withTimeout(resolveUploadFolder(dirs), 15000, activeFolderId ?? undefined));
         }
         // Start exactly the conflict-resolved set: passing the wrapper's
         // `onlyIds` (or nothing) would re-include files the user chose to
         // skip, because the engine starts every selected staged item.
         up.start(queueToStart.map((x) => x.id));
     }, [up, activeFolderId]);
+
+    // Start-up must never fail silently: the waits inside are bounded (see
+    // withTimeout below), plus this loud catch so staged rows can't freeze
+    // with zero feedback if anything unexpected still throws.
+    const handleStartSelectedUploads = useCallback(async (onlyIds?: string[]) => {
+        try {
+            await startSelectedUploadsInner(onlyIds);
+        } catch (e: any) {
+            toast.error(`Upload could not start: ${e?.message || 'unknown error'}`);
+        }
+    }, [startSelectedUploadsInner]);
 
     // Checkbox works LIVE: staged/pending flips selection; unchecking a
     // RUNNING upload pauses it (frees a slot); checking a paused one queues it.
