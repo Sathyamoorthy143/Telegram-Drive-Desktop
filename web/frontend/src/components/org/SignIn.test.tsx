@@ -88,4 +88,14 @@ describe('SignIn', () => {
     await waitFor(() => expect(screen.getByText('Set an entry password in Organizations first')).toBeTruthy());
     expect(screen.queryByText('Invalid name or password.')).toBeNull();
   });
+
+  it('names a deactivated org instead of blaming the password', async () => {
+    unlockOrganization.mockRejectedValue({ status: 403, message: 'Organization is inactive' });
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'Acme' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText(/this organization is inactive/i)).toBeTruthy());
+    expect(screen.queryByText('Invalid name or password.')).toBeNull();
+  });
 });

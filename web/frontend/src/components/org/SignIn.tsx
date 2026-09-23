@@ -59,6 +59,10 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
         // Operational, not a credential problem (missing entry password,
         // inactive org): show it verbatim so it can actually be fixed.
         setError(String(err.message));
+      } else if (err?.status === 403 && /inactive/i.test(String(err?.message || ''))) {
+        // A deactivated org rejects every password by design — say so
+        // instead of implying the password is wrong.
+        setError('This organization is inactive — contact your admin.');
       } else {
         setError(GENERIC_ERROR);
       }
