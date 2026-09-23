@@ -31,6 +31,7 @@ mod trash;
 mod upload;
 mod utils;
 mod entry_unlock;
+mod unlock_throttle;
 
 use actix_cors::Cors;
 use actix_web::middleware::Compress;
