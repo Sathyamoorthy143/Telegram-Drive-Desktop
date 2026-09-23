@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Float, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
@@ -92,12 +92,23 @@ interface Scene3DProps {
 export function Scene3D({ variant = 'light', className, particleCount = 140 }: Scene3DProps) {
     const shapes = useMemo(() => buildShapes(variant), [variant]);
     const sparkColor = variant === 'light' ? '#1e3a8a' : '#93c5fd';
+    // Dead GL context (low-end GPUs, too many contexts) must not spam the
+    // console or leave a frozen canvas: drop the scene, the page background
+    // shows through since the canvas was transparent anyway.
+    const [glLost, setGlLost] = useState(false);
+    if (glLost) return <div className={className} aria-hidden="true" />;
     return (
         <div className={className} aria-hidden="true">
             <Canvas
                 dpr={[1, 1.75]}
                 camera={{ position: [0, 0, 8], fov: 50 }}
                 gl={{ alpha: true, antialias: true }}
+                onCreated={({ gl }) => {
+                    gl.domElement.addEventListener('webglcontextlost', (e) => {
+                        e.preventDefault();
+                        setGlLost(true);
+                    }, { once: true });
+                }}
             >
                 <ambientLight intensity={0.7} />
                 <directionalLight position={[4, 6, 6]} intensity={1.1} />

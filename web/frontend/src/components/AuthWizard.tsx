@@ -384,6 +384,11 @@ export function AuthWizard({ onLogin, onBack }: { onLogin: () => void; onBack?: 
                                     className="space-y-6"
                                 >
                                     <div className="space-y-2">
+                                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl mb-4">
+                                            <p className="text-xs text-blue-300 text-center">
+                                                Check your Telegram app chats for the code — Telegram only sends an SMS when you have no active session.
+                                            </p>
+                                        </div>
                                         <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Telegram Code</label>
                                         <div className="relative">
                                             <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 auth-form-icon" />

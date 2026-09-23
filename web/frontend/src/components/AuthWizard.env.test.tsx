@@ -47,6 +47,10 @@ describe('AuthWizard env creds', () => {
     fireEvent.click(sendBtn);
 
     await waitFor(() => expect(mockedRequestCode).toHaveBeenCalledWith('', 0, ''));
+
+    // Code step carries the delivery hint (app chats first, SMS only fallback)
+    expect(await screen.findByPlaceholderText('1 2 3 4 5')).toBeTruthy();
+    expect(screen.getByText(/only sends an SMS when you have no active session/i)).toBeTruthy();
   });
 
   it('caps all-false/absent: renders all inputs (existing behavior)', async () => {
