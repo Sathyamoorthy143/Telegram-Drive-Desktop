@@ -52,7 +52,7 @@ describe('SignIn', () => {
     expect(onUnlockOrg).toHaveBeenCalledWith({ id: 'o1', name: 'Acme', subdomain: 'acme' });
   });
 
-  it('shows the generic error for unknown names and wrong passwords', async () => {
+  it('shows the generic error for unknown names and the reason for wrong passwords', async () => {
     resolveOrg.mockRejectedValue({ status: 404, message: 'Not found' });
     const { unmount } = render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'nope' } });
@@ -67,7 +67,7 @@ describe('SignIn', () => {
     fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'Acme' } });
     fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
-    await waitFor(() => expect(screen.getByText('Invalid name or password.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Wrong password')).toBeTruthy());
   });
 
   it('shows the throttle message on 429', async () => {
@@ -110,5 +110,23 @@ describe('SignIn', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
     await waitFor(() => expect(screen.getByText(/sign in with the subdomain instead/i)).toBeTruthy());
     expect(unlockOrganization).not.toHaveBeenCalled();
+  });
+
+  it('names wrong-password vs not-owner instead of the generic error', async () => {
+    unlockOrganization.mockRejectedValue({ status: 401, message: 'Wrong password' });
+    const { unmount } = render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'acme-2' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText('Wrong password')).toBeTruthy());
+    expect(screen.queryByText('Invalid name or password.')).toBeNull();
+    unmount();
+
+    unlockOrganization.mockRejectedValue({ status: 403, message: 'Not the owner of this organization' });
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'acme-2' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText('Not the owner of this organization')).toBeTruthy());
   });
 });

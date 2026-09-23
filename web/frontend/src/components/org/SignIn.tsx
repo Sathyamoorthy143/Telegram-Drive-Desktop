@@ -69,6 +69,12 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
         // A deactivated org rejects every password by design — say so
         // instead of implying the password is wrong.
         setError('This organization is inactive — contact your admin.');
+      } else if ((err?.status === 401 || err?.status === 403) && err?.message && !isTelegramLost(err)) {
+        // Unlock endpoints require the Telegram-authenticated master, so
+        // naming the reason ("Wrong password" vs "Not the owner of this
+        // organization") leaks nothing new — and the generic message left
+        // legitimate owners with no actionable next step.
+        setError(String(err.message));
       } else {
         setError(GENERIC_ERROR);
       }
