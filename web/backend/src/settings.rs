@@ -60,9 +60,35 @@ pub fn env_telegram_api_hash() -> Option<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
-/// Phone number for the login-code step from env (`TG_PHONE`). Trimmed; None when unset/empty.
+/// Phone number for the login-code step from env (`TG_PHONE`). Normalized
+/// (see [`normalize_phone`]) so values like `+91-7598 265955` work as-is;
+/// None when unset/empty.
 pub fn env_telegram_phone() -> Option<String> {
-    std::env::var("TG_PHONE").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    std::env::var("TG_PHONE")
+        .ok()
+        .map(|s| normalize_phone(&s))
+        .filter(|s| !s.is_empty() && s != "+")
+}
+
+/// Normalize a phone number for Telegram: keep digits plus a single leading
+/// `+`, drop spaces/dashes/parens/dots. `+91-7598 265955` → `+917598265955`.
+/// The `+` counts when it appears before the first digit, so `(+1) 234-5678`
+/// → `+12345678` too.
+pub fn normalize_phone(raw: &str) -> String {
+    let mut plus = false;
+    let mut digits = String::new();
+    for c in raw.trim_start().chars() {
+        if c == '+' && digits.is_empty() {
+            plus = true;
+        } else if c.is_ascii_digit() {
+            digits.push(c);
+        }
+    }
+    if plus {
+        format!("+{}", digits)
+    } else {
+        digits
+    }
 }
 
 pub async fn save_settings_handler(
@@ -258,9 +284,14 @@ mod tests {
         assert_eq!(env_telegram_api_hash(), None);
         std::env::remove_var("TG_API_HASH");
 
-        // Phone: trimmed; empty/whitespace/unset → None.
+        // Phone: trimmed + normalized; empty/whitespace/unset → None.
         std::env::set_var("TG_PHONE", "  +1234567890  ");
         assert_eq!(env_telegram_phone().as_deref(), Some("+1234567890"));
+        // Dashes/spaces/parens are stripped so pasted numbers work as-is.
+        std::env::set_var("TG_PHONE", "+91-7598 265955");
+        assert_eq!(env_telegram_phone().as_deref(), Some("+917598265955"));
+        std::env::set_var("TG_PHONE", "(+1) 234-5678");
+        assert_eq!(env_telegram_phone().as_deref(), Some("+12345678"));
         std::env::set_var("TG_PHONE", "");
         assert_eq!(env_telegram_phone(), None);
         std::env::set_var("TG_PHONE", "   ");

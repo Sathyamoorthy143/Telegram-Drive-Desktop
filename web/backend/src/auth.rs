@@ -160,7 +160,7 @@ pub async fn request_code(
     let phone = if req.phone.trim().is_empty() {
         crate::settings::env_telegram_phone().unwrap_or_default()
     } else {
-        req.phone.trim().to_string()
+        crate::settings::normalize_phone(req.phone.trim())
     };
     if phone.trim().is_empty() {
         return HttpResponse::BadRequest().body("Phone number is required");
