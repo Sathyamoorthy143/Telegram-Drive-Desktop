@@ -45,16 +45,24 @@ pub fn evaluate_org_unlock(
     }
 }
 
+/// Owner recorded on the org row, normalized: NULL, missing, empty, or
+/// whitespace-only all mean "unclaimed" (legacy rows, uuid-migration retry
+/// path). Callers must treat an unclaimed org as claimable, never as
+/// foreign-owned — otherwise a legitimate master sees `NotOwner` (surfaced
+/// as a generic invalid login) forever.
+pub fn effective_owner_id(org_owner: Option<&str>) -> Option<&str> {
+    org_owner.filter(|o| !o.trim().is_empty())
+}
+
 /// Owner actually checked for an org unlock attempt. Unclaimed orgs
-/// (`master_admin_id` None — legacy rows, or the uuid-migration retry path
-/// that creates without an owner) are evaluated as if owned by the
+/// (see [`effective_owner_id`]) are evaluated as if owned by the
 /// attempting Telegram user; the caller should best-effort claim the row
 /// first. Foreign owners stay denied (`NotOwner` downstream).
 pub fn unlock_owner_for_check<'a>(
     org_owner: Option<&'a str>,
     telegram_uid: &'a str,
 ) -> Option<&'a str> {
-    Some(org_owner.unwrap_or(telegram_uid))
+    Some(effective_owner_id(org_owner).unwrap_or(telegram_uid))
 }
 
 #[cfg(test)]
@@ -82,8 +90,32 @@ mod tests {
     #[test]
     fn unlock_owner_for_check_claims_unclaimed_and_keeps_others() {
         assert_eq!(unlock_owner_for_check(None, "99"), Some("99"));
+        assert_eq!(unlock_owner_for_check(Some(""), "99"), Some("99"));
+        assert_eq!(unlock_owner_for_check(Some("   "), "99"), Some("99"));
         assert_eq!(unlock_owner_for_check(Some("99"), "99"), Some("99"));
         assert_eq!(unlock_owner_for_check(Some("1"), "99"), Some("1"));
+    }
+
+    #[test]
+    fn unlock_trims_password_like_create_and_reset() {
+        // Create/reset hash the trimmed password; unlock must verify the
+        // same way or a trailing space (mobile keyboards) permanently fails.
+        let stored = crate::supabase_org::hash_org_entry_password("secret", "org-1");
+        assert!(evaluate_org_unlock(
+            Some(&stored),
+            "secret",
+            "org-1",
+            true,
+            Some("99"),
+            "99"
+        )
+        .is_ok());
+        // Raw-vs-trimmed parity is enforced at the call site; the pure
+        // evaluator stays exact-match by contract.
+        assert_eq!(
+            evaluate_org_unlock(Some(&stored), "secret ", "org-1", true, Some("99"), "99"),
+            Err(EntryUnlockError::WrongPassword)
+        );
     }
 
     #[test]

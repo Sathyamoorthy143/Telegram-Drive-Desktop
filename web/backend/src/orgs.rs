@@ -7,7 +7,7 @@
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 
 use crate::auth_org::{current_telegram_user_id, is_master_admin, require_master, require_org_role, subdomain_from_req};
-use crate::entry_unlock::{evaluate_org_unlock, EntryUnlockError};
+use crate::entry_unlock::{effective_owner_id, evaluate_org_unlock, EntryUnlockError};
 use crate::models::{
     CreateMemberRequest, CreateOrgRequest, LogOrgActivityRequest, NewPasswordBody, PasswordBody,
     UpdateOrgRequest, UpdateOrgSettingsRequest,
@@ -269,7 +269,7 @@ pub async fn unlock_organization(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     let uid_s = uid.to_string();
-    if org.master_admin_id.is_none() {
+    if effective_owner_id(org.master_admin_id.as_deref()).is_none() {
         // Unclaimed org (legacy row, or the uuid-migration retry path that
         // creates without an owner): claim it for this master best-effort,
         // mirroring the list_my_organizations self-heal. A failed claim must
@@ -294,7 +294,9 @@ pub async fn unlock_organization(
     }
     match evaluate_org_unlock(
         org.entry_password_hash.as_deref(),
-        &body.password,
+        // Create/reset hash the trimmed password — verify the same value
+        // here or padding whitespace fails every attempt with no recourse.
+        body.password.trim(),
         &org.id,
         org.active.unwrap_or(true),
         crate::entry_unlock::unlock_owner_for_check(org.master_admin_id.as_deref(), &uid_s),
@@ -350,7 +352,7 @@ pub async fn reset_entry_password(
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     let uid_s = uid.to_string();
-    match org.master_admin_id.as_deref() {
+    match effective_owner_id(org.master_admin_id.as_deref()) {
         Some(owner) if owner != uid_s => {
             return HttpResponse::Forbidden().body("Not the owner of this organization");
         }
@@ -360,7 +362,7 @@ pub async fn reset_entry_password(
     // Legacy org without an owner: claim it best-effort, but never let the
     // claim break the password reset. Old deployments type `master_admin_id`
     // as uuid, where a numeric Telegram id is rejected (SQLSTATE 22P02).
-    if org.master_admin_id.is_none() {
+    if effective_owner_id(org.master_admin_id.as_deref()).is_none() {
         let _ = supabase_org::sb_req(
             "PATCH",
             &format!("organizations?id=eq.{}", org.id),

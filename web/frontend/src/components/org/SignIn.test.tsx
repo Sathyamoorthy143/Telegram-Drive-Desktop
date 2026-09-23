@@ -78,4 +78,14 @@ describe('SignIn', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
     await waitFor(() => expect(screen.getByText(/too many attempts/i)).toBeTruthy());
   });
+
+  it('surfaces operational 409s verbatim instead of the generic error', async () => {
+    unlockOrganization.mockRejectedValue({ status: 409, message: 'Set an entry password in Organizations first' });
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'Acme' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText('Set an entry password in Organizations first')).toBeTruthy());
+    expect(screen.queryByText('Invalid name or password.')).toBeNull();
+  });
 });

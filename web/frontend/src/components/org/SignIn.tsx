@@ -55,6 +55,10 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
       }
       if (err?.status === 429) {
         setError('Too many attempts — try again shortly.');
+      } else if (err?.status === 409 && err?.message) {
+        // Operational, not a credential problem (missing entry password,
+        // inactive org): show it verbatim so it can actually be fixed.
+        setError(String(err.message));
       } else {
         setError(GENERIC_ERROR);
       }
