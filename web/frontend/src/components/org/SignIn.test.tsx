@@ -98,4 +98,17 @@ describe('SignIn', () => {
     await waitFor(() => expect(screen.getByText(/this organization is inactive/i)).toBeTruthy());
     expect(screen.queryByText('Invalid name or password.')).toBeNull();
   });
+
+  it('shows the subdomain hint when several orgs share the name', async () => {
+    resolveOrg.mockRejectedValue({
+      status: 409,
+      message: 'Multiple organizations share this name — sign in with the subdomain instead (acme, acme-2)',
+    });
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'Acme' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText(/sign in with the subdomain instead/i)).toBeTruthy());
+    expect(unlockOrganization).not.toHaveBeenCalled();
+  });
 });

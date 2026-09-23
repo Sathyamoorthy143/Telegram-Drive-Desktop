@@ -86,6 +86,37 @@ pub struct ResolveQuery {
     pub name: Option<String>,
 }
 
+/// Outcome of matching a typed name against org display names.
+pub enum DisplayNameMatch<'a> {
+    /// Exactly one org carries this display name.
+    Unique(&'a crate::models::Organization),
+    /// Several orgs share it — the subdomains disambiguate. Callers must
+    /// fail loud (409) instead of silently picking one: each same-named
+    /// org has its own entry password, so a silent pick turns a correct
+    /// password into "Invalid name or password."
+    Ambiguous(Vec<&'a str>),
+}
+
+pub fn match_display_name<'a>(
+    orgs: &'a [crate::models::Organization],
+    needle: &str,
+) -> Option<DisplayNameMatch<'a>> {
+    let hits: Vec<&'a crate::models::Organization> = orgs
+        .iter()
+        .filter(|o| o.name.trim().to_lowercase() == needle)
+        .collect();
+    if hits.is_empty() {
+        return None;
+    }
+    if hits.len() == 1 {
+        return Some(DisplayNameMatch::Unique(hits[0]));
+    }
+    let mut subs: Vec<&str> = hits.iter().map(|o| o.subdomain.as_str()).collect();
+    subs.sort_unstable();
+    subs.dedup();
+    Some(DisplayNameMatch::Ambiguous(subs))
+}
+
 /// `GET /api/orgs/resolve?name=` — public pre-login resolver used by the
 /// shared Sign-In form. Matches subdomain exactly first, then display name
 /// (case-insensitive). Returns only `{ org_id, display_name }`; unknown
@@ -104,10 +135,14 @@ pub async fn resolve_org(q: web::Query<ResolveQuery>) -> impl Responder {
         }));
     }
     match supabase_org::list_organizations().await {
-        Ok(orgs) => match orgs.into_iter().find(|o| o.name.trim().to_lowercase() == needle) {
-            Some(org) => HttpResponse::Ok().json(serde_json::json!({
+        Ok(orgs) => match match_display_name(&orgs, &needle) {
+            Some(DisplayNameMatch::Unique(org)) => HttpResponse::Ok().json(serde_json::json!({
                 "org_id": org.id, "display_name": org.name,
             })),
+            Some(DisplayNameMatch::Ambiguous(subs)) => HttpResponse::Conflict().body(format!(
+                "Multiple organizations share this name — sign in with the subdomain instead ({})",
+                subs.join(", ")
+            )),
             None => HttpResponse::NotFound().body("Not found"),
         },
         Err(e) => HttpResponse::InternalServerError().body(e),
@@ -1080,5 +1115,43 @@ mod tests {
         assert!(!valid_subdomain("acme-"));
         assert!(!valid_subdomain("ac me"));
         assert!(!valid_subdomain("acme_corp"));
+    }
+
+    fn test_org(id: &str, name: &str, sub: &str) -> crate::models::Organization {
+        crate::models::Organization {
+            id: id.into(),
+            name: name.into(),
+            subdomain: sub.into(),
+            master_admin_id: None,
+            created_at: None,
+            active: Some(true),
+            entry_password_hash: None,
+        }
+    }
+
+    #[test]
+    fn display_name_match_unique_ambiguous_and_missing() {
+        let orgs = vec![
+            test_org("o1", "Acme", "acme"),
+            test_org("o2", "Acme", "acme-2"),
+            test_org("o3", "Beta", "beta"),
+        ];
+        // Same display name on two rows must NOT silently pick one.
+        match match_display_name(&orgs, "acme").expect("must match") {
+            DisplayNameMatch::Ambiguous(subs) => assert_eq!(subs, vec!["acme", "acme-2"]),
+            DisplayNameMatch::Unique(_) => panic!("duplicate display name must be ambiguous"),
+        }
+        // Case-insensitive matching still applies.
+        assert!(matches!(
+            match_display_name(&orgs, "beta"),
+            Some(DisplayNameMatch::Unique(o)) if o.id == "o3"
+        ));
+        assert!(match_display_name(&orgs, "gamma").is_none());
+        // A lone display name resolves uniquely.
+        let solo = vec![test_org("o9", "Solo", "solo")];
+        assert!(matches!(
+            match_display_name(&solo, "solo"),
+            Some(DisplayNameMatch::Unique(o)) if o.id == "o9"
+        ));
     }
 }

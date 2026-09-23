@@ -42,8 +42,14 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
       let orgId: string;
       try {
         orgId = (await api.resolveOrg(ident)).org_id;
-      } catch {
-        setError(GENERIC_ERROR);
+      } catch (err: any) {
+        // Ambiguous display name (several orgs share it): the server names
+        // the subdomains — show that so the user retries with the right one.
+        if (err?.status === 409 && err?.message) {
+          setError(String(err.message));
+        } else {
+          setError(GENERIC_ERROR);
+        }
         return;
       }
       const res = await api.unlockOrganization(orgId, password);
