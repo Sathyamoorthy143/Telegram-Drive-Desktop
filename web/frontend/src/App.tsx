@@ -12,7 +12,7 @@ import { DropZoneProvider } from "./contexts/DropZoneContext";
 import { LockProvider } from "./context/LockContext";
 import { OrgLogin } from "./components/org/OrgLogin";
 import { MasterAdminDashboard } from "./components/org/MasterAdminDashboard";
-import { OrgPicker } from "./components/org/OrgPicker";
+import { SignIn } from "./components/org/SignIn";
 import { OrgShell, OrgCard } from "./components/org/ui";
 import { MasterPasswordSetup } from "./components/org/MasterPasswordSetup";
 import { Landing } from "./components/landing/Landing";
@@ -64,7 +64,7 @@ type BootState =
   | { kind: "master-auth" }
   | { kind: "master-drive" }
   | { kind: "master-orgs" }
-  | { kind: "org-picker" }
+  | { kind: "signin" }
   | { kind: "master-password-setup" }
   | { kind: "org-not-found"; slug: string }
   | { kind: "org-login"; org: OrgInfo }
@@ -72,7 +72,7 @@ type BootState =
 
 async function bootAfterTelegram(): Promise<BootState> {
   const st = await api.getMasterUnlockStatus().catch(() => ({ has_master_password: false }));
-  return { kind: st.has_master_password ? "org-picker" : "master-password-setup" };
+  return { kind: st.has_master_password ? "signin" : "master-password-setup" };
 }
 
 export function AppContent() {
@@ -247,10 +247,10 @@ export function AppContent() {
         <AuthWizard onLogin={async () => setBoot(await bootAfterTelegram())} onBack={() => setShowLanding(true)} />
       )}
       {boot.kind === "master-password-setup" && (
-        <MasterPasswordSetup onReady={() => setBoot({ kind: "org-picker" })} />
+        <MasterPasswordSetup onReady={() => setBoot({ kind: "signin" })} />
       )}
-      {boot.kind === "org-picker" && (
-        <OrgPicker
+      {boot.kind === "signin" && (
+        <SignIn
           onUnlockMaster={() => setBoot({ kind: "master-drive" })}
           onUnlockOrg={(org) => {
             api.setOrgContext(org.id);
@@ -263,7 +263,7 @@ export function AppContent() {
       {boot.kind === "master-drive" && (
         <Dashboard
           onLogout={() => { setShowLanding(true); setBoot({ kind: "master-auth" }); }}
-          onSwitchOrganization={() => { api.setOrgContext(null); setBoot({ kind: "org-picker" }); }}
+          onSwitchOrganization={() => { api.setOrgContext(null); setBoot({ kind: "signin" }); }}
           topBanner={
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
               <button
@@ -334,7 +334,7 @@ export function AppContent() {
               setBoot({ kind: "master-auth" });
             }
           }}
-          onSwitchOrganization={boot.session ? undefined : () => { api.setOrgContext(null); setBoot({ kind: "org-picker" }); }}
+          onSwitchOrganization={boot.session ? undefined : () => { api.setOrgContext(null); setBoot({ kind: "signin" }); }}
           orgMode={{ org: boot.org, session: boot.session }}
         />
       )}
