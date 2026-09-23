@@ -834,16 +834,6 @@ export const getAdminOverview = () =>
 export const getOrganizations = () =>
   api<any[]>('GET', '/api/admin/organizations');
 
-export interface MyOrg {
-  id: string;
-  name: string;
-  subdomain: string;
-  active?: boolean;
-  created_at?: string;
-  master_admin_id?: string | null;
-  has_entry_password: boolean;
-}
-
 export const getMasterUnlockStatus = () =>
   api<{ has_master_password: boolean }>('GET', '/api/admin/master-unlock-status');
 
@@ -852,9 +842,6 @@ export const setMasterPassword = (password: string) =>
 
 export const unlockMaster = (password: string) =>
   api<{ ok: boolean }>('POST', '/api/admin/master-unlock', { password });
-
-export const getMyOrgs = () =>
-  api<{ orgs: MyOrg[] }>('GET', '/api/admin/my-orgs');
 
 export const resolveOrg = (name: string) =>
   api<{ org_id: string; display_name: string }>(
