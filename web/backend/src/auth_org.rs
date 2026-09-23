@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::models::{OrgLoginRequest, OrgSession};
+use crate::models::{OrgLoginRequest, OrgMember, OrgSession};
 use crate::supabase_org;
 use crate::AppState;
 
@@ -419,6 +419,24 @@ pub fn subdomain_from_req(req: &HttpRequest) -> Option<String> {
     None
 }
 
+/// Case-insensitive member match for login. Usernames hash lowercased
+/// (`hash_org_password`), but the primary lookup is a case-sensitive
+/// `username=eq.` — so "Alice" created then "alice" typed missed and failed
+/// despite a correct password. Exact matches never reach here; this scans
+/// the org's (small) member list only on an exact miss.
+pub fn find_member_case_insensitive<'a>(
+    members: &'a [OrgMember],
+    typed_username: &str,
+) -> Option<&'a OrgMember> {
+    let needle = typed_username.trim().to_lowercase();
+    if needle.is_empty() {
+        return None;
+    }
+    members
+        .iter()
+        .find(|m| m.username.to_lowercase() == needle)
+}
+
 /// `POST /api/org/{org_id}/login` — username/password → org token.
 pub async fn org_login(
     state: web::Data<AppState>,
@@ -430,9 +448,16 @@ pub async fn org_login(
     if !supabase_org::is_configured() {
         return HttpResponse::ServiceUnavailable().body("Org auth unavailable (Supabase not configured)");
     }
-    let member = match supabase_org::get_org_member_by_username(&org_id, body.username.trim()).await {
+    let typed_username = body.username.trim();
+    let member = match supabase_org::get_org_member_by_username(&org_id, typed_username).await {
         Ok(Some(m)) => m,
-        Ok(None) => return HttpResponse::Unauthorized().body("Invalid username or password"),
+        Ok(None) => match supabase_org::list_org_members(&org_id).await {
+            Ok(members) => match find_member_case_insensitive(&members, typed_username) {
+                Some(m) => m.clone(),
+                None => return HttpResponse::Unauthorized().body("Invalid username or password"),
+            },
+            Err(e) => return HttpResponse::InternalServerError().body(e),
+        },
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
     let hash = member.password_hash.clone().unwrap_or_default();
@@ -563,6 +588,31 @@ mod tests {
         assert_eq!(db_user_id(&master), None);
         let member = OrgSession { member_id: "some-uuid".into(), ..master };
         assert_eq!(db_user_id(&member), Some("some-uuid".to_string()));
+    }
+
+    #[test]
+    fn find_member_case_insensitive_matches_stored_case_variants() {
+        let member = |username: &str| OrgMember {
+            id: "m1".into(),
+            org_id: "o1".into(),
+            username: username.into(),
+            password_hash: None,
+            role: "viewer".into(),
+            created_by: None,
+            created_at: None,
+        };
+        let members = vec![member("Alice"), member("bob")];
+        // Exact, lower, upper, and padded input all resolve.
+        assert_eq!(find_member_case_insensitive(&members, "Alice").unwrap().username, "Alice");
+        assert_eq!(find_member_case_insensitive(&members, "alice").unwrap().username, "Alice");
+        assert_eq!(find_member_case_insensitive(&members, "ALICE").unwrap().username, "Alice");
+        assert_eq!(find_member_case_insensitive(&members, "  alice  ").unwrap().username, "Alice");
+        assert_eq!(find_member_case_insensitive(&members, "BOB").unwrap().username, "bob");
+        // Unknown and empty stay None (still 401 downstream, no leak).
+        assert!(find_member_case_insensitive(&members, "carol").is_none());
+        assert!(find_member_case_insensitive(&members, "").is_none());
+        assert!(find_member_case_insensitive(&members, "   ").is_none());
+        assert!(find_member_case_insensitive(&[], "alice").is_none());
     }
 
     #[test]
