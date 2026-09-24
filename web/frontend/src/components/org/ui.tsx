@@ -1,5 +1,6 @@
 import type { ComponentType, FormEvent, ReactNode } from 'react';
-import { ArrowLeft, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, X, Sparkles } from 'lucide-react';
 
 export function OrgShell({ children }: { children: ReactNode }) {
   return (
@@ -58,15 +59,40 @@ export function OrgModal({ title, onClose, children }: { title: string; onClose:
   );
 }
 
-export function AuthCard({ title, submitLabel, busy, error, onSubmit, children, footer }: {
+export function AuthCard({ title, submitLabel, busy, error, onSubmit, children, footer, successBurst }: {
   title: string; submitLabel: string; busy: boolean; error: string | null;
-  onSubmit: (e: FormEvent) => void; children: ReactNode; footer?: ReactNode;
+  onSubmit: (e: FormEvent) => void; children: ReactNode; footer?: ReactNode; successBurst?: boolean;
 }) {
   return (
     <form onSubmit={onSubmit}>
       {title ? <h2 className="font-bold mb-4">{title}</h2> : null}
       {children}
-      {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+      <AnimatePresence mode="wait">
+        {successBurst ? (
+          <motion.div
+            key="burst"
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1.1, opacity: 1 }}
+            exit={{ scale: 1.5, opacity: 0 }}
+            transition={{ duration: 0.6 }}
+            className="flex items-center justify-center gap-2 mb-3"
+          >
+            <Sparkles className="w-5 h-5 text-telegram-primary animate-pulse" />
+            <span className="text-sm text-telegram-primary font-medium">Unlocked!</span>
+          </motion.div>
+        ) : error ? (
+          <motion.p
+            key="err"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.2 }}
+            className="text-sm text-red-500 mb-3"
+          >
+            {error}
+          </motion.p>
+        ) : null}
+      </AnimatePresence>
       <button type="submit" disabled={busy}
         className="w-full px-4 py-2 rounded-lg bg-telegram-primary text-white font-medium disabled:opacity-50">
         {busy ? 'Working…' : submitLabel}

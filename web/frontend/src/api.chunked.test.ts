@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { uploadFileChunked } from './api';
 
-const okJson = (body: any) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
+const okJson = (body: any) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body), headers: { get: () => 'application/json' } });
 
 describe('uploadFileChunked chunk retries', () => {
   let chunkPuts = 0;

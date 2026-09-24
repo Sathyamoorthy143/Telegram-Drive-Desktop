@@ -7,10 +7,18 @@ const resolveOrg = vi.fn<(name: string) => Promise<{ org_id: string; display_nam
 const unlockMaster = vi.fn<(password: string) => Promise<{ ok: boolean }>>();
 const unlockOrganization = vi.fn<(id: string, password: string) => Promise<{ ok: boolean; org: { id: string; name: string; subdomain: string } }>>();
 
+// Three.js / WebGL components cannot run in jsdom — mock them out so tests
+// only exercise the SignIn business logic.
+vi.mock('../three/Scene3D', () => ({ Scene3D: () => null }));
+vi.mock('../three/CloudHero3D', () => ({ CloudHero3D: () => null }));
+vi.mock('../three/TiltCard', () => ({ TiltCard: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
+vi.mock('./SignInDiagnostic', () => ({ SignInDiagnostic: () => null }));
+
 vi.mock('../../api', () => ({
   resolveOrg: (name: string) => resolveOrg(name),
   unlockMaster: (password: string) => unlockMaster(password),
   unlockOrganization: (id: string, password: string) => unlockOrganization(id, password),
+  getOrgContext: () => null,
 }));
 
 describe('SignIn', () => {

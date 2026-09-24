@@ -5,6 +5,8 @@
 //! and share the same handlers via [`require_org_role`] fallbacks.
 
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 use crate::auth_org::{current_telegram_user_id, is_master_admin, require_master, require_org_role, subdomain_from_req};
 use crate::entry_unlock::{effective_owner_id, evaluate_org_unlock, EntryUnlockError};
@@ -17,6 +19,19 @@ use crate::AppState;
 
 fn supabase_unavailable() -> HttpResponse {
     HttpResponse::ServiceUnavailable().body("Supabase not configured (set SUPABASE_URL + key)")
+}
+
+/// Append a line to `/tmp/org_unlock_audit.log` for production
+/// diagnostics. Best-effort: a failure here must never block the
+/// request, so we swallow all errors silently.
+fn write_unlock_audit(_org: &crate::models::Organization, _uid: &str, _result: &str, ip: &str) -> std::io::Result<()> {
+    let mut f = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/org_unlock_audit.log")?;
+    writeln!(f, "{} | org={} subdomain={} uid={} ip={} result={}",
+        chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ"),
+        _org.id, _org.subdomain, _uid, ip, _result)
 }
 
 fn valid_subdomain(s: &str) -> bool {
@@ -271,11 +286,10 @@ pub async fn create_organization(
     }
     // Initialize empty settings row so later upserts merge cleanly.
     let _ = supabase_org::upsert_org_settings(&org.id, &serde_json::json!({})).await;
-    let ip = req.peer_addr().map(|a| a.ip().to_string());
-    supabase_org::audit_best_effort(
+let _ = supabase_org::audit_best_effort(
         &org.id, None, "org.create", "organization", &org.id,
         serde_json::json!({ "name": org.name, "subdomain": org.subdomain }),
-        ip, None,
+        None, None,
     )
     .await;
     HttpResponse::Ok().json(supabase_org::strip_entry_hash_fields(&org))
@@ -381,25 +395,27 @@ pub async fn unlock_organization(
     ) {
         Ok(()) => {
             state.unlock_attempts.lock().await.record(&key, true);
-            let ip = req.peer_addr().map(|a| a.ip().to_string());
+            let ip = req.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
             supabase_org::audit_best_effort(
-                &org.id,
-                None,
-                "org.unlock",
-                "organization",
-                &org.id,
-                serde_json::json!({ "subdomain": org.subdomain }),
-                ip,
-                None,
-            )
+&org.id,
+                 None,
+                 "org.unlock",
+                 "organization",
+                 &org.id,
+                 serde_json::json!({ "subdomain": org.subdomain }),
+                 None,
+                 None,
+             )
             .await;
+// Append to on-disk audit log for production diagnostics.
+            let _ = write_unlock_audit(&org, "", "ok", &ip);
             HttpResponse::Ok().json(serde_json::json!({
                 "ok": true,
                 "org": { "id": org.id, "name": org.name, "subdomain": org.subdomain },
             }))
         }
         Err(e) => {
-            let ip = req.peer_addr().map(|a| a.ip().to_string());
+            let ip = req.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
             // Diagnostic: record the exact branch so production sign-in
             // failures can be narrowed without reproducing locally.
             let diag = format!(
@@ -412,6 +428,8 @@ pub async fn unlock_organization(
             );
             eprintln!("{}", diag);
             state.unlock_attempts.lock().await.record(&key, false);
+            // Append to on-disk audit log for production diagnostics.
+            let _ = write_unlock_audit(&org, "", &format!("err:{:?}", e), &ip);
             org_unlock_status_response(e)
         },
     }

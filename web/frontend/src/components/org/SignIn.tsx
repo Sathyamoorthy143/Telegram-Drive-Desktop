@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { KeyRound } from 'lucide-react';
 import * as api from '../../api';
 import { OrgShell, PageHeader, OrgCard, AuthCard } from './ui';
+import { SignInDiagnostic } from './SignInDiagnostic';
+import { Scene3D } from '../three/Scene3D';
+import { TiltCard } from '../three/TiltCard';
+const CloudHero3D = lazy(() => import('../three/CloudHero3D').then((m) => ({ default: m.CloudHero3D })));
 
 interface Props {
   onUnlockMaster: () => void;
@@ -29,6 +34,8 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [successBurst, setSuccessBurst] = useState(false);
+  const orgId = api.getOrgContext();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,6 +67,8 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
         return;
       }
       const res = await api.unlockOrganization(orgId, password);
+      setSuccessBurst(true);
+      setTimeout(() => setSuccessBurst(false), 800);
       onUnlockOrg(res.org);
     } catch (err: any) {
       // Diagnostic: log the raw error shape so sign-in failures
@@ -98,22 +107,29 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
   return (
     <OrgShell>
       <PageHeader icon={<KeyRound className="w-6 h-6 text-telegram-primary" />} title="Sign in" subtitle="Master Admin or your organization. Type master for the personal drive." />
-      <div className="flex justify-center">
-        <div className="w-full max-w-sm">
-          <OrgCard>
-            <AuthCard title="" submitLabel="Sign in" busy={busy} error={error} onSubmit={submit}>
-              <label className="block text-xs font-medium text-telegram-subtext mb-1">Organisation name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="username"
-                className="w-full mb-3 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
-                placeholder="Organisation name — or master" />
-              <label className="block text-xs font-medium text-telegram-subtext mb-1">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password"
-                className="w-full mb-4 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
-                placeholder="••••••••" />
-            </AuthCard>
-          </OrgCard>
+      <div className="relative flex justify-center">
+        <Scene3D variant="dark" className="absolute inset-0 z-0 opacity-40" particleCount={80} />
+        <Suspense fallback={null}>
+          <CloudHero3D className="absolute top-4 left-1/2 -translate-x-1/2 w-32 h-32 opacity-30 z-0" />
+        </Suspense>
+        <div className="relative z-10 w-full max-w-sm">
+          <TiltCard intensity={6} className="relative z-10">
+            <OrgCard>
+              <AuthCard title="" submitLabel="Sign in" busy={busy} error={error} onSubmit={submit} successBurst={successBurst}>
+                <label className="block text-xs font-medium text-telegram-subtext mb-1">Organisation name</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="username"
+                  className="w-full mb-3 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+                  placeholder="Organisation name — or master" />
+                <label className="block text-xs font-medium text-telegram-subtext mb-1">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password"
+                  className="w-full mb-4 px-3 py-2 rounded-lg bg-telegram-bg border border-telegram-border outline-none focus:border-telegram-primary"
+                  placeholder="••••••••" />
+              </AuthCard>
+            </OrgCard>
+          </TiltCard>
         </div>
       </div>
+      {orgId && <SignInDiagnostic orgId={orgId} />}
     </OrgShell>
   );
 }

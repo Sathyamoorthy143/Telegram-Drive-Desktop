@@ -95,21 +95,26 @@ export async function api<T>(method: string, path: string, body?: any, options?:
   // Subdomain-first routing hint (backend also accepts ?subdomain=).
   if (_currentOrgSlug) headers['X-Org-Subdomain'] = _currentOrgSlug;
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const started = performance.now();
+  const url = `${API_BASE}${path}`;
+  console.debug(`→ ${method} ${url}`, body !== undefined ? JSON.stringify(body).slice(0, 120) : '');
+  const res = await fetch(url, {
     method,
     headers,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
     signal: options?.signal,
   });
-
+  const elapsed = (performance.now() - started).toFixed(1);
+  const contentType = res.headers.get('content-type') ?? '';
+  const bodyText = await res.text();
   if (!res.ok) {
-    const text = await res.text();
-    const err = new Error(text || `API Error ${res.status}`) as Error & { status: number };
+    const err = new Error(bodyText || `API Error ${res.status}`) as Error & { status: number };
     err.status = res.status;
+    console.warn(`← ${method} ${url} ${res.status} [${elapsed}ms] ${contentType}`, err.message.slice(0, 160));
     throw err;
   }
-
-  return res.json();
+  console.debug(`← ${method} ${url} ${res.status} [${elapsed}ms] ${contentType} ${bodyText.slice(0, 120)}`);
+  return JSON.parse(bodyText);
 }
 
 // Convenience methods matching the old Tauri command names
