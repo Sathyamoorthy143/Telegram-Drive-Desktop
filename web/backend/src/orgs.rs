@@ -185,7 +185,7 @@ pub async fn list_organizations(state: web::Data<AppState>) -> impl Responder {
 /// reproducing locally. Visible on the admin overview page as well.
 pub async fn unlock_diag(
     state: web::Data<AppState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
     if require_master(&state).await.is_err() {
@@ -225,7 +225,7 @@ pub async fn unlock_diag(
 /// `POST /api/admin/organizations` — create org + empty settings row.
 pub async fn create_organization(
     state: web::Data<AppState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Json<CreateOrgRequest>,
 ) -> impl Responder {
     if require_master(&state).await.is_err() {

@@ -313,7 +313,7 @@ pub fn grant_satisfies(have: &str, need: &str) -> bool {
 /// - Supabase lookup failures fail OPEN with a warning (same philosophy as
 ///   the role re-check): availability over lockout on a blip.
 pub async fn check_folder_access(
-    state: &AppState,
+    _state: &AppState,
     org_id: &str,
     sess: &OrgSession,
     folder_id: Option<i64>,
