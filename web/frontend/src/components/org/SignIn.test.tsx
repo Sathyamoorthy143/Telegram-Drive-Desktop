@@ -129,4 +129,36 @@ describe('SignIn', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
     await waitFor(() => expect(screen.getByText('Not the owner of this organization')).toBeTruthy());
   });
+
+  it('surfaces any non-generic error message instead of the generic error', async () => {
+    unlockOrganization.mockRejectedValue({ status: 500, message: 'Connection refused' });
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'Acme' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText('Connection refused')).toBeTruthy());
+    expect(screen.queryByText('Invalid name or password.')).toBeNull();
+  });
+
+  it('does not treat a 401 with "wrong password" as telegram lost', async () => {
+    unlockOrganization.mockRejectedValue({ status: 401, message: 'Wrong password' });
+    const onTelegramLost = vi.fn();
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} onTelegramLost={onTelegramLost} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'acme-2' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText('Wrong password')).toBeTruthy());
+    expect(onTelegramLost).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a 403 "not owner" as telegram lost', async () => {
+    unlockOrganization.mockRejectedValue({ status: 403, message: 'Not the owner of this organization' });
+    const onTelegramLost = vi.fn();
+    render(<SignIn onUnlockMaster={() => {}} onUnlockOrg={() => {}} onTelegramLost={onTelegramLost} />);
+    fireEvent.change(screen.getByPlaceholderText(/organisation name/i), { target: { value: 'acme-2' } });
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByText('Not the owner of this organization')).toBeTruthy());
+    expect(onTelegramLost).not.toHaveBeenCalled();
+  });
 });

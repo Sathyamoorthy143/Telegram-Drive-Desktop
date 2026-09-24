@@ -165,6 +165,48 @@ pub async fn list_organizations(state: web::Data<AppState>) -> impl Responder {
     }
 }
 
+/// `GET /api/admin/organizations/{id}/unlock-diag` — diagnostic: returns the
+/// org's unlock-ability state so sign-in failures can be narrowed without
+/// reproducing locally. Visible on the admin overview page as well.
+pub async fn unlock_diag(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    if require_master(&state).await.is_err() {
+        return HttpResponse::Unauthorized().body("Master admin authentication required");
+    }
+    if !supabase_org::is_configured() {
+        return supabase_unavailable();
+    }
+    let org_id = path.into_inner();
+    let org = match supabase_org::get_org_by_id(&org_id).await {
+        Ok(Some(o)) => o,
+        Ok(None) => return HttpResponse::NotFound().body("Organization not found"),
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+    let uid = match current_telegram_user_id(&state).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let uid_s = uid.to_string();
+    let owner = effective_owner_id(org.master_admin_id.as_deref());
+    let effective = crate::entry_unlock::effective_owner_id(org.master_admin_id.as_deref());
+    let hash_present = org.entry_password_hash.as_ref().map(|h| !h.is_empty()).unwrap_or(false);
+    let owner_matches = owner == Some(uid_s.as_str());
+    HttpResponse::Ok().json(serde_json::json!({
+        "id": org.id,
+        "name": org.name,
+        "subdomain": org.subdomain,
+        "active": org.active.unwrap_or(true),
+        "master_admin_id": org.master_admin_id,
+        "owner_did_match_telegram": owner_matches,
+        "effective_owner": effective.unwrap_or("(none)"),
+        "entry_hash_present": hash_present,
+        "unlockable_without_master": effective == owner,
+    }))
+}
+
 /// `POST /api/admin/organizations` — create org + empty settings row.
 pub async fn create_organization(
     state: web::Data<AppState>,
@@ -357,6 +399,18 @@ pub async fn unlock_organization(
             }))
         }
         Err(e) => {
+            let ip = req.peer_addr().map(|a| a.ip().to_string());
+            // Diagnostic: record the exact branch so production sign-in
+            // failures can be narrowed without reproducing locally.
+            let diag = format!(
+                "org_unlock diag: org={} subdomain={} owner={} effective_owner={} active={} hash_present={} err={:?} ip={:?}",
+                org.id, org.subdomain, org.master_admin_id.as_deref().unwrap_or("(none)"),
+                crate::entry_unlock::effective_owner_id(org.master_admin_id.as_deref()).unwrap_or("(none)"),
+                org.active.unwrap_or(true),
+                org.entry_password_hash.as_ref().map(|h| !h.is_empty()).unwrap_or(false),
+                e, ip,
+            );
+            eprintln!("{}", diag);
             state.unlock_attempts.lock().await.record(&key, false);
             org_unlock_status_response(e)
         },

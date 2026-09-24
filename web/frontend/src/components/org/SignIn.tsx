@@ -11,10 +11,17 @@ interface Props {
 
 const GENERIC_ERROR = 'Invalid name or password.';
 
+// Only triggers on a true transport-level master failure (401 from the
+// master route with a message naming Telegram/authentication), NOT on
+// org-unlock credential failures. The master session is separate from
+// org entry auth, so a genuine lost-session must carry the transport
+// keyword and NOT look like a normal credential error.
 function isTelegramLost(err: any): boolean {
   const status = err?.status;
   const msg = String(err?.message || '').toLowerCase();
-  return status === 401 && (msg.includes('unauthorized') || msg.includes('authentication required') || msg.includes('telegram'));
+  return status === 401 && (msg.includes('unauthorized') || msg.includes('authentication required') || msg.includes('telegram'))
+    && !msg.includes('wrong password')
+    && !msg.includes('owner');
 }
 
 export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
@@ -55,6 +62,9 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
       const res = await api.unlockOrganization(orgId, password);
       onUnlockOrg(res.org);
     } catch (err: any) {
+      // Diagnostic: log the raw error shape so sign-in failures
+      // can be narrowed without reproducing locally.
+      console.error('SignIn unlock error:', { status: err?.status, message: err?.message, name: err?.name });
       if (isTelegramLost(err)) {
         onTelegramLost?.();
         return;
@@ -76,7 +86,9 @@ export function SignIn({ onUnlockMaster, onUnlockOrg, onTelegramLost }: Props) {
         // legitimate owners with no actionable next step.
         setError(String(err.message));
       } else {
-        setError(GENERIC_ERROR);
+        // Fallback: if we have ANY error detail, surface it rather than
+        // the generic message, so nothing is lost in production.
+        setError(String(err?.message || GENERIC_ERROR));
       }
     } finally {
       setBusy(false);
